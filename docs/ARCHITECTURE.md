@@ -1,197 +1,115 @@
 # Architecture Overview
 
+Privacy-focused Android AI assistant (`com.satory.graphenosai`). Integrates as a system digital assistant with volume-key activation, voice/text input, optional web search, and cloud or on-device LLM backends.
+
 ## Project Structure
 
 ```
 app/src/main/
 ├── java/com/satory/graphenosai/
-│   ├── AssistantApplication.kt          # App entry point
-│   ├── MainActivity.kt                  # Main UI activity
-│   ├── accessibility/
-│   │   ├── AssistantAccessibilityService.kt    # Volume button listener & hotkey trigger
-│   │   └── GlobalShortcutListener.kt           # Global shortcuts handling
-│   ├── audio/
-│   │   ├── VoskTranscriber.kt                  # On-device speech recognition
-│   │   ├── TextToSpeechManager.kt              # Text-to-speech output
-│   │   └── GroqTranscriber.kt                  # Cloud-based speech recognition
+│   ├── AssistantApplication.kt
+│   ├── MainActivity.kt                    # Setup dashboard + navigation
+│   ├── service/
+│   │   ├── AssistantService.kt            # Central orchestrator
+│   │   ├── AssistantAccessibilityService.kt
+│   │   ├── AssistantVoiceInteractionService.kt
+│   │   ├── AssistantVoiceInteractionSessionService.kt
+│   │   └── AssistantTileService.kt
 │   ├── llm/
-│   │   ├── OpenRouterClient.kt                 # OpenRouter API integration
-
-│   ├── search/
-│   │   ├── BraveSearchClient.kt               # Brave Search API integration
-│   │   └── SearchResult.kt                    # Search result models
-│   ├── storage/
-│   │   ├── KeyManager.kt                      # Encrypted API key storage
-│   │   ├── SettingsManager.kt                 # User preferences
-│   │   └── ChatSessionManager.kt              # Chat history
+│   │   ├── OpenRouterClient.kt            # Cloud LLM (streaming, vision, tools)
+│   │   ├── LlamaCppClient.kt              # Local llama.cpp inference
+│   │   ├── LlamaCppBridge.kt              # JNI bridge
+│   │   ├── LocalModelManager.kt           # GGUF download/management
+│   │   ├── ChatSession.kt                 # Conversation context
+│   │   ├── SearchIntent.kt                # Weather/web intent classifier
+│   │   ├── SystemPrompts.kt               # Shared default prompts
+│   │   └── ToolCall.kt                    # web_search tool + DSML parsing
+│   ├── audio/
+│   │   ├── VoskTranscriber.kt             # Offline STT
+│   │   ├── WhisperTranscriber.kt          # Cloud Whisper (Groq/OpenAI)
+│   │   ├── SpeechRecognizerManager.kt     # Android system STT
+│   │   └── AudioCaptureManager.kt
+│   ├── tts/TTSManager.kt
+│   ├── search/                            # Brave, Exa, LangSearch clients
+│   ├── weather/OpenMeteoClient.kt
+│   ├── storage/ChatHistoryManager.kt
+│   ├── security/SecureKeyManager.kt       # Android Keystore encryption
 │   └── ui/
-│       ├── SettingsScreen.kt                  # Settings UI
-│       ├── MainScreen.kt                      # Chat UI
-│       ├── MarkdownText.kt                    # Markdown renderer
-│       └── SearchContextDialog.kt             # Search dialog
-└── res/
-    ├── values/strings.xml
-    ├── drawable/                # App icons
-    └── mipmap/                  # Launcher icons
+│       ├── CompactAssistantUI.kt          # Primary assistant overlay
+│       ├── SettingsScreen.kt
+│       ├── SettingsManager.kt
+│       ├── VoskLanguageManagerScreen.kt
+│       └── StateIndicator.kt
+└── cpp/llama/                             # llama.cpp JNI (arm64-v8a)
 ```
 
-## Key Components
+## Activation Flow
 
-### 1. Accessibility Service (`AssistantAccessibilityService`)
-- Listens for Volume Up + Volume Down key combination
-- Launches the assistant activity when triggered
-- Runs in background as system service
-- Requires "Accessibility" permission
-
-**Key Methods:**
-- `onAccessibilityEvent()` - Intercepts system events and detects hotkey
-- `launchAssistant()` - Opens main activity
-
-### 2. Audio Processing
-
-#### Vosk Transcriber (On-Device)
-- Completely offline speech recognition
-- Uses Vosk library with pre-trained models
-- Fast and lightweight
-- Minimal data usage
-
-#### Groq Transcriber (Cloud)
-- High-accuracy speech-to-text
-- Fast inference via Groq API
-- Requires internet connection
-- Needs API key
-
-#### TextToSpeechManager
-- Android system TextToSpeech engine
-- Reads responses aloud
-- Configurable speech rate and language
-
-### 3. LLM Integration
-
-#### OpenRouter Client
-- Unified API for 100+ models
-- Supports streaming responses
-- Token-based authentication
-- Handles chat history
-
-**Streaming Flow:**
 ```
-User Query → Build Request → Stream Server-Sent Events → Parse JSON → Display Content
+Volume Up+Down / Triple Power / Accessibility button / Default assistant / QS tile
+    → AssistantService (foreground)
+    → CompactAssistantActivity (Compose overlay)
 ```
 
-### 4. Search Integration
+## Query Processing Pipeline
 
-#### Brave Search API
-- Privacy-respecting search
-- Real-time information retrieval
-- Injected into chat context
-- Optional feature
-
-### 5. Storage & Security
-
-#### KeyManager
-- Uses Android Keystore for encryption
-- Stores API keys securely
-- AES-256-GCM encryption
-- Device-locked keys
-
-#### SettingsManager
-- Sharedpreferences for user settings
-- Stores:
-  - Selected LLM backend
-  - Voice recognition method
-  - TTS preferences
-  - Search settings
-
-#### ChatSessionManager
-- Maintains conversation history
-- Manages system prompts
-- Persists chat sessions
-- Limits history for context size
-
-### 6. UI Architecture
-
-#### Jetpack Compose
-- Modern declarative UI framework
-- Reactive state management
-- Material Design 3 components
-
-**Main Screens:**
-- `MainScreen` - Chat interface with message history
-- `SettingsScreen` - Configuration for all backends
-- `SearchContextDialog` - Web search integration UI
-
-## Data Flow
-
-### Text Chat
 ```
-User Input → LLM Client → Streaming Response → Parse → Update UI → Save to History
+User input (text or voice→text)
+    → sanitizeQuery (PII redaction for cloud)
+    → classifyRetrievalIntent
+        ├─ WEATHER  → OpenMeteo → LLM with weather context
+        ├─ WEB_SEARCH → Search API → LLM with results
+        └─ NONE → function calling (web_search tool) or direct stream
+    → finalizeResponse (sources, URLs, TTS)
 ```
 
-### Voice Input
-```
-Audio Recording → Transcriber → Speech-to-Text → LLM Client → TTS Output → Chat History
-```
+Local provider (`PROVIDER_LOCAL`) skips search/weather/tools and uses `LlamaCppClient`.
 
-### Web Search
-```
-User Query → Brave Search → Process Results → Inject into Prompt → Send to LLM → Response with Citations
-```
+## LLM Backends
 
-## Authentication
+### OpenRouter (cloud)
+- Streaming SSE, model list in `SettingsManager.AVAILABLE_MODELS`
+- Vision for supported models
+- Tool calling with DSML fallback
+- Default: `temperature 0.3`, `max_tokens 4096`
 
-### OpenRouter
-- Simple API key authentication
-- `Authorization: Bearer <api_key>` header
-- Stored in encrypted Android Keystore
+### Local llama.cpp
+- GGUF models via `LocalModelManager`
+- Requires prebuilt native libs (`scripts/build-llama-android.sh`)
+- ChatML / Gemma prompt formats
+- Default: `temperature 0.4`, `max_tokens 1024`
 
-### Brave Search
-- Simple API key authentication
-- `Accept-Encoding: gzip` support
-- Rate limited (free tier: 2000/month)
+## Speech
 
-## Permissions
+| Backend | Class | Notes |
+|---------|-------|-------|
+| Vosk | `VoskTranscriber` | Offline, multilingual models |
+| System | `SpeechRecognizerManager` | Android built-in |
+| Whisper | `WhisperTranscriber` | Groq or OpenAI API |
 
-```xml
-<uses-permission android:name="android.permission.INTERNET" />
-<uses-permission android:name="android.permission.RECORD_AUDIO" />
-<uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE" />
-<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
-```
+TTS via Android `TextToSpeech` in `TTSManager`.
 
-## Build Configuration
+## Search
 
-### Minification (ProGuard)
-- Enabled in release builds
-- Custom keep rules for PDFBox, Compose, Kotlin Coroutines
-- Line number preservation for crash reporting
-
-### Dependencies
-
-**Core:**
-- Kotlin Coroutines (async/await)
-- Jetpack Compose (UI)
-- Jetpack Navigation (routing)
-
-**APIs:**
-- OkHttp3 (HTTP client)
-- org.json (JSON parsing)
-
-**Audio:**
-- Vosk (speech recognition)
-- Android TextToSpeech (TTS)
-
-**PDF (optional):**
-- PDFBox (document parsing)
-
-### Kotlin Target
-- JVM 17
-- Kotlin 1.9+
+- **Brave Search** (default), **Exa**, **LangSearch** — selectable in Settings
+- Intent classifier in `SearchIntent.kt` routes obvious live-data queries before the model answers from memory
+- Fallback when model claims no web access (`shouldFallbackToSearch`)
 
 ## Security
 
-- API keys never logged or exposed
-- Encrypted storage with Android Keystore
+- API keys encrypted with Android Keystore (`SecureKeyManager`)
+- PII sanitization before cloud requests (device IDs, phones, emails)
 - No analytics or tracking
-- Minimal permissions requested
-- No data sent to third parties without explicit API calls
+- TLS for all network calls (`network_security_config.xml`)
+
+## Context Management
+
+`ChatSession` keeps up to 30 messages (~16K estimated tokens). Older messages are trimmed from the start.
+
+## Build
+
+- **minSdk** 26, **targetSdk** 36, **arm64-v8a** only for native code
+- Release: ProGuard enabled
+- Local AI dev: run `scripts/build-llama-android.sh` if prebuilt `.so` files are missing
+
+See [LOCAL_AI_SETUP.md](LOCAL_AI_SETUP.md) for model download and native library setup.

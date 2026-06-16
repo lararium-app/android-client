@@ -56,29 +56,11 @@ class OpenRouterClient(
             "openai/gpt-oss-20b:free"
         )
         
-        const val DEFAULT_SYSTEM_PROMPT = """You are a capable, accurate AI assistant on a mobile device.
-
-Your goal is to help the user solve their problem: answer directly, stay on topic, and match response length to the task — brief for simple questions, more detail when needed.
-
-Style:
-- Be clear, direct, and natural
-- Use markdown: **bold**, *italic*, `code`, lists, tables for comparisons
-- Keep answers readable on a small screen; avoid filler and repetition
-- Respond in the same language as the user
-
-Accuracy:
-- Do not invent facts, sources, quotes, or URLs
-- If uncertain or information may be outdated, say so plainly
-- Prefer admitting gaps over guessing
-
-Capabilities:
-- You can analyze images and PDF documents when shared
-- When web search is enabled, use provided search results or request web_search for current facts — do not claim you lack internet access
-- To open a link in the browser, write: [OPEN_URL:https://example.com] (only when the user explicitly asks to open a link)"""
+        val DEFAULT_SYSTEM_PROMPT = SystemPrompts.CLOUD_DEFAULT
     }
 
     private var currentModel: String = modelOverride ?: DEFAULT_MODEL
-    private var currentSystemPrompt: String = systemPromptOverride ?: DEFAULT_SYSTEM_PROMPT
+    private var currentSystemPrompt: String = systemPromptOverride ?: SystemPrompts.CLOUD_DEFAULT
     
     // Chat session for context
     val chatSession = ChatSession()
@@ -861,7 +843,10 @@ Capabilities:
 
     private fun sanitizeUserInput(input: String): String {
         var sanitized = input
-        sanitized = sanitized.replace(Regex("[a-f0-9]{16}"), "[ID]")
+        sanitized = sanitized.replace(
+            Regex("(?i)(device\\s*id|android\\s*id|id\\s*is)\\s*[:=]?\\s*\\b[a-f0-9]{16}\\b"),
+            "$1 [ID]"
+        )
         sanitized = sanitized.replace(Regex("\\+?\\d{10,15}"), "[PHONE]")
         sanitized = sanitized.replace(
             Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"),

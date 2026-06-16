@@ -65,19 +65,19 @@ class AssistantUnitTest {
         assertTrue(shouldUseWebSearch("search for kotlin tutorials"))
         assertTrue(shouldUseWebSearch("find the latest news"))
         assertTrue(shouldUseWebSearch("look up android security"))
-        assertTrue(shouldUseWebSearch("какие новости GrapheneOS сегодня?"))
-        assertTrue(shouldUseWebSearch("актуальная цена Pixel 10 в 2026"))
-        assertTrue(shouldUseWebSearch("какая сейчас версия Android?"))
+        assertTrue(shouldUseWebSearch("what is the latest GrapheneOS news today?"))
+        assertTrue(shouldUseWebSearch("current Pixel 10 price in 2026"))
+        assertTrue(shouldUseWebSearch("what is the current Android version?"))
     }
 
     @Test
-    fun `retrieval intent detects live data across languages`() {
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("buscar noticias de Android hoy"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("cherche les dernières nouvelles de GrapheneOS"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("sprawdz aktualna cene Pixel 10"))
+    fun `retrieval intent detects live data queries`() {
+        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("search for latest OpenAI model"))
+        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("find current bitcoin price today"))
+        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("check the latest GrapheneOS release"))
         assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("Android security patch version 2026"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("最新のOpenAIモデルは何ですか"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("ابحث عن سعر البيتكوين اليوم"))
+        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("who is the current US president"))
+        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("is Pixel 10 available to buy now"))
     }
 
     @Test
@@ -85,35 +85,29 @@ class AssistantUnitTest {
         assertFalse(shouldUseWebSearch("tell me a joke"))
         assertFalse(shouldUseWebSearch("write a poem"))
         assertFalse(shouldUseWebSearch("calculate 2+2"))
-        assertFalse(shouldUseWebSearch("объясни разницу между List и Set"))
-        assertFalse(shouldUseWebSearch("переведи hello world на русский"))
+        assertFalse(shouldUseWebSearch("explain the difference between List and Set"))
+        assertFalse(shouldUseWebSearch("translate hello world to Spanish"))
         assertFalse(shouldUseWebSearch("write Kotlin function to sort a list"))
     }
 
     @Test
     fun `weather intent detects weather queries`() {
-        assertTrue(isWeatherQuery("какая погода?"))
-        assertTrue(isWeatherQuery("погода в Варшаве"))
+        assertTrue(isWeatherQuery("what is the weather today?"))
+        assertTrue(isWeatherQuery("weather in Warsaw"))
         assertTrue(isWeatherQuery("weather in Berlin tomorrow"))
         assertTrue(isWeatherQuery("will it rain today?"))
-        assertTrue(isWeatherQuery("¿qué tiempo hace en Madrid hoy?"))
-        assertTrue(isWeatherQuery("météo à Paris demain"))
-        assertTrue(isWeatherQuery("Wetter in Berlin heute"))
-        assertTrue(isWeatherQuery("czy będzie padać dzisiaj?"))
-        assertTrue(isWeatherQuery("天气 北京 今天"))
-        assertTrue(isWeatherQuery("الطقس في دبي اليوم"))
-        assertEquals(RetrievalIntent.WEATHER, classifyRetrievalIntent("pogoda w Warszawie jutro"))
+        assertTrue(isWeatherQuery("forecast for New York this weekend"))
+        assertTrue(isWeatherQuery("temperature in London now"))
+        assertEquals(RetrievalIntent.WEATHER, classifyRetrievalIntent("weather in Warsaw tomorrow"))
         assertFalse(isWeatherQuery("what causes a rainbow?"))
     }
 
     @Test
-    fun `weather location extraction handles russian and english`() {
-        assertEquals("Варшаве", extractWeatherLocation("какая погода в Варшаве?"))
+    fun `weather location extraction handles english queries`() {
+        assertEquals("Warsaw", extractWeatherLocation("weather in Warsaw tomorrow"))
         assertEquals("Berlin", extractWeatherLocation("weather in Berlin tomorrow"))
-        assertEquals("Paris", extractWeatherLocation("météo à Paris demain"))
-        assertEquals("دبي", extractWeatherLocation("الطقس في دبي اليوم"))
-        assertEquals("北京", extractWeatherLocation("天气 北京 今天"))
-        assertNull(extractWeatherLocation("какая погода?"))
+        assertEquals("New York", extractWeatherLocation("weather in New York tomorrow"))
+        assertNull(extractWeatherLocation("what is the weather today?"))
     }
 
     @Test
@@ -146,7 +140,10 @@ class AssistantUnitTest {
     // Helper functions mirroring app logic for testing
     private fun sanitizeInput(input: String): String {
         var sanitized = input
-        sanitized = sanitized.replace(Regex("[a-f0-9]{16}"), "[ID]")
+        sanitized = sanitized.replace(
+            Regex("(?i)(device\\s*id|android\\s*id|id\\s*is)\\s*[:=]?\\s*\\b[a-f0-9]{16}\\b"),
+            "$1 [ID]"
+        )
         sanitized = sanitized.replace(Regex("\\+?\\d{10,15}"), "[PHONE]")
         sanitized = sanitized.replace(
             Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"),

@@ -77,7 +77,7 @@ private fun normalizeIntentText(value: String): String {
 
 private val EXPLICIT_LOOKUP_PATTERNS = listOf(
     Regex("\\b(search|find|look up|google|web search|browse|check online|from the web|on the web)\\b"),
-    Regex("\\b(recherche|chercher|trouve|buscar|busca|pesquisar|procura|suchen|suche|cerca|cercare)\\b"),
+    Regex("\\b(recherche|rechercher|chercher|cherche|cherches|trouve|trouver|buscar|busca|pesquisar|procura|suchen|suche|cerca|cercare)\\b"),
     Regex("\\b(szukaj|znajdz|sprawdz|hledat|hledej|vyhledat|ara|bul|zoeken|opzoeken)\\b"),
     Regex("(найди|поищи|поиск|загугли|посмотри в интернете|проверь в интернете|найди в сети|в сети|интернеттен|интернетте|пошукай|знайди)"),
     Regex("(ابحث|بحث|فتش|جستجو|جست و جو|جستجو کن|खोज|ढूंढ|検索|搜|搜索|查找|查一下|검색)")
@@ -86,9 +86,9 @@ private val EXPLICIT_LOOKUP_PATTERNS = listOf(
 private val LIVE_DATA_PATTERNS = listOf(
     Regex("\\b(latest|current|currently|recent|newest|today|tonight|this week|this month|right now|now)\\b"),
     Regex("\\b(news|breaking|live|updated|update|changelog|release date|available now)\\b"),
-    Regex("\\b(dernier|actuel|recemment|aujourd hui|noticias|notizie|nachrichten|aktuell|heute|neueste)\\b"),
+    Regex("\\b(dernier|derniere|dernieres|derniers|actuel|actuelle|recemment|aujourd hui|nouvelles|nouveau|noticias|notizie|nachrichten|aktuell|heute|neueste)\\b"),
     Regex("\\b(noticias|hoje|agora|atual|recente|nieuws|vandaag|nu|senaste|nyheter|idag)\\b"),
-    Regex("\\b(dzis|dzisiaj|teraz|aktualn|najnowsz|wiadomosci|novinky|dnes|ted)\\b"),
+    Regex("\\b(dzis|dzisiaj|teraz|aktualn\\w*|najnowsz\\w*|wiadomosci|novinky|dnes|ted)\\b"),
     Regex("(последн|актуальн|свеж|сегодня|сейчас|новост|что нового|обновлен|оновлен|зараз|сьогодні|жаңалық|бүгін)"),
     Regex("(最新|现在|今天|ニュース|今日|현재|오늘|اخبار|اليوم|الان|हाल|आज)")
 )
@@ -97,15 +97,18 @@ private val VOLATILE_DOMAIN_PATTERNS = listOf(
     Regex("\\b(price|prices|cost|stock|stocks|shares|market cap|exchange rate|crypto|bitcoin|ethereum)\\b"),
     Regex("\\b(weather|forecast|score|scores|schedule|standings|election|polls|flight|flights)\\b"),
     Regex("\\b(buy|order|available|availability|in stock|where can i get|where can i buy)\\b"),
-    Regex("\\b(precio|prix|preco|preis|cena|kurs|akcje|gielda|borsa|mercado|acciones)\\b"),
+    Regex("\\b(precio|prix|preco|preis|cena|cen[aeęy]|kurs|akcje|gielda|borsa|mercado|acciones)\\b"),
     Regex("(цена|стоимость|курс|акции|бирж|крипт|биткоин|эфир|расписание|счет|счёт|результат|рейс|выборы|опрос)"),
     Regex("(سعر|اسعار|بورصة|عملة|رحلة|انتخابات|कीमत|मूल्य|株価|価格|航班|选举|날씨|가격)")
 )
 
 private val SOFTWARE_RELEASE_PATTERNS = listOf(
     Regex("\\b(version|release|released|launch|launched|roadmap|stable build|beta|security patch|cve)\\b"),
-    Regex("\\b(android|ios|grapheneos|linux|windows|macos|chrome|firefox|kotlin|compose|openai|claude|gemini)\\b.*\\b(version|release|update|patch|model)\\b"),
-    Regex("(версия|релиз|вышел|вышла|запуск|патч|уязвимость|модель|обновление|прошивка)")
+    Regex("\\b(android|ios|grapheneos|linux|windows|macos|chrome|firefox|kotlin|compose|openai|claude|gemini)\\b.{0,40}\\b(version|release|update|patch|model)\\b"),
+    Regex("\\b(version|release|update|patch|model)\\b.{0,40}\\b(android|ios|grapheneos|linux|windows|macos|chrome|firefox|kotlin|compose|openai|claude|gemini)\\b"),
+    Regex("(версия|релиз|вышел|вышла|запуск|патч|уязвимость|модель|обновление|прошивка).{0,40}(android|ios|grapheneos|openai|claude|gemini|kotlin)"),
+    Regex("(android|ios|grapheneos|openai|claude|gemini|kotlin).{0,40}(версия|релиз|модель|обновление|прошивка)"),
+    Regex("(最新.{0,20}モデル|モデル.{0,20}最新)")
 )
 
 private val AVAILABILITY_PATTERNS = listOf(
@@ -128,7 +131,7 @@ private val WEATHER_PATTERNS = listOf(
     Regex("(?<!\\p{L})(weather|forecast|temperature|feels like|humidity|precipitation|uv index)(?!\\p{L})"),
     Regex("(?<!\\p{L})rain(?:ing|y)?(?!\\p{L})"),
     Regex("(?<!\\p{L})snow(?:ing|y)?(?!\\p{L})"),
-    Regex("(?<!\\p{L})storm(?:y)?|thunderstorm(?:s)?|wind(?:y)?|cloudy|sunny|umbrella(?!\\p{L})"),
+    Regex("(?<!\\p{L})(?:storm(?:y)?|thunderstorm(?:s)?|wind(?:y)?|cloudy|sunny|umbrella)(?!\\p{L})"),
     Regex("hot outside|cold outside"),
     Regex("(?<!\\p{L})(clima|tiempo|meteo|meteorologia|temperatura|prevision)(?!\\p{L})"),
     Regex("(?<!\\p{L})(regen|schnee|neige|lluvia|nieve|chuva|vento|vent|wind|wetter|weer|vader|saa|hava)(?!\\p{L})"),

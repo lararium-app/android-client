@@ -1,53 +1,65 @@
-# Local AI Setup Instructions
+# Local AI Setup
 
-This app supports running AI models locally on your device using llama.cpp, providing complete offline functionality without any internet connection.
+Run GGUF models on-device via llama.cpp — fully offline, no API key required for inference.
 
-## Automatic Setup (Recommended)
+## User Setup
 
-1. Open the app Settings
-2. Select "Local AI (Offline)" as your AI Provider
-3. In the "Local AI Models" section, tap on a model to download it
-4. Wait for the download to complete (~1-2GB depending on the model)
-5. The model will be automatically loaded and ready to use
+1. Open **Settings**
+2. Set **AI Provider** to **Local AI (Offline)**
+3. In **Local AI Models**, tap a model to download (1–5 GB)
+4. Wait for download; the model loads automatically
 
-## Recommended Models for Pixel Devices
+## Available Models
 
-The following models are optimized for ARM64 and work well on Pixel devices:
+Models defined in `LocalModelManager.AVAILABLE_MODELS`:
 
-| Model | Size | RAM Required | Best For |
-|-------|------|--------------|----------|
-| **Qwen 2.5 1.5B** ⭐ | 1.1 GB | 3-4 GB | General tasks, multilingual |
-| **Llama 3.2 1B** | 750 MB | 2-3 GB | Quick responses, basic tasks |
-| **Llama 3.2 3B** ⭐ | 2 GB | 5-6 GB | Best quality, more capable |
-| **Phi-3 Mini** ⭐ | 2.3 GB | 5-6 GB | Reasoning, complex tasks |
-| **SmolLM2 1.7B** | 1 GB | 3-4 GB | Fast, efficient |
-| **TinyLlama 1.1B** | 670 MB | 2-3 GB | Lowest memory, testing |
+| Model | ID | Size | Notes |
+|-------|-----|------|-------|
+| **Qwen3 4B** ⭐ | `qwen3-4b` | ~2.5 GB | Recommended, thinking mode |
+| Qwen3 1.7B | `qwen3-1.7b` | ~1.8 GB | Fastest Qwen3 |
+| **Gemma 4 E2B** ⭐ | `gemma-4-e2b` | ~3.1 GB | Google, Gemma prompt format |
+| Gemma 4 E4B | `gemma-4-e4b` | ~5.0 GB | Larger, tablets |
+| **DeepSeek R1 1.5B** ⭐ | `deepseek-r1-distill-qwen-1.5b` | ~1.1 GB | Reasoning |
+| **SmolLM3 3B** ⭐ | `smollm3-3b` | ~1.9 GB | Multilingual |
+| **Phi-4 Mini 3.8B** ⭐ | `phi-4-mini-instruct` | ~2.5 GB | Reasoning |
+| Gemma 3 4B | `gemma-3-4b-it` | ~2.5 GB | Multilingual |
 
-⭐ = Recommended for most users
+⭐ = recommended in the app UI
 
-## Building llama.cpp for Android (For Developers)
+**Limitations in local mode:** no web search, weather, vision, or tool calling.
 
-The prebuilt llama.cpp libraries are already included in the project. If you need to rebuild them:
+## Developer: Native Libraries
 
-### Prerequisites
-- Android NDK 27+
-- CMake 3.22.1+
-- Git
+Prebuilt libs live in `app/src/main/cpp/llama/prebuilt/arm64-v8a/` (gitignored). Without them, Gradle fails `checkLlamaPrebuilt`.
 
-### Steps
+### Quick build (recommended)
 
-1. Navigate to llama.cpp directory:
 ```bash
-cd app/src/main/cpp/llama/llama.cpp
+export NDK=/path/to/android/ndk
+./scripts/build-llama-android.sh "$NDK"
+./gradlew :app:assembleDebug
 ```
 
-2. Build for Android:
+Auto-download NDK:
+
 ```bash
+./scripts/build-llama-android.sh --download-ndk
+```
+
+OpenMP (not recommended — requires `libomp.so` on device):
+
+```bash
+./scripts/build-llama-android.sh --enable-openmp /path/to/ndk
+```
+
+### Manual CMake build
+
+```bash
+cd app/src/main/cpp/llama/llama.cpp
 export NDK=/path/to/android/sdk/ndk/27.0.12077973
 export CMAKE=/path/to/android/sdk/cmake/3.22.1/bin/cmake
 
 mkdir build-android && cd build-android
-
 $CMAKE .. \
     -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake \
     -DANDROID_ABI=arm64-v8a \
@@ -63,84 +75,28 @@ $CMAKE .. \
     -DLLAMA_CURL=OFF \
     -DBUILD_SHARED_LIBS=ON \
     -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384"
-
 $CMAKE --build . --config Release -j4 -- llama
-```
 
-3. Copy libraries:
-```bash
 cp bin/libllama.so ../prebuilt/arm64-v8a/
 cp bin/libggml*.so ../prebuilt/arm64-v8a/
 ```
 
-4. Rebuild the app:
-```bash
-cd ../../../../..
-./gradlew assembleDebug
-```
+## 16KB Page Size
 
-## 16KB Page Size Support
-
-The libraries are built with 16KB page size alignment for compatibility with Android 15+ and newer Pixel devices (Pixel 9+). This is achieved via the linker flag:
-
-```cmake
--DCMAKE_SHARED_LINKER_FLAGS="-Wl,-z,max-page-size=16384"
-```
+Linker flag `-Wl,-z,max-page-size=16384` ensures compatibility with Android 15+ and Pixel 9+.
 
 ## Troubleshooting
 
-### "No local model loaded" error
-- Make sure you've downloaded a model in Settings > Local AI Models
-- Check that the model file exists in the app's data directory
-- Ensure sufficient free storage space
-
-### Building / obtaining native llama libraries automatically
-If you don't have prebuilt native libraries in `app/src/main/cpp/llama/prebuilt/arm64-v8a`, you can use the helper script to build them locally (requires Android NDK 27+, CMake 3.22+):
-
-```bash
-# Provide path to your NDK via env var or first argument
-export NDK=/path/to/android/ndk
-./scripts/build-llama-android.sh "$NDK"
-```
-
-The script will clone `llama.cpp`, build `libggml-base.so`, `libggml-cpu.so`, `libggml.so` and `libllama.so` for `arm64-v8a` and copy them into the `prebuilt/arm64-v8a` directory. By default the helper script builds **without OpenMP** (so the resulting libs do not depend on `libomp.so` and work on all devices). If you need OpenMP, pass `--enable-openmp` to the script but note that `libomp.so` must then be present on the device or bundled into the APK.
-
-Usage (recommended):
-
-```bash
-# Build without OpenMP (default)
-./scripts/build-llama-android.sh /path/to/ndk
-
-# Or auto-download NDK and build without OpenMP
-./scripts/build-llama-android.sh --download-ndk
-
-# If you explicitly want OpenMP-enabled libs (not recommended):
-./scripts/build-llama-android.sh --enable-openmp /path/to/ndk
-```
-
-After building, rebuild the app:
-
-```bash
-./gradlew :app:assembleDebug
-```
-
-If you prefer not to build locally, you can also copy prebuilt `.so` files into `app/src/main/cpp/llama/prebuilt/arm64-v8a` (see project `docs/LOCAL_AI_SETUP.md`).
-
-### Slow inference
-- Use a smaller model (Llama 3.2 1B or TinyLlama)
-- Close other apps to free RAM
-- Models run on CPU only; performance depends on device
-
-### Model download fails
-- Check internet connection
-- Ensure sufficient free storage (2-3GB)
-- Try a different, smaller model
+| Problem | Fix |
+|---------|-----|
+| "No local model loaded" | Download a model in Settings; check free storage |
+| Build fails on `checkLlamaPrebuilt` | Run `scripts/build-llama-android.sh` |
+| Slow inference | Use Qwen3 1.7B or DeepSeek R1 1.5B; close other apps |
+| Download fails | Check network and 3+ GB free space |
 
 ## Technical Details
 
-- Native inference via llama.cpp JNI bridge
-- GGUF model format with Q4_K_M quantization
-- ARM64-v8a only (optimized for Pixel devices)
-- NEON SIMD optimizations enabled
-- 16KB page size alignment for Android 15+ compatibility
-- ChatML prompt format for instruction-tuned models
+- JNI bridge: `LlamaCppBridge.kt` → `llama_jni.cpp`
+- Quantization: Q4_K_M (default for most models)
+- Prompt formats: ChatML (default), Gemma (`promptFormat = "gemma"`)
+- Generation defaults: temperature 0.4, max 1024 tokens, context 2048 (configurable in code)

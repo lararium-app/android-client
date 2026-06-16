@@ -12,8 +12,8 @@ class ChatSession {
     
     companion object {
         private const val TAG = "ChatSession"
-        private const val MAX_HISTORY_SIZE = 20 // Max messages to keep
-        private const val MAX_CONTEXT_TOKENS = 8000 // Approximate token limit for context
+        private const val MAX_HISTORY_SIZE = 30 // Max messages to keep
+        private const val MAX_CONTEXT_TOKENS = 16000 // Approximate token limit for context
     }
     
     data class Message(

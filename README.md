@@ -1,90 +1,114 @@
 # AI Assistant for Android
 
-A privacy-focused AI assistant I built as an alternative to Google Gemini while using GrapheneOS. Works on any Android device, but tested primarily on Android 16 (Pixel 9 Pro).
+A privacy-focused AI assistant built as an alternative to Google Gemini on GrapheneOS. Works on any Android device; tested on Android 16 (Pixel 9 Pro).
 
-> **Why this exists**: I wanted the convenience of an always-available AI assistant (like Gemini) without sacrificing privacy on GrapheneOS. So I built my own.
+> **Why this exists**: Always-available AI assistant without sacrificing privacy — you choose the backend and what data leaves the device.
 
-## ✨ What It Does
+## What It Does
 
-- **Quick activation**: Press Volume Up + Volume Down simultaneously to trigger the assistant
-- **Voice & text input**: Talk to it or type - your choice
-- **Works with images**: Send photos and ask questions about them
-- **Web search**: Gets current information via Brave Search API
-- **Privacy-first**: Your data stays on your device or goes only to services you control
+- **Quick activation**: Volume Up + Down, triple power press, accessibility button, default assistant, Quick Settings tile
+- **Voice & text input**: Vosk (offline), Android system STT, or cloud Whisper
+- **Images & PDFs**: Vision via cloud models (OpenRouter)
+- **Web search & weather**: Brave, Exa, or LangSearch + OpenMeteo
+- **Local offline LLM**: llama.cpp GGUF models on-device
+- **Privacy-first**: Encrypted keys, optional fully offline operation
 
-## 🔧 How It Works
+## AI Backends
 
-### AI Backends (pick one):
-- **OpenRouter** - Access to 100+ AI models (Claude, GPT-4, Llama, Mistral, etc.)
+| Provider | Description |
+|----------|-------------|
+| **OpenRouter** | 100+ cloud models (Claude, GPT, Gemini, Llama, …) |
+| **Local AI** | On-device GGUF via llama.cpp — no internet needed |
 
-### Voice Recognition (pick one):
-- **Android built-in** - Uses your system's speech recognition
-- **Vosk (offline)** - Completely on-device, no internet needed
-- **Groq (cloud)** - Fast and accurate cloud-based transcription
+## Voice Recognition
 
-### Web Search:
-- **Brave Search API** - More private than Google, gets real-time info
+| Method | Notes |
+|--------|-------|
+| **Vosk** | Offline, multilingual — recommended on GrapheneOS |
+| **Android built-in** | System speech recognition |
+| **Whisper (cloud)** | Groq or OpenAI API — high accuracy |
 
-## 🚀 Quick Start
+## Web Search
 
-1. **Download** the APK from [Releases](../../releases)
-2. **Install** on your device
-3. **Get API keys**:
-   - [OpenRouter](https://openrouter.ai)
-   - [Brave Search](https://brave.com/search/api/) (optional)
-4. **Configure** in the app
+| Engine | API key |
+|--------|---------|
+| **Brave Search** | [brave.com/search/api](https://brave.com/search/api/) |
+| **Exa** | [exa.ai](https://exa.ai/) |
+| **LangSearch** | [langsearch.com](https://langsearch.com/) |
+
+## Quick Start
+
+1. **Download** APK from [Releases](../../releases) or build locally
+2. **Install** on device
+3. **Get API keys** (as needed):
+   - [OpenRouter](https://openrouter.ai) — required for cloud AI
+   - Search API — optional, for live web data
+   - [Groq](https://groq.com) — optional, for Whisper STT
+4. **Configure** in the app Settings
 5. **Set as default assistant**:
-```
+   ```
    Settings → Apps → Default apps → Digital assistant app → AI Assistant
-```
-6. **Enable accessibility** (for volume button activation):
-```
+   ```
+6. **Enable accessibility** (for volume button shortcut):
+   ```
    Settings → Accessibility → AI Assistant → Enable
+   ```
+
+## Build from Source
+
+```bash
+git clone https://github.com/mx37/grapheneos-ai.git
+cd grapheneos-ai
+./gradlew assembleDebug
 ```
 
-## 📱 Tested On
+For **local AI**, native libraries are required:
 
-- **Android 16** (Pixel 9 Pro with GrapheneOS)
-- Should work on any Android 12+ device
+```bash
+./scripts/build-llama-android.sh --download-ndk
+./gradlew assembleDebug
+```
 
-## 🔐 Privacy Features
+See [docs/LOCAL_AI_SETUP.md](docs/LOCAL_AI_SETUP.md).
 
-- **On-device speech recognition** (Vosk mode)
-- **Encrypted API key storage** (Android Keystore)
-- **No tracking or analytics**
-- **Minimal permissions** (only mic, internet, foreground service)
-- **You control what data goes where**
+## Tested On
 
-## 💡 Why Not Just Use Gemini?
+- **Android 16** (Pixel 9 Pro, GrapheneOS)
+- Android 12+ should work (minSdk 26)
 
-Good question! Here's my reasoning:
+## Privacy
 
-- **Privacy**: Gemini is deeply integrated into Android and sends lots of data to Google
-- **Control**: With this, you choose which AI backend and what data to share
-- **Open source**: You can see exactly what it does
-- **GrapheneOS compatible**: Works perfectly without Google Play Services
+- On-device speech (Vosk) and on-device LLM available
+- API keys stored in Android Keystore (AES-256-GCM)
+- PII redaction before cloud requests (device IDs, phones, emails)
+- No tracking or analytics
+- Minimal permissions: microphone, internet, foreground service
 
-## 📚 Documentation
+## Known Issues
 
-- **[Architecture Overview](docs/ARCHITECTURE.md)** - Technical design and components
-- **[Documentation](docs/DOCUMENTATION.md)** - How to build and use
+- Local AI requires building or obtaining native `arm64-v8a` llama libraries (see LOCAL_AI_SETUP)
+- Local models have no web search, weather, or vision
+- Free OpenRouter models may refuse tool calling — use a paid mini model for reliable web search
+- TTS quality depends on the engine installed on the device
 
-## 🤝 Contributing
+## Documentation
 
-This started as a personal project to solve my own problem, but I'd love to see it improve! Feel free to:
+- [Architecture](docs/ARCHITECTURE.md) — code structure and data flow
+- [Local AI Setup](docs/LOCAL_AI_SETUP.md) — models and native build
+- [Documentation Guide](docs/DOCUMENTATION.md) — navigation index
 
-- Report bugs
-- Suggest features
-- Submit pull requests
-- Share your experience
+## Contributing
 
-## 📄 License
+Bug reports, feature suggestions, and pull requests welcome.
+
+## License
 
 MIT
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
-- **GrapheneOS** - For making privacy-focused Android possible
-- **OpenRouter** - For unified access to multiple AI models
-- **Brave Search** - For privacy-respecting search API
-- **Vosk** - For on-device speech recognition
+- **GrapheneOS** — privacy-focused Android
+- **OpenRouter** — unified model API
+- **Brave / Exa / LangSearch** — search APIs
+- **Vosk** — on-device speech recognition
+- **llama.cpp** — on-device LLM inference

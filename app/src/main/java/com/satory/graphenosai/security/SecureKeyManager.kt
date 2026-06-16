@@ -28,7 +28,7 @@ class SecureKeyManager(private val context: Context) {
         private const val PREFS_NAME = "assistant_secure_prefs"
         private const val PREF_OPENROUTER_KEY = "openrouter_api_key"
         private const val PREF_GROQ_KEY = "groq_api_key"
-        private const val PREF_SEARCH_PROXY_URL = "search_proxy_url"
+
         private const val PREF_TOKEN_REFRESH_TIME = "token_refresh_time"
         private const val PREF_BRAVE_API_KEY = "brave_api_key"
         private const val PREF_EXA_API_KEY = "exa_api_key"
@@ -190,23 +190,6 @@ class SecureKeyManager(private val context: Context) {
      */
     fun clearGroqApiKey() {
         prefs.edit().remove(PREF_GROQ_KEY).apply()
-    }
-
-    // ========== Search Proxy Configuration ==========
-
-    fun setSearchProxyUrl(url: String) {
-        val encrypted = encrypt(url)
-        prefs.edit().putString(PREF_SEARCH_PROXY_URL, encrypted).apply()
-    }
-
-    fun getSearchProxyUrl(): String? {
-        val encrypted = prefs.getString(PREF_SEARCH_PROXY_URL, null) ?: return null
-        return try {
-            decrypt(encrypted)
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to decrypt proxy URL", e)
-            null
-        }
     }
 
     // ========== Brave Search API Key Management ==========

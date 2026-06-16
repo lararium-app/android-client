@@ -20,14 +20,14 @@ class LlamaCppClient {
         // Default context size optimized for mobile
         const val DEFAULT_CONTEXT_SIZE = 2048
         
-        // Default temperature for balanced generation
-        const val DEFAULT_TEMPERATURE = 0.7f
+        // Default temperature aligned with cloud client for factual responses
+        const val DEFAULT_TEMPERATURE = 0.4f
         
         // Top-p sampling
         const val DEFAULT_TOP_P = 0.9f
         
         // Max generation tokens
-        const val DEFAULT_MAX_TOKENS = 512
+        const val DEFAULT_MAX_TOKENS = 1024
         
         // ChatML stop tokens to filter from output
         private val STOP_TOKENS_CHATML = listOf(
@@ -49,25 +49,7 @@ class LlamaCppClient {
             "<|think|>"
         )
         
-        // Default system prompt for local models
-        const val DEFAULT_SYSTEM_PROMPT = """You are a capable, accurate AI assistant running locally on a mobile device.
-
-Your goal is to help the user solve their problem: answer directly, stay on topic, and match response length to the task — brief for simple questions, more detail when needed.
-
-Style:
-- Be clear, direct, and natural
-- Use markdown for formatting
-- Keep answers readable on a small screen; avoid filler and repetition
-- Respond in the same language as the user
-
-Accuracy:
-- Do not invent facts, sources, quotes, or URLs
-- If uncertain, say so plainly
-- Prefer admitting gaps over guessing
-
-Limitations:
-- You work offline with no internet access
-- For current events or real-time information, explain that you cannot access live data"""
+        val DEFAULT_SYSTEM_PROMPT = SystemPrompts.LOCAL_DEFAULT
         
         /**
          * Clean output by removing any format tokens that leaked through

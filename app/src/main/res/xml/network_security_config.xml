@@ -48,7 +48,7 @@
         </trust-anchors>
     </domain-config>
     
-    <!-- Debug configuration for local proxy testing -->
+    <!-- Debug overrides for user-installed CAs during development -->
     <debug-overrides>
         <trust-anchors>
             <certificates src="system" />

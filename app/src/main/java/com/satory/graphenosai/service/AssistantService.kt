@@ -1342,7 +1342,10 @@ class AssistantService : Service() {
         }
         
         var sanitized = query
-        sanitized = sanitized.replace(Regex("[a-f0-9]{16}"), "[REDACTED]")
+        sanitized = sanitized.replace(
+            Regex("(?i)(device\\s*id|android\\s*id|id\\s*is)\\s*[:=]?\\s*\\b[a-f0-9]{16}\\b"),
+            "$1 [ID]"
+        )
         sanitized = sanitized.replace(Regex("\\+?\\d{10,15}"), "[PHONE]")
         sanitized = sanitized.replace(
             Regex("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}"),
