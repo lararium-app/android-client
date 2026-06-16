@@ -58,8 +58,8 @@ class AudioCaptureManager(private val context: Context) {
         }
 
         if (isRecording) {
-            close(IllegalStateException("Already recording"))
-            return@callbackFlow
+            Log.w(TAG, "Stale recording detected, forcing cleanup before restart")
+            stopRecordingInternal()
         }
 
         try {
@@ -162,6 +162,14 @@ class AudioCaptureManager(private val context: Context) {
         }
         
         pcmOutputStream = null
+
+        try {
+            audioRecord?.release()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error releasing AudioRecord", e)
+        }
+        audioRecord = null
+
         Log.i(TAG, "Audio capture stopped")
     }
 

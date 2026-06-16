@@ -61,7 +61,11 @@ class AssistantService : Service() {
     lateinit var chatHistoryManager: ChatHistoryManager
     
     private var speechRecognitionJob: Job? = null
+    private var audioCaptureJob: Job? = null
     private var activeResponseJob: Job? = null
+
+    private enum class VoiceCaptureMode { NONE, SYSTEM, VOSK, WHISPER }
+    private var activeVoiceCaptureMode = VoiceCaptureMode.NONE
     private val localModelMutex = Mutex()
     private var localModelLoadJob: Deferred<Result<Unit>>? = null
 
@@ -293,16 +297,14 @@ class AssistantService : Service() {
      * Start voice capture using Vosk, System speech, or Whisper cloud transcription.
      */
     fun startVoiceCapture() {
-        // Reset any stuck listening state - check if recognizer is actually listening
         if (_assistantState.value == AssistantState.Listening) {
-            if (!speechRecognizerManager.isCurrentlyListening() && !audioCaptureManager.isCapturing()) {
-                // State is stuck - reset it
-                Log.w(TAG, "Resetting stuck listening state")
-                _assistantState.value = AssistantState.Idle
-            } else {
-                // Actually recording - don't start again
+            if (speechRecognizerManager.isCurrentlyListening() || audioCaptureManager.isCapturing()) {
                 return
             }
+            Log.w(TAG, "Resetting stuck listening state")
+            resetVoiceCapture()
+        } else {
+            resetVoiceCapture()
         }
         
         _assistantState.value = AssistantState.Listening
@@ -361,8 +363,19 @@ class AssistantService : Service() {
         }
     }
     
+    private fun resetVoiceCapture() {
+        speechRecognitionJob?.cancel()
+        speechRecognitionJob = null
+        audioCaptureJob?.cancel()
+        audioCaptureJob = null
+        speechRecognizerManager.stopListening()
+        audioCaptureManager.cancelCapture()
+        activeVoiceCaptureMode = VoiceCaptureMode.NONE
+    }
+
     private fun startSystemSpeechRecognition() {
         Log.i(TAG, "Starting system speech recognition")
+        activeVoiceCaptureMode = VoiceCaptureMode.SYSTEM
         
         speechRecognitionJob = serviceScope.launch(Dispatchers.Main) {
             try {
@@ -444,38 +457,39 @@ class AssistantService : Service() {
     
     private fun startVoskCapture() {
         Log.i(TAG, "Starting Vosk voice capture")
-        
-        serviceScope.launch(Dispatchers.IO) {
-            try {
-                audioCaptureManager.startCapture()
-                    .collect { audioChunk ->
-                        // Buffer audio for batch processing
-                    }
-            } catch (e: Exception) {
-                Log.e(TAG, "Audio capture error", e)
-                _assistantState.value = AssistantState.Error(e.message ?: "Audio capture failed")
-            }
-        }
+        activeVoiceCaptureMode = VoiceCaptureMode.VOSK
+        startAudioCaptureJob("Vosk")
     }
     
     private fun startWhisperCapture() {
         Log.i(TAG, "Starting Whisper cloud capture")
-        
-        // Configure Whisper provider from settings
+        activeVoiceCaptureMode = VoiceCaptureMode.WHISPER
+
         whisperTranscriber.provider = when (settingsManager.whisperProvider) {
             SettingsManager.WHISPER_OPENAI -> WhisperTranscriber.Provider.OPENAI
             else -> WhisperTranscriber.Provider.GROQ
         }
-        
-        serviceScope.launch(Dispatchers.IO) {
+
+        startAudioCaptureJob("Whisper")
+    }
+
+    private fun startAudioCaptureJob(label: String) {
+        audioCaptureJob?.cancel()
+        audioCaptureJob = serviceScope.launch(Dispatchers.IO) {
             try {
                 audioCaptureManager.startCapture()
-                    .collect { audioChunk ->
-                        // Buffer audio for batch processing
-                    }
+                    .collect { }
+            } catch (e: CancellationException) {
+                Log.d(TAG, "$label audio capture cancelled")
             } catch (e: Exception) {
-                Log.e(TAG, "Audio capture error (Whisper)", e)
-                _assistantState.value = AssistantState.Error(e.message ?: "Audio capture failed")
+                Log.e(TAG, "$label audio capture error", e)
+                if (_assistantState.value is AssistantState.Listening) {
+                    _assistantState.value = AssistantState.Error(e.message ?: "Audio capture failed")
+                }
+            } finally {
+                if (audioCaptureJob === coroutineContext[Job]) {
+                    audioCaptureJob = null
+                }
             }
         }
     }
@@ -485,18 +499,15 @@ class AssistantService : Service() {
      */
     fun stopVoiceCapture() {
         if (_assistantState.value != AssistantState.Listening) return
-        
-        // Cancel system speech recognition if active
+
+        val captureMode = activeVoiceCaptureMode
+
         speechRecognitionJob?.cancel()
+        speechRecognitionJob = null
         speechRecognizerManager.stopListening()
-        
-        val voiceMethod = settingsManager.voiceInputMethod
-        val useSystemRecognition = voiceMethod == SettingsManager.VOICE_INPUT_SYSTEM
-        val useWhisper = voiceMethod == SettingsManager.VOICE_INPUT_WHISPER
-        
-        if (useSystemRecognition && speechRecognizerManager.isAvailable()) {
-            // For system recognition, the result is already processed in startSystemSpeechRecognition
-            // Just process what we have if auto-send is off
+
+        if (captureMode == VoiceCaptureMode.SYSTEM) {
+            activeVoiceCaptureMode = VoiceCaptureMode.NONE
             if (!settingsManager.autoSendVoice && _transcription.value.isNotBlank()) {
                 _assistantState.value = AssistantState.Processing
                 serviceScope.launch(Dispatchers.IO) {
@@ -507,13 +518,33 @@ class AssistantService : Service() {
             }
             return
         }
-        
-        // Whisper or Vosk processing
+
+        if (captureMode != VoiceCaptureMode.VOSK && captureMode != VoiceCaptureMode.WHISPER) {
+            audioCaptureJob?.cancel()
+            audioCaptureJob = null
+            audioCaptureManager.cancelCapture()
+            activeVoiceCaptureMode = VoiceCaptureMode.NONE
+            _assistantState.value = AssistantState.Idle
+            return
+        }
+
+        val useWhisper = captureMode == VoiceCaptureMode.WHISPER
         _assistantState.value = AssistantState.Processing
-        
+
+        audioCaptureJob?.cancel()
+        audioCaptureJob = null
+
         serviceScope.launch(Dispatchers.IO) {
             try {
-                val audioFile = audioCaptureManager.stopCapture()
+                val audioFile = if (audioCaptureManager.isCapturing()) {
+                    audioCaptureManager.stopCapture()
+                } else {
+                    Log.w(TAG, "No active audio capture on stop, skipping transcription")
+                    activeVoiceCaptureMode = VoiceCaptureMode.NONE
+                    _assistantState.value = AssistantState.Idle
+                    return@launch
+                }
+                activeVoiceCaptureMode = VoiceCaptureMode.NONE
                 
                 if (useWhisper) {
                     // Use Whisper cloud transcription
@@ -1356,9 +1387,7 @@ class AssistantService : Service() {
 
     fun cancelOperation() {
         stopResponse()
-        speechRecognitionJob?.cancel()
-        speechRecognizerManager.stopListening()
-        audioCaptureManager.cancelCapture()
+        resetVoiceCapture()
         ttsManager.stop()
         // Also stop local generation if running
         llamaCppClient.stopGeneration()
