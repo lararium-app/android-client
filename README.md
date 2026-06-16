@@ -64,10 +64,6 @@ Good question! Here's my reasoning:
 - **Open source**: You can see exactly what it does
 - **GrapheneOS compatible**: Works perfectly without Google Play Services
 
-## ⚠️ Known Issues
-
-
-
 ## 📚 Documentation
 
 - **[Architecture Overview](docs/ARCHITECTURE.md)** - Technical design and components
