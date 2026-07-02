@@ -1,5 +1,7 @@
 # AI Assistant for Android
 
+⚠️ DISCLAIMER: THIS IS AN UNOFFICIAL, COMMUNITY-MADE PROJECT. IT IS NOT AFFILIATED WITH, ENDORSED BY, OR OFFICIALLY SUPPORTED BY THE GRAPHENEOS PROJECT OR ITS TEAM.
+
 A privacy-focused AI assistant built as an alternative to Google Gemini on GrapheneOS. Works on any Android device; tested on Android 16 (Pixel 9 Pro).
 
 > **Why this exists**: Always-available AI assistant without sacrificing privacy — you choose the backend and what data leaves the device.
