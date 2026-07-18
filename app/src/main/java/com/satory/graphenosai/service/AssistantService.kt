@@ -50,15 +50,20 @@ class AssistantService : Service() {
     private lateinit var whisperTranscriber: WhisperTranscriber
     private lateinit var speechRecognizerManager: SpeechRecognizerManager
     lateinit var openRouterClient: OpenRouterClient
+        private set
+    val isOpenRouterReady: Boolean get() = ::openRouterClient.isInitialized
     private lateinit var llamaCppClient: LlamaCppClient
     lateinit var localModelManager: LocalModelManager
+        private set
     private lateinit var braveSearchClient: BraveSearchClient
     private lateinit var exaSearchClient: ExaSearchClient
     private lateinit var langSearchClient: LangSearchClient
     private lateinit var openMeteoClient: OpenMeteoClient
     lateinit var ttsManager: TTSManager
+        private set
     lateinit var settingsManager: SettingsManager
-    lateinit var chatHistoryManager: ChatHistoryManager
+        private set
+    private lateinit var chatHistoryManager: ChatHistoryManager
     
     private var speechRecognitionJob: Job? = null
     private var audioCaptureJob: Job? = null
@@ -96,6 +101,13 @@ class AssistantService : Service() {
     
     fun toggleWebSearch() {
         _webSearchEnabled.value = !_webSearchEnabled.value
+    }
+    
+    /**
+     * Safely check if current model supports vision, even if OpenRouter client hasn't been initialized yet.
+     */
+    fun isVisionCapable(): Boolean {
+        return isOpenRouterReady && openRouterClient.isVisionCapable()
     }
     
     /**
@@ -609,7 +621,11 @@ class AssistantService : Service() {
     fun processTextQuery(query: String, imageBase64: String? = null) {
         // Ensure query is never empty
         val effectiveQuery = query.ifBlank { 
-            if (imageBase64 != null) "Describe this image" else return // Can't process empty query without image
+            if (imageBase64 != null) "Describe this image" else {
+                // Nothing to process — reset state and bail
+                _assistantState.value = AssistantState.Idle
+                return
+            }
         }
         
         stopResponse()
@@ -1424,8 +1440,7 @@ class AssistantService : Service() {
         llamaCppClient.stopGeneration()
 
         if (wasSpeakingOnly) {
-            // Response is already in chat history — only indicate TTS was stopped.
-            _response.value = "[TTS stopped]"
+            // TTS was in progress — stop speech silently, don't modify the response
             _assistantState.value = AssistantState.Complete
             return
         }
