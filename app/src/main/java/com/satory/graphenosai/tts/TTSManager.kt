@@ -6,6 +6,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.util.Log
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeout
 import java.util.Locale
 import kotlin.coroutines.resume
 
@@ -19,6 +20,7 @@ class TTSManager(context: Context) {
     companion object {
         private const val TAG = "TTSManager"
         private const val UTTERANCE_ID_PREFIX = "assistant_tts_"
+        private const val TTS_TIMEOUT_MS = 30_000L
 
         /**
          * Commonly supported Android TTS locales with display names.
@@ -247,7 +249,9 @@ class TTSManager(context: Context) {
     /**
      * Speak text and suspend until complete.
      */
-    suspend fun speakAndWait(text: String): Boolean = suspendCancellableCoroutine { cont ->
+    suspend fun speakAndWait(text: String): Boolean =
+        withTimeout(TTS_TIMEOUT_MS) {
+        suspendCancellableCoroutine { cont ->
         if (!isInitialized) {
             cont.resume(false)
             return@suspendCancellableCoroutine
@@ -296,6 +300,7 @@ class TTSManager(context: Context) {
         cont.invokeOnCancellation {
             stop()
         }
+    }
     }
 
     /**
