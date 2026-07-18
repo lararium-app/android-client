@@ -56,7 +56,7 @@ class AssistantService : Service() {
     private lateinit var exaSearchClient: ExaSearchClient
     private lateinit var langSearchClient: LangSearchClient
     private lateinit var openMeteoClient: OpenMeteoClient
-    private lateinit var ttsManager: TTSManager
+    lateinit var ttsManager: TTSManager
     lateinit var settingsManager: SettingsManager
     lateinit var chatHistoryManager: ChatHistoryManager
     
@@ -212,6 +212,11 @@ class AssistantService : Service() {
         langSearchClient = LangSearchClient(app.secureKeyManager)
         openMeteoClient = OpenMeteoClient()
         ttsManager = TTSManager(this)
+
+        // Apply saved TTS language preference
+        val savedTtsLang = settingsManager.ttsLanguage
+        ttsManager.setLanguage(savedTtsLang)
+        Log.i(TAG, "TTS language set to: $savedTtsLang")
         
         // Initialize Vosk with selected language (and secondary for multilingual)
         serviceScope.launch(Dispatchers.IO) {
@@ -1363,6 +1368,13 @@ class AssistantService : Service() {
                     Log.w(TAG, "Cannot switch to $language - model not downloaded")
                 }
             }
+        }
+
+        // Reload TTS language
+        val savedTtsLang = settingsManager.ttsLanguage
+        if (ttsManager.getCurrentLanguageTag() != savedTtsLang) {
+            Log.i(TAG, "Switching TTS language to: $savedTtsLang")
+            ttsManager.setLanguage(savedTtsLang)
         }
     }
 

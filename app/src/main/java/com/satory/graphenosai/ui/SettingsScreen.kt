@@ -714,6 +714,39 @@ fun SettingsScreen(
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
                     )
                 }
+
+                if (ttsAvailable) {
+                    var ttsLanguage by remember { mutableStateOf(settingsManager.ttsLanguage) }
+                    var showTtsLanguageDialog by remember { mutableStateOf(false) }
+
+                    val ttsLocaleInfo = com.satory.graphenosai.tts.TTSManager.getLocaleByTag(ttsLanguage)
+
+                    SettingsItem(
+                        icon = Icons.Default.Language,
+                        title = "TTS Language",
+                        subtitle = ttsLocaleInfo.displayName,
+                        onClick = {
+                            if (ttsAvailable) {
+                                showTtsLanguageDialog = true
+                            }
+                        }
+                    )
+
+                    if (showTtsLanguageDialog) {
+                        TtsLanguageSelectionDialog(
+                            currentLanguage = ttsLanguage,
+                            onLanguageSelected = { tag ->
+                                ttsLanguage = tag
+                                settingsManager.ttsLanguage = tag
+                                assistantService?.let { service ->
+                                    service.ttsManager.setLanguage(tag)
+                                }
+                                showTtsLanguageDialog = false
+                            },
+                            onDismiss = { showTtsLanguageDialog = false }
+                        )
+                    }
+                }
             }
 
             SettingsSection(title = "Advanced") {
@@ -1629,6 +1662,62 @@ fun LanguageSelectionDialog(
                                     Icon(Icons.Default.CheckCircle, "Downloaded",
                                         tint = MaterialTheme.colorScheme.primary)
                                 }
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun TtsLanguageSelectionDialog(
+    currentLanguage: String,
+    onLanguageSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(0.9f).padding(16.dp),
+            shape = MaterialTheme.shapes.extraLarge,
+            tonalElevation = 6.dp
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Text("Select TTS Language",
+                    style = MaterialTheme.typography.headlineSmall,
+                    modifier = Modifier.padding(bottom = 16.dp))
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)
+                ) {
+                    items(com.satory.graphenosai.tts.TTSManager.AVAILABLE_TTS_LOCALES) { localeInfo ->
+                        val isSelected = currentLanguage == localeInfo.localeTag()
+
+                        ListItem(
+                            modifier = Modifier.clickable { onLanguageSelected(localeInfo.localeTag()) }.padding(vertical = 2.dp),
+                            headlineContent = {
+                                Text(localeInfo.displayName,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
+                            },
+                            supportingContent = {
+                                Text(localeInfo.localeTag(),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            },
+                            leadingContent = {
+                                RadioButton(selected = isSelected,
+                                    onClick = { onLanguageSelected(localeInfo.localeTag()) })
                             }
                         )
                     }
