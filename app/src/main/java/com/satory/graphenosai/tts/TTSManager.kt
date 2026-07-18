@@ -74,7 +74,7 @@ class TTSManager(context: Context) {
             return try {
                 val parts = tag.split("-", limit = 2)
                 if (parts.size == 2) {
-                    Locale(parts[0], parts[1].uppercase())
+                    Locale(parts[0], parts[1].uppercase(Locale.ROOT))
                 } else {
                     Locale(tag)
                 }

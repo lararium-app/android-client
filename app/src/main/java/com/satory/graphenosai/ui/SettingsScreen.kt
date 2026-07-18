@@ -741,10 +741,8 @@ fun SettingsScreen(
                             onLanguageSelected = { tag ->
                                 ttsLanguage = tag
                                 settingsManager.ttsLanguage = tag
-                                if (ttsLanguage == tag) {
-                                    com.satory.graphenosai.tts.TTSManager.getLocaleByTag(tag).let { info ->
-                                        Log.d("TTS", "Language selected: ${info.displayName} ($tag)")
-                                    }
+                                com.satory.graphenosai.tts.TTSManager.getLocaleByTag(tag).let { info ->
+                                    Log.d("TTS", "Language selected: ${info.displayName} ($tag)")
                                 }
                                 assistantService?.let { service ->
                                     service.ttsManager.setLanguage(tag)
