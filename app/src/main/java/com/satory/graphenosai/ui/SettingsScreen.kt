@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import com.satory.graphenosai.AssistantApplication
 import com.satory.graphenosai.audio.VoskTranscriber
 import com.satory.graphenosai.llm.LocalModelManager
 import com.satory.graphenosai.service.AssistantService
+import com.satory.graphenosai.tts.TTSManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -735,9 +737,15 @@ fun SettingsScreen(
                     if (showTtsLanguageDialog) {
                         TtsLanguageSelectionDialog(
                             currentLanguage = ttsLanguage,
+                            ttsManager = assistantService?.ttsManager,
                             onLanguageSelected = { tag ->
                                 ttsLanguage = tag
                                 settingsManager.ttsLanguage = tag
+                                if (ttsLanguage == tag) {
+                                    com.satory.graphenosai.tts.TTSManager.getLocaleByTag(tag).let { info ->
+                                        Log.d("TTS", "Language selected: ${info.displayName} ($tag)")
+                                    }
+                                }
                                 assistantService?.let { service ->
                                     service.ttsManager.setLanguage(tag)
                                 }
@@ -1680,6 +1688,7 @@ fun LanguageSelectionDialog(
 @Composable
 fun TtsLanguageSelectionDialog(
     currentLanguage: String,
+    ttsManager: TTSManager? = null,
     onLanguageSelected: (String) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1697,27 +1706,64 @@ fun TtsLanguageSelectionDialog(
                     style = MaterialTheme.typography.headlineSmall,
                     modifier = Modifier.padding(bottom = 16.dp))
 
+                Text("Availability depends on your device's TTS engine (e.g., Google TTS).",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp))
+
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)
                 ) {
-                    items(com.satory.graphenosai.tts.TTSManager.AVAILABLE_TTS_LOCALES) { localeInfo ->
+                    items(TTSManager.AVAILABLE_TTS_LOCALES) { localeInfo ->
                         val isSelected = currentLanguage == localeInfo.localeTag()
+                        val isAvailable = ttsManager?.isLanguageAvailable(localeInfo.locale) == true
 
                         ListItem(
-                            modifier = Modifier.clickable { onLanguageSelected(localeInfo.localeTag()) }.padding(vertical = 2.dp),
+                            modifier = Modifier
+                                .clickable(enabled = isAvailable) {
+                                    if (isAvailable) {
+                                        onLanguageSelected(localeInfo.localeTag())
+                                    }
+                                }
+                                .padding(vertical = 2.dp),
                             headlineContent = {
                                 Text(localeInfo.displayName,
                                     style = MaterialTheme.typography.bodyLarge,
-                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
+                                    fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (isAvailable) MaterialTheme.colorScheme.onSurface
+                                            else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f))
                             },
                             supportingContent = {
-                                Text(localeInfo.localeTag(),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(localeInfo.localeTag(),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (isAvailable) MaterialTheme.colorScheme.onSurfaceVariant
+                                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.38f))
+                                    if (!isAvailable) {
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("unavailable",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
+                                    }
+                                }
                             },
                             leadingContent = {
-                                RadioButton(selected = isSelected,
-                                    onClick = { onLanguageSelected(localeInfo.localeTag()) })
+                                RadioButton(
+                                    selected = isSelected,
+                                    enabled = isAvailable,
+                                    onClick = {
+                                        if (isAvailable) {
+                                            onLanguageSelected(localeInfo.localeTag())
+                                        }
+                                    }
+                                )
+                            },
+                            trailingContent = {
+                                if (isAvailable) {
+                                    Icon(Icons.Default.CheckCircle, "Available",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(18.dp))
+                                }
                             }
                         )
                     }
