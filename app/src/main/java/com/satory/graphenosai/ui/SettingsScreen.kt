@@ -42,6 +42,7 @@ import com.satory.graphenosai.audio.VoskTranscriber
 import com.satory.graphenosai.llm.LocalModelManager
 import com.satory.graphenosai.service.AssistantService
 import com.satory.graphenosai.tts.TTSManager
+import com.satory.graphenosai.BuildConfig
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -776,7 +777,7 @@ fun SettingsScreen(
                 SettingsItem(
                     icon = Icons.Default.Info,
                     title = "AI Assistant for Android",
-                    subtitle = "v1.2.0",
+                    subtitle = "v${BuildConfig.VERSION_NAME}", // Dynamic version with build.gradle.kts
                     onClick = {}
                 )
 
