@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Voice interaction service configuration for system assistant integration -->
 <voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:sessionService="com.satory.graphenosai.service.AssistantVoiceInteractionSessionService"
+    android:sessionService="app.lararium.service.AssistantVoiceInteractionSessionService"
     android:supportsAssist="true"
     android:supportsLaunchVoiceAssistFromKeyguard="true"
     android:supportsLocalInteraction="true" />

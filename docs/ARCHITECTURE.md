@@ -1,12 +1,12 @@
 # Architecture Overview
 
-Privacy-focused Android AI assistant (`com.satory.graphenosai`). Integrates as a system digital assistant with volume-key activation, voice/text input, optional web search, and cloud or on-device LLM backends.
+Privacy-focused Android AI assistant (`app.lararium`). Integrates as a system digital assistant with volume-key activation, voice/text input, optional web search, and cloud or on-device LLM backends.
 
 ## Project Structure
 
 ```
 app/src/main/
-├── java/com/satory/graphenosai/
+├── java/app/lararium/
 │   ├── AssistantApplication.kt
 │   ├── MainActivity.kt                    # Setup dashboard + navigation
 │   ├── service/

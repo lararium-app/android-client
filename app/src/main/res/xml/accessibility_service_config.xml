@@ -10,4 +10,4 @@
     android:description="@string/accessibility_service_description"
     android:notificationTimeout="100"
     android:packageNames=""
-    android:settingsActivity="com.satory.graphenosai.ui.settings.AccessibilitySettingsActivity" />
+    android:settingsActivity="app.lararium.ui.settings.AccessibilitySettingsActivity" />

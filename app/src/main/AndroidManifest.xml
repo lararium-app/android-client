@@ -133,7 +133,7 @@
             android:name=".receiver.AssistantShortcutReceiver"
             android:exported="false">
             <intent-filter>
-                <action android:name="com.satory.graphenosai.ACTIVATE_ASSISTANT" />
+                <action android:name="app.lararium.ACTIVATE_ASSISTANT" />
             </intent-filter>
         </receiver>
 
