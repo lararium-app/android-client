@@ -44,7 +44,7 @@ import app.lararium.audio.VoskTranscriber
 import app.lararium.llm.DownloadProgress
 import app.lararium.llm.LocalModelManager
 import app.lararium.service.AssistantService
-import TTSManager
+import app.lararium.tts.TTSManager
 import app.lararium.BuildConfig
 import kotlinx.coroutines.launch
 
