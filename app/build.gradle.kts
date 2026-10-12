@@ -27,11 +27,11 @@ if (configuredReleaseSigningProperties.isNotEmpty() &&
 val hasReleaseSigning = configuredReleaseSigningProperties.size == releaseSigningPropertyNames.size
 
 android {
-    namespace = "com.satory.graphenosai"
+    namespace = "app.lararium"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.satory.graphenosai"
+        applicationId = "app.lararium"
         minSdk = 26
         targetSdk = 36
         versionCode = 5

@@ -19,9 +19,9 @@
 -dontwarn org.vosk.**
 
 # Keep Llama JNI bridge and related classes
--keep class com.satory.graphenosai.llm.LlamaCppBridge { *; }
--keep class com.satory.graphenosai.llm.LlamaCppBridge$* { *; }
--dontwarn com.satory.graphenosai.llm.**
+-keep class app.lararium.llm.LlamaCppBridge { *; }
+-keep class app.lararium.llm.LlamaCppBridge$* { *; }
+-dontwarn app.lararium.llm.**
 
 # Keep accessibility service
 -keep class * extends android.accessibilityservice.AccessibilityService

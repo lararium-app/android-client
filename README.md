@@ -1,126 +1,104 @@
-# AI Assistant for Android — self-hosted fork
+# Lararium — Android client
 
-> **This is a maintained fork of [mx37/gos-ai](https://github.com/mx37/gos-ai)** with a
-> self-hosted-first direction: your phone as a privacy-preserving assistant **front-end**,
-> your own server as the brain. All credit for the original design and implementation goes
-> upstream; we rebranded the primary experience around running your own LLM backend and
-> keep this line building signed, reproducible APKs via CI.
+Android front-end for [Lararium](https://github.com/lararium-app/lararium): an
+open-source, self-hosted personal AI agent — the shrine for your digital
+hearth. Your phone is the sensor, the voice, and the approval gate; your own
+`hearthd` daemon is the brain. No third-party cloud, no telemetry, no accounts.
 
-⚠️ DISCLAIMER: THIS IS AN UNOFFICIAL, COMMUNITY-MADE PROJECT. IT IS NOT AFFILIATED WITH, ENDORSED BY, OR OFFICIALLY SUPPORTED BY THE GRAPHENEOS PROJECT OR ITS TEAM.
+Based on [gos-ai](https://github.com/mx37/gos-ai) by Maxim (MIT): full credit
+for the original app architecture, assistant UX, on-device voice pipeline, and
+local llama.cpp integration. Lararium points that foundation at the Lararium
+surface protocol — streaming sessions, tool-call cards, Knock-First approvals,
+and doors & policy.
 
-A privacy-focused AI assistant built as an alternative to Google Gemini on GrapheneOS. Works on any Android device; tested on Android 16 (Pixel 9 Pro).
+⚠️ DISCLAIMER: THIS IS A COMMUNITY-OPEN-SOURCE PROJECT. IT IS NOT AFFILIATED WITH, ENDORSED BY, OR OFFICIALLY SUPPORTED BY THE GRAPHENEOS PROJECT OR ITS TEAM.
 
-> **Why this exists**: Always-available AI assistant without sacrificing privacy — ideally
-> **no third-party cloud at all**. Point the app at your own OpenAI-compatible server
-> (llama.cpp, llama-server, Hermes API, Ollama, vLLM, …) with just a base URL and an API
-> key; the phone stays a sensor/actuator UI and the agent logic lives on hardware you own.
+Works on any Android 8.0+ device (minSdk 26); tested on Android 16 (Pixel 9 Pro,
+GrapheneOS).
 
-## Project Direction
+## Why this exists
 
-This fork exists because the upstream project has been quiet since August 2026 (open
-release-packaging bug since July; a collaboration inquiry posted 2026-09-28 awaits reply —
-see mx37/gos-ai#12). Goals, in priority order:
+An always-available assistant without surrendering your data to a cloud
+brain-in-a-box. Pair the app with your own `hearthd` and the phone stays a
+sensor/actuator UI: chat streams token-by-token, tool and cell operations
+render as cards, and gated actions knock — an approval card you answer from
+your pocket. All agent logic, memory, and policy live on hardware you own.
 
-1. **Self-hosted endpoint is the default provider** — set your server's URL + API key and
-   the app talks only to it. No model catalogs, no fallback cloud, no telemetry-shaped
-   decisions made by a hosted provider.
-2. **On-device agent tools** — the local agent loop (currently web search, weather) grows
-   toward device actions (intents, timers, clipboard, media) so the phone behaves like a
-   real assistant with a remote brain.
-3. **On-device LLM as fallback** — Local AI (llama.cpp GGUF) for offline use, built into
-   CI APKs so it works out of the box on arm64 phones.
-4. **OpenRouter kept as an advanced/testing fallback**, never the default.
+## Features
 
-Releases are built by GitHub Actions from tagged commits; the APK's SHA-256 is published
-with each release (upstream once shipped a stale APK under a new tag — we verify).
+- **Many ways in**: Volume Up + Down, triple power press, accessibility button,
+  default assistant, Quick Settings tile
+- **Streaming chat** over Server-Sent Events with markdown rendering and
+  tool-call / cell-operation cards
+- **Knock-First approvals on your phone** — spend, send, delete, or any gated
+  door asks before it acts (approve / deny, plus once-always-deny door cards)
+- **Doors & policy panel** — view and edit the live rule set
+  (auto / ask / deny per pattern)
+- **Local AI fallback** — on-device llama.cpp GGUF when the hearth is out of
+  reach; native libs built into CI APKs for arm64
+- **Voice**: Vosk (offline), Android system STT, or cloud Whisper; optional TTS
+- **Images & PDFs** with vision models, web search & weather agent tools
 
-## What It Does
-
-- **Quick activation**: Volume Up + Down, triple power press, accessibility button, default assistant, Quick Settings tile
-- **Voice & text input**: Vosk (offline), Android system STT, or cloud Whisper
-- **Images & PDFs**: Vision via cloud models (OpenRouter)
-- **Web search & weather**: Brave, Exa, or LangSearch + OpenMeteo
-- **Local offline LLM**: llama.cpp GGUF models on-device
-- **Privacy-first**: Encrypted keys, optional fully offline operation
-
-## AI Backends
+## AI backends
 
 | Provider | Description |
 |----------|-------------|
-| **Self-hosted endpoint** (default) | Your own OpenAI-compatible server — base URL + API key. Works with llama-server, Hermes API, Ollama, vLLM, LM Studio, … |
+| **Lararium hearth** (default) | Your own `hearthd` surface — pair link or base URL + API key |
 | **On-device (offline)** | Local GGUF via bundled llama.cpp — no internet needed |
 | **OpenRouter (advanced)** | Hosted cloud fallback — useful for testing vision models |
 
-## Voice Recognition
+## Quick start
 
-| Method | Notes |
-|--------|-------|
-| **Vosk** | Offline, multilingual — recommended on GrapheneOS |
-| **Android built-in** | System speech recognition |
-| **Whisper (cloud)** | Groq or OpenAI API — high accuracy |
-
-## Web Search
-
-| Engine | API key |
-|--------|---------|
-| **Brave Search** | [brave.com/search/api](https://brave.com/search/api/) |
-| **Exa** | [exa.ai](https://exa.ai/) |
-| **LangSearch** | [langsearch.com](https://langsearch.com/) |
-
-## Quick Start
-
-1. **Download** APK from [Releases](../../releases) (each release lists its APK SHA-256) or build locally
-2. **Install** on device
-3. **Configure the AI backend** in Settings:
-   - **Self-hosted endpoint** (default): set your server URL (e.g.
-     `http://192.168.1.10:8080/v1` or a tailnet address) and your API key. Done.
-   - OpenRouter (advanced): an [OpenRouter](https://openrouter.ai) key — only if you want cloud models
-   - Search API — optional, for the agent's live-web tools
-   - [Groq](https://groq.com) — optional, for Whisper STT
-4. **Set as default assistant**:
+1. **Install** the APK from [Releases](../../releases) (each release lists its
+   APK SHA-256) or build locally.
+2. **Pair** with your hearth: run `hearthd pair` on the server and open the
+   emitted `lararium://pair?…` link on the phone, or set the server URL and API
+   key manually in Settings.
+3. **Set as default assistant**:
    ```
-   Settings → Apps → Default apps → Digital assistant app → AI Assistant
+   Settings → Apps → Default apps → Digital assistant app → Lararium
    ```
-6. **Enable accessibility** (for volume button shortcut):
+4. **Enable accessibility** (for the volume-button shortcut):
    ```
-   Settings → Accessibility → AI Assistant → Enable
+   Settings → Accessibility → Lararium → Enable
    ```
 
-## Build from Source
+## Build from source
 
 ```bash
-git clone https://github.com/th3cavalry/gos-ai.git
-cd gos-ai
-./gradlew assembleDebug
+git clone https://github.com/lararium-app/android-client.git
+cd android-client
+echo "sdk.dir=$ANDROID_HOME" > local.properties
+gradle assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
 ```
 
 For **local AI**, native libraries are required:
 
 ```bash
 ./scripts/build-llama-android.sh --download-ndk
-./gradlew assembleDebug
+gradle assembleDebug
 ```
 
-See [docs/LOCAL_AI_SETUP.md](docs/LOCAL_AI_SETUP.md).
-
-## Tested On
-
-- **Android 16** (Pixel 9 Pro, GrapheneOS)
-- Android 12+ should work (minSdk 26)
+See [docs/LOCAL_AI_SETUP.md](docs/LOCAL_AI_SETUP.md). CI builds debug APKs on
+every push to `main` (Actions → *Build APK*), with an optional
+`include_local_ai` step.
 
 ## Privacy
 
-- On-device speech (Vosk) and on-device LLM available
-- API keys stored in Android Keystore (AES-256-GCM)
-- PII redaction before cloud requests (device IDs, phones, emails)
-- No tracking or analytics
+- Bearer tokens cross TLS; cleartext is permitted only for loopback / RFC1918
+  / CGNAT-tailnet hosts, enforced in app code and re-checked after DNS
+  resolution (defeats rebinding)
+- API keys stored in EncryptedSharedPreferences backed by the Android Keystore
+  (AES-256-GCM)
+- PII redaction before any optional cloud request (device IDs, phones, emails)
+- No Firebase, no analytics, no ad identifiers, no FCM push
 - Minimal permissions: microphone, internet, foreground service
 
-## Known Issues
+## Known issues
 
-- Local AI requires building or obtaining native `arm64-v8a` llama libraries (see LOCAL_AI_SETUP)
+- Local AI requires building or obtaining native `arm64-v8a` llama libraries
+  (see LOCAL_AI_SETUP)
 - Local models have no web search, weather, or vision
-- Free OpenRouter models may refuse tool calling — use a paid mini model for reliable web search
 - TTS quality depends on the engine installed on the device
 
 ## Documentation
@@ -135,13 +113,14 @@ Bug reports, feature suggestions, and pull requests welcome.
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE). Original gos-ai codebase copyright (c) Maxim;
+Lararium contributions MIT the Lararium authors.
 
 ## Acknowledgments
 
-- **[mx37 / gos-ai](https://github.com/mx37/gos-ai)** — the upstream project this fork builds on
+- **[mx37 / gos-ai](https://github.com/mx37/gos-ai)** — the upstream project
+  this client is based on; the maintainer has blessed this direction
 - **GrapheneOS** — privacy-focused Android
-- **OpenRouter** — unified model API
-- **Brave / Exa / LangSearch** — search APIs
 - **Vosk** — on-device speech recognition
 - **llama.cpp** — on-device LLM inference
+- **Brave / Exa** — optional search APIs
