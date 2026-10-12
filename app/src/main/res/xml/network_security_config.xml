@@ -48,11 +48,9 @@
         </trust-anchors>
     </domain-config>
     
-    <!-- Allow Hermes (self-hosted) API over cleartext on the Tailscale interface only.
-         Android NSC matches exact hostnames; if the tailnet IP changes, update here. -->
-    <domain-config cleartextTrafficPermitted="true">
-        <domain includeSubdomains="false">100.93.86.59</domain>
-    </domain-config>
+    <!-- Self-hosted endpoints are user-configured; cleartext is permitted for
+         private-network hosts at runtime by EndpointPolicy, not baked here.
+         Add your own LAN/tailnet host above if your ROM needs the NSC entry. -->
     
     <!-- Debug overrides for user-installed CAs during development -->
     <debug-overrides>
