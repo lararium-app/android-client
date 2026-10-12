@@ -29,6 +29,7 @@ import app.lararium.llm.extractDsmlQuery
 import app.lararium.llm.parseDsmlToolCalls
 import app.lararium.storage.ChatHistoryManager
 import app.lararium.tts.TTSManager
+import app.lararium.ui.CompactAssistantActivity
 import app.lararium.ui.SettingsManager
 import app.lararium.weather.OpenMeteoClient
 import kotlinx.coroutines.*
@@ -326,7 +327,7 @@ class AssistantService : Service() {
     }
 
     private fun launchOverlay() {
-        val overlayIntent = Intent(this, app.lararium.ui.CompactAssistantActivity::class.java).apply {
+        val overlayIntent = Intent(this, CompactAssistantActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         startActivity(overlayIntent)

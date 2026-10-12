@@ -41,9 +41,10 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import app.lararium.AssistantApplication
 import app.lararium.audio.VoskTranscriber
+import app.lararium.llm.DownloadProgress
 import app.lararium.llm.LocalModelManager
 import app.lararium.service.AssistantService
-import app.lararium.tts.TTSManager
+import TTSManager
 import app.lararium.BuildConfig
 import kotlinx.coroutines.launch
 
@@ -746,7 +747,7 @@ fun SettingsScreen(
 
             if (settingsCategory == SettingsCategory.OUTPUT) {
                 SettingsSection(title = "Output") {
-                val ttsAvailable = remember { app.lararium.tts.TTSManager.isTTSAvailable(context) }
+                val ttsAvailable = remember { TTSManager.isTTSAvailable(context) }
 
                 SettingsItemWithSwitch(
                     icon = Icons.Filled.VolumeUp,
@@ -775,7 +776,7 @@ fun SettingsScreen(
                     var ttsLanguage by remember { mutableStateOf(settingsManager.ttsLanguage) }
                     var showTtsLanguageDialog by remember { mutableStateOf(false) }
 
-                    val ttsLocaleInfo = app.lararium.tts.TTSManager.getLocaleByTag(ttsLanguage)
+                    val ttsLocaleInfo = TTSManager.getLocaleByTag(ttsLanguage)
 
                     SettingsItem(
                         icon = Icons.Default.Language,
@@ -795,7 +796,7 @@ fun SettingsScreen(
                             onLanguageSelected = { tag ->
                                 ttsLanguage = tag
                                 settingsManager.ttsLanguage = tag
-                                app.lararium.tts.TTSManager.getLocaleByTag(tag).let { info ->
+                                TTSManager.getLocaleByTag(tag).let { info ->
                                     Log.d("TTS", "Language selected: ${info.displayName} ($tag)")
                                 }
                                 assistantService?.let { service ->
@@ -2086,7 +2087,7 @@ fun SearchEngineDialog(
 
 @Composable
 fun LocalModelsSection(
-    assistantService: app.lararium.service.AssistantService?,
+    assistantService: AssistantService?,
     settingsManager: SettingsManager
 ) {
     val context = LocalContext.current
@@ -2199,10 +2200,10 @@ fun LocalModelsSection(
                                         scope.launch {
                                             localModelManager.downloadModel(model.id).collect { progress ->
                                                 when (progress) {
-                                                    is app.lararium.llm.DownloadProgress.Downloading -> {
+                                                    is DownloadProgress.Downloading -> {
                                                         downloadProgress = progress.percent
                                                     }
-                                                    is app.lararium.llm.DownloadProgress.Completed -> {
+                                                    is DownloadProgress.Completed -> {
                                                         isDownloading = false
                                                         downloadingModelId = null
                                                         refreshModels()
@@ -2210,7 +2211,7 @@ fun LocalModelsSection(
                                                         settingsManager.localModelId = model.id
                                                         assistantService?.loadLocalModel(model.id)
                                                     }
-                                                    is app.lararium.llm.DownloadProgress.Error -> {
+                                                    is DownloadProgress.Error -> {
                                                         isDownloading = false
                                                         downloadingModelId = null
                                                         downloadError = progress.message
