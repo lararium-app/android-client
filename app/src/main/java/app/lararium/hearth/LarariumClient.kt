@@ -109,6 +109,16 @@ class LarariumClient(private val endpoint: Endpoint) {
         resp.body
     }
 
+    /**
+     * Resolves a custody card with the specified verdict ("once", "always", or "deny").
+     * Returns the HTTP status code and response body without throwing on non-2xx responses.
+     */
+    suspend fun resolveCard(id: String, verdict: String): Pair<Int, String> = withContext(Dispatchers.IO) {
+        val body = JSONObject().put("verdict", verdict).toString()
+        val resp = Net.post("${endpoint.baseUrl}/v1/custos/cards/$id/resolve", body, auth)
+        resp.status to resp.body
+    }
+
     // -----------------------------------------------------------------------
     // Stream turn (SSE)
     // -----------------------------------------------------------------------

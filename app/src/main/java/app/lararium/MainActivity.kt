@@ -54,16 +54,22 @@ import app.lararium.audio.VoskTranscriber
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.PairingLink
+import app.lararium.security.SecureKeyManager
+import app.lararium.ui.approvals.ApprovalsScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private var assistantService: AssistantService? = null
     private var serviceBound = mutableStateOf(false)
+
+    /** Deep-link target route to navigate to once the compose navigation graph is ready. */
+    private val openRoute = MutableStateFlow<String?>(null)
 
     /** Transient status shown to the user after a pairing attempt. */
     private val pairingStatus = mutableStateOf<String?>(null)
@@ -89,6 +95,8 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handlePairingIntent(intent)
+        openRoute.value = intent.getStringExtra("lararium_open")
+        intent.removeExtra("lararium_open")
     }
 
     override fun onDestroy() {
@@ -163,6 +171,8 @@ class MainActivity : ComponentActivity() {
 
         // Cold start — handle a pairing link that launched the activity.
         handlePairingIntent(intent)
+        openRoute.value = intent?.getStringExtra("lararium_open")
+        intent?.removeExtra("lararium_open")
 
         setContent {
             AiintegratedintoandroidTheme {
@@ -191,6 +201,14 @@ class MainActivity : ComponentActivity() {
                 val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
                 val snackbarHostState = remember { SnackbarHostState() }
                 val status by pairingStatus
+                val targetRoute by openRoute.collectAsStateWithLifecycle()
+
+                LaunchedEffect(targetRoute) {
+                    if (targetRoute == "approvals") {
+                        navController.navigate("approvals")
+                        openRoute.value = null
+                    }
+                }
 
                 // Show pairing status once as a snackbar, then clear.
                 LaunchedEffect(status) {
@@ -226,7 +244,8 @@ class MainActivity : ComponentActivity() {
                                     onLaunchAssistant = ::launchAssistant,
                                     onOpenApiKeySettings = { navController.navigate("settings") },
                                     onOpenSettings = { navController.navigate("settings") },
-                                    onOpenVoiceLanguages = { navController.navigate("voice_languages") }
+                                    onOpenVoiceLanguages = { navController.navigate("voice_languages") },
+                                    onOpenApprovals = { navController.navigate("approvals") }
                                 )
                             }
                             composable("settings") {
@@ -241,6 +260,9 @@ class MainActivity : ComponentActivity() {
                                     onNavigateBack = { navController.popBackStack() },
                                     assistantService = if (bound) assistantService else null
                                 )
+                            }
+                            composable("approvals") {
+                                ApprovalsScreen(onBack = { navController.popBackStack() })
                             }
                         }
                     }
@@ -328,7 +350,8 @@ fun MainScreen(
     onLaunchAssistant: () -> Unit,
     onOpenApiKeySettings: () -> Unit,
     onOpenSettings: () -> Unit,
-    onOpenVoiceLanguages: () -> Unit
+    onOpenVoiceLanguages: () -> Unit,
+    onOpenApprovals: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as AssistantApplication
@@ -366,15 +389,39 @@ fun MainScreen(
     ) {
         Spacer(modifier = Modifier.height(12.dp))
 
-        Text(
-            "AI Assistant",
-            style = MaterialTheme.typography.headlineMedium
-        )
-        Text(
-            "Your privacy-first intelligent assistant",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "AI Assistant",
+                    style = MaterialTheme.typography.headlineMedium
+                )
+                Text(
+                    "Your privacy-first intelligent assistant",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (SecureKeyManager(context).getHearthEndpoint() != null) {
+                    IconButton(onClick = onOpenApprovals) {
+                        Icon(
+                            Icons.Default.VerifiedUser,
+                            contentDescription = "Approvals"
+                        )
+                    }
+                }
+                IconButton(onClick = onOpenSettings) {
+                    Icon(
+                        Icons.Default.Settings,
+                        contentDescription = "Settings"
+                    )
+                }
+            }
+        }
 
         Spacer(modifier = Modifier.height(4.dp))
 
