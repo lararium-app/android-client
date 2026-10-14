@@ -47,29 +47,82 @@ import app.lararium.ui.SettingsScreen
 import app.lararium.ui.VoskLanguageManagerScreen
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import app.lararium.audio.VoskTranscriber
+import app.lararium.hearth.LarariumClient
+import app.lararium.hearth.Endpoint
+import app.lararium.hearth.PairingLink
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
     private var assistantService: AssistantService? = null
     private var serviceBound = mutableStateOf(false)
-    
+
+    /** Transient status shown to the user after a pairing attempt. */
+    private val pairingStatus = mutableStateOf<String?>(null)
+
+    /** Scope for fire-and-forget work that must outlive individual compositions. */
+    private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             val localBinder = binder as? AssistantService.AssistantBinder
             assistantService = localBinder?.getService()
             serviceBound.value = true
         }
-        
+
         override fun onServiceDisconnected(name: ComponentName?) {
             assistantService = null
             serviceBound.value = false
         }
     }
 
+    /** Hot deep link: activity already running when link is tapped. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handlePairingIntent(intent)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        activityScope.cancel()
+    }
+
+    /** Parse a lararium://pair deep link, persist, and verify via health(). */
+    private fun handlePairingIntent(intent: Intent?) {
+        val data = intent?.data ?: return
+        if (data.scheme != "lararium" || data.host != "pair") return
+        val raw = intent.dataString ?: return
+
+        val parsed = PairingLink.parse(raw)
+        if (parsed == null) {
+            pairingStatus.value = "Invalid pairing link"
+            return
+        }
+        val (ep, _) = parsed
+        pairingStatus.value = "Connecting to ${ep.name}…"
+
+        activityScope.launch {
+            val app = applicationContext as AssistantApplication
+            try {
+                val client = LarariumClient(ep)
+                client.health() // verify reachability
+                app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                pairingStatus.value = "Paired with ${ep.name} ✓"
+            } catch (e: Exception) {
+                pairingStatus.value = "Pairing failed: ${e.message}"
+            }
+        }
+    }
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
+        @Suppress("UNUSED_VARIABLE")
         val audioGranted = permissions[Manifest.permission.RECORD_AUDIO] ?: false
     }
     
@@ -99,14 +152,27 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        // Cold start — handle a pairing link that launched the activity.
+        handlePairingIntent(intent)
+
         setContent {
             AiintegratedintoandroidTheme {
                 val navController = rememberNavController()
                 val bound by serviceBound
                 val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
-                
+                val snackbarHostState = remember { SnackbarHostState() }
+                val status by pairingStatus
+
+                // Show pairing status once as a snackbar, then clear.
+                LaunchedEffect(status) {
+                    val msg = status ?: return@LaunchedEffect
+                    snackbarHostState.showSnackbar(msg)
+                    pairingStatus.value = null
+                }
+
                 Scaffold(
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                    snackbarHost = { SnackbarHost(snackbarHostState) },
                     bottomBar = {
                         FloatingNavigationBar(
                             currentRoute = currentRoute,
