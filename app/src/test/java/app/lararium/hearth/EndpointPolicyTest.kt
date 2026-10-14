@@ -250,7 +250,8 @@ class EndpointPolicyTest {
             event: turn_done
             data: {"seq":4}
 
-        """.trimIndent()
+        """.trimIndent() + "\n"  // SSE frames end on a BLANK line; trimIndent
+                                 // eats the fixture's last one, so re-add it.
         val events = parseSse(sse)
         assertTrue(events[0] is HearthEvent.ToolStart)
         assertTrue(events[1] is HearthEvent.ToolDone)
