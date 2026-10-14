@@ -61,6 +61,14 @@
                 <action android:name="android.intent.action.ASSIST" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+
+            <!-- Hearth pairing deep link: lararium://pair?host=…&token=… -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="lararium" android:host="pair" />
+            </intent-filter>
         </activity>
 
         <!-- Overlay activity for quick assistant popup -->

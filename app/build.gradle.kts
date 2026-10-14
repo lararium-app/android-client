@@ -159,6 +159,10 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     testImplementation("io.mockk:mockk:1.13.13")
+    // JVM unit tests otherwise get android.jar's stubbed org.json (every call
+    // throws "not mocked"); this puts the real implementation on the TEST
+    // classpath only — the APK keeps the platform one.
+    testImplementation("org.json:json:20240303")
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)

@@ -34,6 +34,7 @@ class SecureKeyManager(private val context: Context) {
         private const val PREF_BRAVE_API_KEY = "brave_api_key"
         private const val PREF_EXA_API_KEY = "exa_api_key"
         private const val PREF_LANGSEARCH_API_KEY = "langsearch_api_key"
+        private const val PREF_HEARTH_ENDPOINT = "hearth_endpoint"
     }
 
     private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply {
@@ -332,6 +333,48 @@ class SecureKeyManager(private val context: Context) {
 
     fun clearLangSearchApiKey() {
         prefs.edit().remove(PREF_LANGSEARCH_API_KEY).apply()
+    }
+
+    // ========== Hearth Endpoint Storage ==========
+
+    /**
+     * Persist the hearth endpoint (baseUrl + token + name) encrypted.
+     * Serialized as JSON so fields can be added later without migration pain.
+     */
+    fun setHearthEndpoint(baseUrl: String, token: String, name: String) {
+        val json = org.json.JSONObject()
+            .put("baseUrl", baseUrl)
+            .put("token", token)
+            .put("name", name)
+            .toString()
+        val encrypted = encrypt(json)
+        prefs.edit().putString(PREF_HEARTH_ENDPOINT, encrypted).apply()
+        Log.i(TAG, "Hearth endpoint stored securely")
+    }
+
+    /**
+     * Retrieve the persisted hearth endpoint, or null if none is stored.
+     * Returns a Triple(baseUrl, token, name).
+     */
+    fun getHearthEndpoint(): Triple<String, String, String>? {
+        val encrypted = prefs.getString(PREF_HEARTH_ENDPOINT, null) ?: return null
+        return try {
+            val json = org.json.JSONObject(decrypt(encrypted))
+            Triple(
+                json.getString("baseUrl"),
+                json.getString("token"),
+                json.getString("name"),
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to decrypt hearth endpoint", e)
+            null
+        }
+    }
+
+    fun hasHearthEndpoint(): Boolean = prefs.contains(PREF_HEARTH_ENDPOINT)
+
+    fun clearHearthEndpoint() {
+        prefs.edit().remove(PREF_HEARTH_ENDPOINT).apply()
     }
 
     // ========== Token Rotation Support ==========
