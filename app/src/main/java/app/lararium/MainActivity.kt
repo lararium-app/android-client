@@ -9,11 +9,15 @@ import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
 import android.os.IBinder
+import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import app.lararium.hearth.watch.HearthWatchScheduler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
@@ -112,6 +116,8 @@ class MainActivity : ComponentActivity() {
                 val client = LarariumClient(ep)
                 client.health() // verify reachability
                 app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                HearthWatchScheduler.ensurePeriodic(app)
+                HearthWatchScheduler.refreshNow(app)
                 pairingStatus.value = "Paired with ${ep.name} ✓"
             } catch (e: Exception) {
                 pairingStatus.value = "Pairing failed: ${e.message}"
@@ -131,6 +137,10 @@ class MainActivity : ComponentActivity() {
         Intent(this, AssistantService::class.java).also { intent ->
             bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         }
+        val app = applicationContext as AssistantApplication
+        if (app.secureKeyManager.getHearthEndpoint() != null) {
+            HearthWatchScheduler.refreshNow(this)
+        }
     }
     
     override fun onStop() {
@@ -147,8 +157,7 @@ class MainActivity : ComponentActivity() {
 
         permissionLauncher.launch(
             arrayOf(
-                Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.POST_NOTIFICATIONS
+                Manifest.permission.RECORD_AUDIO
             )
         )
 
@@ -157,6 +166,26 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AiintegratedintoandroidTheme {
+                val context = LocalContext.current
+                val app = context.applicationContext as AssistantApplication
+                val isPaired = app.secureKeyManager.getHearthEndpoint() != null
+
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                        contract = ActivityResultContracts.RequestPermission()
+                    ) { /* permission result handled by system */ }
+
+                    LaunchedEffect(isPaired) {
+                        if (isPaired && ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.POST_NOTIFICATIONS
+                            ) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                }
+
                 val navController = rememberNavController()
                 val bound by serviceBound
                 val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route

@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import app.lararium.hearth.watch.HearthNotifier
+import app.lararium.hearth.watch.HearthWatchScheduler
 import app.lararium.security.SecureKeyManager
 
 /**
@@ -28,6 +30,12 @@ class AssistantApplication : Application() {
         
         // Load native libraries
         loadNativeLibraries()
+
+        // Hearth watch background notifications
+        HearthNotifier.ensureChannels(this)
+        if (secureKeyManager.getHearthEndpoint() != null) {
+            HearthWatchScheduler.ensurePeriodic(this)
+        }
     }
 
     private fun createNotificationChannels() {

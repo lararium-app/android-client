@@ -100,6 +100,16 @@ class LarariumClient(private val endpoint: Endpoint) {
     }
 
     // -----------------------------------------------------------------------
+    // Custos (watch / approvals)
+    // -----------------------------------------------------------------------
+
+    suspend fun custosCards(): String = withContext(Dispatchers.IO) {
+        val resp = Net.get("${endpoint.baseUrl}/v1/custos/cards", auth)
+        check(resp.status == 200) { "custosCards returned ${resp.status}" }
+        resp.body
+    }
+
+    // -----------------------------------------------------------------------
     // Stream turn (SSE)
     // -----------------------------------------------------------------------
 
