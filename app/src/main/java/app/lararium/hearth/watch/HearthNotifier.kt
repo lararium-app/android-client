@@ -9,6 +9,7 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import app.lararium.MainActivity
+import app.lararium.receiver.CardActionReceiver
 
 /**
  * Manages notification channels and posts local notifications for custody cards,
@@ -52,11 +53,7 @@ object HearthNotifier {
      */
     fun notifyCard(context: Context, card: CardInfo) {
         ensureChannels(context)
-        val lane = when {
-            card.tool.isNotBlank() -> card.tool
-            card.dest.isNotBlank() -> card.dest
-            else -> "credential in use"
-        }
+        val lane = WatchLogic.cardLane(card)
         val rawText = if (card.cell.isNotBlank()) "$lane · ${card.cell}" else lane
         val contentText = WatchLogic.truncate(rawText, 120)
 
@@ -64,10 +61,37 @@ object HearthNotifier {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
             putExtra("lararium_open", "approvals")
         }
+        val notifId = WatchLogic.cardNotificationId(card.id)
         val pendingIntent = PendingIntent.getActivity(
             context,
-            card.id.hashCode(),
+            notifId,
             intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        val allowOnceIntent = Intent(context, CardActionReceiver::class.java).apply {
+            action = CardActionReceiver.ACTION_ALLOW_ONCE
+            putExtra(CardActionReceiver.EXTRA_CARD_ID, card.id)
+            putExtra(CardActionReceiver.EXTRA_ACTION, "allow_once")
+            putExtra(CardActionReceiver.EXTRA_LANE, lane)
+        }
+        val allowOncePendingIntent = PendingIntent.getBroadcast(
+            context,
+            (card.id + ":once").hashCode(),
+            allowOnceIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        val denyIntent = Intent(context, CardActionReceiver::class.java).apply {
+            action = CardActionReceiver.ACTION_DENY
+            putExtra(CardActionReceiver.EXTRA_CARD_ID, card.id)
+            putExtra(CardActionReceiver.EXTRA_ACTION, "deny")
+            putExtra(CardActionReceiver.EXTRA_LANE, lane)
+        }
+        val denyPendingIntent = PendingIntent.getBroadcast(
+            context,
+            (card.id + ":deny").hashCode(),
+            denyIntent,
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
@@ -79,10 +103,99 @@ object HearthNotifier {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .addAction(0, "Allow once", allowOncePendingIntent)
+            .addAction(0, "Deny", denyPendingIntent)
             .build()
 
         runCatching {
-            NotificationManagerCompat.from(context).notify(card.id.hashCode(), notification)
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+        }
+    }
+
+    /**
+     * Cancels the pending card notification and posts a brief confirmation notification
+     * ("Allowed once: <lane>" / "Denied: <lane>").
+     */
+    fun notifyCardConfirmation(
+        context: Context,
+        cardId: String,
+        verdict: String,
+        lane: String,
+    ) {
+        ensureChannels(context)
+        val notifId = WatchLogic.cardNotificationId(cardId)
+        NotificationManagerCompat.from(context).cancel(notifId)
+
+        val confirmationText = WatchLogic.confirmationText(verdict, lane)
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("lararium_open", "approvals")
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            notifId,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_CARDS)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Lararium: approval resolved")
+            .setContentText(confirmationText)
+            .setGroup(GROUP_CARDS)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        runCatching {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
+        }
+    }
+
+    /**
+     * Cancels the pending card notification and surfaces a failure notification
+     * directing the user to open the app.
+     */
+    fun notifyCardError(
+        context: Context,
+        cardId: String,
+        failureReason: String? = null,
+    ) {
+        ensureChannels(context)
+        val notifId = WatchLogic.cardNotificationId(cardId)
+        NotificationManagerCompat.from(context).cancel(notifId)
+
+        val rawText = if (!failureReason.isNullOrBlank()) {
+            "Could not resolve — open app ($failureReason)"
+        } else {
+            "Could not resolve — open app"
+        }
+        val contentText = WatchLogic.truncate(rawText, 120)
+
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra("lararium_open", "approvals")
+        }
+        val pendingIntent = PendingIntent.getActivity(
+            context,
+            notifId,
+            intent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
+        val notification = NotificationCompat.Builder(context, CHANNEL_CARDS)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setContentTitle("Lararium: could not resolve")
+            .setContentText(contentText)
+            .setGroup(GROUP_CARDS)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .build()
+
+        runCatching {
+            NotificationManagerCompat.from(context).notify(notifId, notification)
         }
     }
 
