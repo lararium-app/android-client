@@ -162,6 +162,82 @@ object WatchLogic {
             collapsed
         }
     }
+
+    /**
+     * Maps an action string from a notification action intent or button
+     * into a custody card resolution verdict ("once", "deny", or "always").
+     * Returns null if the action string is null, blank, or unrecognized.
+     */
+    fun actionToVerdict(action: String?): String? {
+        if (action == null) return null
+        val norm = action.trim().lowercase()
+        return when {
+            norm == "once" || norm == "allow_once" || norm == "allow-once" || norm == "allow once" ||
+                norm == "app.lararium.action.card_allow_once" || norm.endsWith(".card_allow_once") -> "once"
+            norm == "deny" || norm == "app.lararium.action.card_deny" || norm.endsWith(".card_deny") -> "deny"
+            norm == "always" || norm == "allow_always" || norm == "allow-always" || norm == "allow always" ||
+                norm == "app.lararium.action.card_always" || norm.endsWith(".card_always") -> "always"
+            else -> null
+        }
+    }
+
+    /**
+     * Derives a stable integer notification ID for a custody card approval.
+     */
+    fun cardNotificationId(cardId: String): Int = cardId.hashCode()
+
+    /**
+     * Derives a stable integer notification ID for a custody card approval.
+     */
+    fun notificationId(cardId: String): Int = cardId.hashCode()
+
+    /**
+     * Derives a stable integer notification ID for the confirmation notification.
+     */
+    fun confirmationNotificationId(cardId: String): Int = ("confirm:$cardId").hashCode()
+
+    /**
+     * Derives the display lane label for a custody card.
+     */
+    fun cardLane(card: CardInfo): String = when {
+        card.tool.isNotBlank() -> card.tool
+        card.dest.isNotBlank() -> card.dest
+        else -> "credential in use"
+    }
+
+    /**
+     * Builds a brief confirmation notification text ("Allowed once: <lane>" / "Denied: <lane>").
+     * Collapses newlines/whitespace and cuts to [max] chars appending '…' if truncated.
+     */
+    fun confirmationText(verdict: String, lane: String, max: Int = 120): String {
+        val v = actionToVerdict(verdict) ?: verdict.trim().lowercase()
+        val prefix = when (v) {
+            "once" -> "Allowed once"
+            "deny" -> "Denied"
+            "always" -> "Allowed always"
+            else -> "Resolved ($verdict)"
+        }
+        val raw = if (lane.isBlank()) prefix else "$prefix: ${lane.trim()}"
+        return truncate(raw, max)
+    }
+
+    /**
+     * Overload building confirmation text directly from [CardInfo].
+     */
+    fun confirmationText(verdict: String, card: CardInfo, max: Int = 120): String =
+        confirmationText(verdict, cardLane(card), max)
+
+    /**
+     * Alias for [confirmationText].
+     */
+    fun buildConfirmationText(verdict: String, lane: String, max: Int = 120): String =
+        confirmationText(verdict, lane, max)
+
+    /**
+     * Alias for [confirmationText] with [CardInfo].
+     */
+    fun buildConfirmationText(verdict: String, card: CardInfo, max: Int = 120): String =
+        confirmationText(verdict, card, max)
 }
 
 /** Top-level shortcut delegating to [WatchLogic.parseCards]. */
@@ -179,4 +255,36 @@ fun scanEvents(eventsJsonBody: String, cursor: Int?): ScanResult =
 /** Top-level shortcut delegating to [WatchLogic.truncate]. */
 fun truncate(s: String, max: Int = 200): String =
     WatchLogic.truncate(s, max)
+
+/** Top-level shortcut delegating to [WatchLogic.actionToVerdict]. */
+fun actionToVerdict(action: String?): String? =
+    WatchLogic.actionToVerdict(action)
+
+/** Top-level shortcut delegating to [WatchLogic.actionToVerdict]. */
+fun mapActionToVerdict(action: String?): String? =
+    WatchLogic.actionToVerdict(action)
+
+/** Top-level shortcut delegating to [WatchLogic.cardNotificationId]. */
+fun cardNotificationId(cardId: String): Int =
+    WatchLogic.cardNotificationId(cardId)
+
+/** Top-level shortcut delegating to [WatchLogic.cardLane]. */
+fun cardLane(card: CardInfo): String =
+    WatchLogic.cardLane(card)
+
+/** Top-level shortcut delegating to [WatchLogic.confirmationText]. */
+fun confirmationText(verdict: String, lane: String, max: Int = 120): String =
+    WatchLogic.confirmationText(verdict, lane, max)
+
+/** Top-level shortcut delegating to [WatchLogic.confirmationText]. */
+fun confirmationText(verdict: String, card: CardInfo, max: Int = 120): String =
+    WatchLogic.confirmationText(verdict, card, max)
+
+/** Top-level shortcut delegating to [WatchLogic.buildConfirmationText]. */
+fun buildConfirmationText(verdict: String, lane: String, max: Int = 120): String =
+    WatchLogic.buildConfirmationText(verdict, lane, max)
+
+/** Top-level shortcut delegating to [WatchLogic.buildConfirmationText]. */
+fun buildConfirmationText(verdict: String, card: CardInfo, max: Int = 120): String =
+    WatchLogic.buildConfirmationText(verdict, card, max)
 
