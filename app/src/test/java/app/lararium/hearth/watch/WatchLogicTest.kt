@@ -4,6 +4,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -364,5 +366,116 @@ class WatchLogicTest {
         assertEquals("12345…", truncate("123456", 5))
         assertEquals("12345…", truncate("1234567890", 5))
         assertEquals("hello…", truncate("hello world", 5))
+    }
+
+    // -----------------------------------------------------------------------
+    // actionToVerdict
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun actionToVerdict_eachVerdict() {
+        assertEquals("once", actionToVerdict("once"))
+        assertEquals("once", actionToVerdict("allow_once"))
+        assertEquals("once", actionToVerdict("allow-once"))
+        assertEquals("once", actionToVerdict("allow once"))
+        assertEquals("once", actionToVerdict("ALLOW_ONCE"))
+        assertEquals("once", actionToVerdict("app.lararium.action.CARD_ALLOW_ONCE"))
+
+        assertEquals("deny", actionToVerdict("deny"))
+        assertEquals("deny", actionToVerdict("DENY"))
+        assertEquals("deny", actionToVerdict("app.lararium.action.CARD_DENY"))
+
+        assertEquals("always", actionToVerdict("always"))
+        assertEquals("always", actionToVerdict("allow_always"))
+        assertEquals("always", actionToVerdict("ALLOW_ALWAYS"))
+        assertEquals("always", actionToVerdict("app.lararium.action.CARD_ALWAYS"))
+    }
+
+    @Test
+    fun actionToVerdict_malformedAction() {
+        assertNull(actionToVerdict(null))
+        assertNull(actionToVerdict(""))
+        assertNull(actionToVerdict("   "))
+        assertNull(actionToVerdict("unknown"))
+        assertNull(actionToVerdict("approve"))
+        assertNull(actionToVerdict("reject"))
+        assertNull(actionToVerdict("allow"))
+        assertNull(actionToVerdict("cancel"))
+    }
+
+    // -----------------------------------------------------------------------
+    // notification-id derivation
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun cardNotificationId_stability() {
+        val id1 = cardNotificationId("card-123")
+        val id2 = cardNotificationId("card-123")
+        assertEquals(id1, id2)
+        assertEquals("card-123".hashCode(), id1)
+
+        val idOther = cardNotificationId("card-456")
+        assertNotEquals(id1, idOther)
+
+        // Object method matches the top-level shortcut
+        assertEquals(id1, WatchLogic.cardNotificationId("card-123"))
+    }
+
+    // -----------------------------------------------------------------------
+    // confirmation-text building
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun confirmationText_eachVerdict() {
+        assertEquals("Allowed once: bash", confirmationText("once", "bash"))
+        assertEquals("Denied: curl", confirmationText("deny", "curl"))
+        assertEquals("Allowed always: python", confirmationText("always", "python"))
+
+        // Works with action string aliases
+        assertEquals("Allowed once: bash", confirmationText("allow_once", "bash"))
+        assertEquals("Denied: curl", confirmationText("app.lararium.action.CARD_DENY", "curl"))
+    }
+
+    @Test
+    fun confirmationText_truncationBounds() {
+        // Below max bound (default 120)
+        val shortText = confirmationText("once", "short")
+        assertEquals("Allowed once: short", shortText)
+        assertFalse(shortText.endsWith("…"))
+
+        // Exact boundary with custom max
+        val prefix = "Allowed once: "
+        val exactLane = "a".repeat(10)
+        val exactResult = confirmationText("once", exactLane, max = prefix.length + exactLane.length)
+        assertEquals("Allowed once: " + "a".repeat(10), exactResult)
+        assertFalse(exactResult.endsWith("…"))
+
+        // Over boundary
+        val overResult = confirmationText("once", "a".repeat(200), max = 120)
+        assertEquals(121, overResult.length) // 120 chars + '…'
+        assertTrue(overResult.endsWith("…"))
+        assertEquals("Allowed once: " + "a".repeat(120 - prefix.length) + "…", overResult)
+    }
+
+    @Test
+    fun confirmationText_whitespaceAndNewlineHandling() {
+        val messy = "\t\tcurl\r\n\tcommand  \n"
+        val result = confirmationText("deny", messy)
+        assertEquals("Denied: curl command", result)
+    }
+
+    @Test
+    fun confirmationText_cardInfoOverload() {
+        val toolCard = CardInfo("c1", "cell1", "cred1", "", "bash_exec", "")
+        assertEquals("Allowed once: bash_exec", confirmationText("once", toolCard))
+
+        val destCard = CardInfo("c2", "cell1", "cred1", "s3.amazonaws.com", "", "")
+        assertEquals("Denied: s3.amazonaws.com", confirmationText("deny", destCard))
+
+        val fallbackCard = CardInfo("c3", "", "", "", "", "")
+        assertEquals("Allowed once: credential in use", confirmationText("once", fallbackCard))
+
+        // Blank lane fallback
+        assertEquals("Allowed once", confirmationText("once", ""))
     }
 }
