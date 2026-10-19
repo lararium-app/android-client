@@ -145,6 +145,11 @@
             </intent-filter>
         </receiver>
 
+        <!-- Receiver for custody card notification actions (Allow once / Deny) -->
+        <receiver
+            android:name=".receiver.CardActionReceiver"
+            android:exported="false" />
+
     </application>
 
 </manifest>
