@@ -329,7 +329,7 @@ class AssistantService : Service() {
         )
 
         return NotificationCompat.Builder(this, AssistantApplication.CHANNEL_SERVICE)
-            .setContentTitle("AI Assistant")
+            .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
             .setSmallIcon(R.drawable.ic_assistant)
             .setContentIntent(pendingIntent)
@@ -1369,6 +1369,31 @@ class AssistantService : Service() {
         
         _chatMessages.value = session.getAllMessages()
         Log.i(TAG, "Loaded chat $chatId with ${messages.size} messages (continuing existing)")
+    }
+
+    /**
+     * Load an existing session from the paired hearth into active session.
+     */
+    fun loadHearthSession(sessionId: String, messages: List<ChatSession.Message>) {
+        clearSession(saveToHistory = false)
+        _currentChatId = null
+        if (::hearthChatClient.isInitialized) {
+            hearthChatClient.setStoredSessionId(sessionId)
+            messages.forEach { msg ->
+                when (msg.role) {
+                    "user" -> hearthChatClient.chatSession.addUserMessage(msg.content, msg.imageBase64)
+                    "assistant" -> hearthChatClient.chatSession.addAssistantMessage(msg.content)
+                }
+            }
+            _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
+        } else {
+            getSharedPreferences("assistant_settings", MODE_PRIVATE)
+                .edit()
+                .putString(HearthChatClient.KEY_SESSION_ID, sessionId)
+                .apply()
+            _chatMessages.value = messages
+        }
+        Log.i(TAG, "Loaded hearth session $sessionId with ${messages.size} messages")
     }
     
     private suspend fun loadLocalModelInternal(
