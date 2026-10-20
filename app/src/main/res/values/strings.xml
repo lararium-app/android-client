@@ -37,4 +37,69 @@
     <string name="hearth_pair_error_failed">Pairing failed: %1$s</string>
     <string name="hearth_not_paired_error">Not paired with your hearth yet — use Pair hearth in Settings</string>
     <string name="hearth_approval_notice">Your hearth is asking for approval on another device</string>
+
+    <!-- Navigation & Drawer -->
+    <string name="open_drawer">Open navigation drawer</string>
+    <string name="close_drawer">Close drawer</string>
+    <string name="new_chat">New chat</string>
+    <string name="drawer_connection_paired">Paired</string>
+    <string name="drawer_connection_not_connected">Not connected</string>
+    <string name="drawer_nav_chats">Chats</string>
+    <string name="drawer_nav_approvals">Approvals</string>
+    <string name="drawer_nav_settings">Settings</string>
+
+    <!-- Chat & Sessions -->
+    <string name="empty_chat_hearth_warm">The hearth is warm. Say something.</string>
+    <string name="no_conversations_yet">No conversations yet</string>
+    <string name="chat_composer_placeholder">Ask anything…</string>
+    <string name="chat_composer_generating">Generating…</string>
+    <string name="chat_composer_send">Send message</string>
+    <string name="chat_composer_voice">Voice input</string>
+    <string name="chat_composer_stop">Stop response</string>
+    <string name="conversations_title">Chats</string>
+    <string name="refresh_conversations">Refresh conversations</string>
+
+    <!-- Settings Sections -->
+    <string name="settings_section_connection">Connection</string>
+    <string name="settings_section_assistant">Assistant</string>
+    <string name="settings_section_notifications">Notifications</string>
+    <string name="settings_section_about">About</string>
+
+    <!-- Settings: Notifications -->
+    <string name="settings_notif_permission_title">Notification Permission</string>
+    <string name="settings_notif_permission_granted">Granted</string>
+    <string name="settings_notif_permission_needed">Not granted (tap to allow)</string>
+    <string name="settings_notif_system_settings_title">System Notification Settings</string>
+    <string name="settings_notif_system_settings_desc">Configure channels and alerts in system settings</string>
+    <string name="settings_notif_approvals_title">Hearth Approvals</string>
+    <string name="settings_notif_approvals_desc">High-importance alerts when custody cards need approval</string>
+    <string name="settings_notif_replies_title">Hearth Replies</string>
+    <string name="settings_notif_replies_desc">Background notifications when responses or tasks finish</string>
+    <string name="settings_notif_watch_title">Background Watch</string>
+    <string name="settings_notif_watch_desc">Periodic checks every 15 minutes when paired with a hearth</string>
+
+    <!-- Settings: Assistant Integration -->
+    <string name="settings_default_assistant_title">Default Assistant</string>
+    <string name="settings_default_assistant_set">Set as default</string>
+    <string name="settings_default_assistant_not_set">Set for home button activation</string>
+    <string name="settings_accessibility_title">Accessibility Service</string>
+    <string name="settings_accessibility_enabled">Enabled</string>
+    <string name="settings_accessibility_disabled">Required for volume key shortcuts</string>
+    <string name="settings_activation_title">Activation Methods</string>
+    <string name="settings_activation_home_title">Long-press Home</string>
+    <string name="settings_activation_home_desc">Hold home button or swipe from corner</string>
+    <string name="settings_activation_volume_title">Volume Keys</string>
+    <string name="settings_activation_volume_desc">Hold Volume Up + Down together</string>
+    <string name="settings_activation_tile_title">Quick Settings Tile</string>
+    <string name="settings_activation_tile_desc">Add tile to notification panel</string>
+
+    <!-- Settings: Privacy -->
+    <string name="settings_privacy_title">Privacy-First Design</string>
+    <string name="settings_privacy_vosk">On-device speech recognition (Vosk)</string>
+    <string name="settings_privacy_encryption">Encrypted API key storage</string>
+    <string name="settings_privacy_no_ids">No device identifiers sent to cloud</string>
+    <string name="settings_privacy_search">Configurable privacy-focused search providers</string>
+    <string name="settings_privacy_permissions">Minimal permissions required</string>
+    <string name="settings_privacy_tls">TLS 1.3 for all network requests</string>
+    <string name="settings_about_desc">Privacy-first AI assistant and hearth client for Android. All conversations are processed securely with on-device encryption.</string>
 </resources>

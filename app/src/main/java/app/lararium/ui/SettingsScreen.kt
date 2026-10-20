@@ -1,11 +1,18 @@
 package app.lararium.ui
 
+import android.Manifest
+import android.app.role.RoleManager
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
+import android.provider.Settings
 import android.util.Log
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -21,6 +28,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -40,10 +48,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
+import androidx.core.content.ContextCompat
 import app.lararium.AssistantApplication
 import app.lararium.audio.VoskTranscriber
 import app.lararium.llm.DownloadProgress
 import app.lararium.llm.LocalModelManager
+import app.lararium.service.AssistantAccessibilityService
 import app.lararium.service.AssistantService
 import app.lararium.tts.TTSManager
 import app.lararium.BuildConfig
@@ -58,10 +68,10 @@ import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 
 private enum class SettingsCategory(val label: String) {
-    AI("AI"),
-    VOICE("Voice"),
-    OUTPUT("Output"),
-    SYSTEM("System")
+    CONNECTION("Connection"),
+    ASSISTANT("Assistant"),
+    NOTIFICATIONS("Notifications"),
+    ABOUT("About")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -70,7 +80,9 @@ private enum class SettingsCategory(val label: String) {
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
     assistantService: AssistantService? = null,
-    onNavigateToLanguages: (() -> Unit)? = null
+    onNavigateToLanguages: (() -> Unit)? = null,
+    onOpenAccessibilitySettings: (() -> Unit)? = null,
+    onOpenAssistantSettings: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as AssistantApplication
@@ -120,9 +132,29 @@ fun SettingsScreen(
     var isExtracting by remember { mutableStateOf(false) }
     var downloadProgress by remember { mutableStateOf(0) }
     var downloadError by remember { mutableStateOf<String?>(null) }
-    var settingsCategoryName by rememberSaveable { mutableStateOf(SettingsCategory.AI.name) }
+    var settingsCategoryName by rememberSaveable { mutableStateOf(SettingsCategory.CONNECTION.name) }
     val settingsCategory = SettingsCategory.valueOf(settingsCategoryName)
     val settingsScrollState = rememberScrollState()
+
+    val isAccessibilityEnabled = AssistantAccessibilityService.isServiceRunning
+    val isDefaultAssistant = remember {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
+            roleManager?.isRoleHeld(RoleManager.ROLE_ASSISTANT) ?: false
+        } else false
+    }
+    var hasNotificationPermission by remember {
+        mutableStateOf(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            } else true
+        )
+    }
+    val notificationPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasNotificationPermission = granted
+    }
 
     // Each category is its own lightweight composition. Returning to a category
     // does not recreate the assistant service or reload a local model.
@@ -202,8 +234,8 @@ fun SettingsScreen(
                     onCategorySelected = { settingsCategoryName = it.name }
                 )
 
-            if (settingsCategory == SettingsCategory.AI) {
-                SettingsSection(title = "API Configuration") {
+            if (settingsCategory == SettingsCategory.CONNECTION) {
+                SettingsSection(title = stringResource(R.string.settings_section_connection)) {
                 var showProviderDialog by remember { mutableStateOf(false) }
 
                 val providerName = when (apiProvider) {
@@ -334,7 +366,32 @@ fun SettingsScreen(
                         onClick = { showHermesApiKeyDialog = true }
                     )
                 }
+
+                if (apiProvider == SettingsManager.PROVIDER_LOCAL) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(Icons.Default.OfflineBolt, contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Local AI works completely offline. No data is sent to the internet.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                }
             }
+
+            if (settingsCategory == SettingsCategory.ASSISTANT) {
 
             if (apiProvider == SettingsManager.PROVIDER_LOCAL) {
                 LocalModelsSection(
@@ -470,10 +527,8 @@ fun SettingsScreen(
                     }
                     }
                 }
-            }
 
-            if (settingsCategory == SettingsCategory.VOICE) {
-                SettingsSection(title = "Voice Input") {
+            SettingsSection(title = "Voice Input") {
                 var showVoiceMethodDialog by remember { mutableStateOf(false) }
                 var whisperProvider by remember { mutableStateOf(settingsManager.whisperProvider) }
                 var showWhisperProviderDialog by remember { mutableStateOf(false) }
@@ -800,14 +855,12 @@ fun SettingsScreen(
                     }
                 )
                 }
-            }
 
-            if (settingsCategory == SettingsCategory.OUTPUT) {
                 SettingsSection(title = "Output") {
                 val ttsAvailable = remember { TTSManager.isTTSAvailable(context) }
 
                 SettingsItemWithSwitch(
-                    icon = Icons.Filled.VolumeUp,
+                    icon = Icons.AutoMirrored.Filled.VolumeUp,
                     title = "Text-to-Speech",
                     subtitle = if (ttsAvailable) "Read responses aloud" else "Not available on this device",
                     checked = ttsEnabled && ttsAvailable,
@@ -866,76 +919,227 @@ fun SettingsScreen(
                     }
                 }
                 }
+
+                SettingsSection(title = "System Integration") {
+                    SettingsItem(
+                        icon = Icons.Filled.Home,
+                        title = stringResource(R.string.settings_default_assistant_title),
+                        subtitle = stringResource(
+                            if (isDefaultAssistant) R.string.settings_default_assistant_set
+                            else R.string.settings_default_assistant_not_set
+                        ),
+                        onClick = { onOpenAssistantSettings?.invoke() }
+                    )
+                    SettingsItem(
+                        icon = Icons.Filled.TouchApp,
+                        title = stringResource(R.string.settings_accessibility_title),
+                        subtitle = stringResource(
+                            if (isAccessibilityEnabled) R.string.settings_accessibility_enabled
+                            else R.string.settings_accessibility_disabled
+                        ),
+                        onClick = { onOpenAccessibilitySettings?.invoke() }
+                    )
+
+                    ElevatedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.elevatedCardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainer
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                stringResource(R.string.settings_activation_title),
+                                style = MaterialTheme.typography.titleSmall
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            ActivationRow(
+                                icon = Icons.Filled.Home,
+                                title = stringResource(R.string.settings_activation_home_title),
+                                description = stringResource(R.string.settings_activation_home_desc)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            ActivationRow(
+                                icon = Icons.AutoMirrored.Filled.VolumeUp,
+                                title = stringResource(R.string.settings_activation_volume_title),
+                                description = stringResource(R.string.settings_activation_volume_desc)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            ActivationRow(
+                                icon = Icons.Filled.Dashboard,
+                                title = stringResource(R.string.settings_activation_tile_title),
+                                description = stringResource(R.string.settings_activation_tile_desc)
+                            )
+                        }
+                    }
+                }
             }
 
-            if (settingsCategory == SettingsCategory.SYSTEM) {
+            if (settingsCategory == SettingsCategory.NOTIFICATIONS) {
+                SettingsSection(title = stringResource(R.string.settings_section_notifications)) {
+                    SettingsItem(
+                        icon = Icons.Default.Notifications,
+                        title = stringResource(R.string.settings_notif_permission_title),
+                        subtitle = stringResource(
+                            if (hasNotificationPermission) R.string.settings_notif_permission_granted
+                            else R.string.settings_notif_permission_needed
+                        ),
+                        onClick = {
+                            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !hasNotificationPermission) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                    putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                                }
+                                context.startActivity(intent)
+                            }
+                        }
+                    )
+
+                    SettingsItem(
+                        icon = Icons.Default.NotificationsActive,
+                        title = stringResource(R.string.settings_notif_system_settings_title),
+                        subtitle = stringResource(R.string.settings_notif_system_settings_desc),
+                        onClick = {
+                            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                                putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
+                            }
+                            context.startActivity(intent)
+                        }
+                    )
+
+                    SettingsItem(
+                        icon = Icons.Default.VerifiedUser,
+                        title = stringResource(R.string.settings_notif_approvals_title),
+                        subtitle = stringResource(R.string.settings_notif_approvals_desc),
+                        onClick = {}
+                    )
+
+                    SettingsItem(
+                        icon = Icons.Default.QuestionAnswer,
+                        title = stringResource(R.string.settings_notif_replies_title),
+                        subtitle = stringResource(R.string.settings_notif_replies_desc),
+                        onClick = {}
+                    )
+
+                    SettingsItem(
+                        icon = Icons.Default.Schedule,
+                        title = stringResource(R.string.settings_notif_watch_title),
+                        subtitle = stringResource(R.string.settings_notif_watch_desc),
+                        onClick = {}
+                    )
+                }
+            }
+
+            if (settingsCategory == SettingsCategory.ABOUT) {
                 SettingsSection(title = "Advanced") {
-                SettingsItem(
-                    icon = Icons.Default.Refresh,
-                    title = "Reset to Defaults",
-                    subtitle = "Reset all settings to default values",
-                    onClick = {
-                        settingsManager.resetToDefaults()
-                        selectedModel = SettingsManager.DEFAULT_MODEL
-                        systemPrompt = SettingsManager.DEFAULT_SYSTEM_PROMPT
-                        voiceInputMethod = SettingsManager.VOICE_INPUT_SYSTEM
-                        ttsEnabled = true
-                        autoSendVoice = true
-                        autoStartVoice = false
-                    }
-                )
+                    SettingsItem(
+                        icon = Icons.Default.Refresh,
+                        title = "Reset to Defaults",
+                        subtitle = "Reset all settings to default values",
+                        onClick = {
+                            settingsManager.resetToDefaults()
+                            selectedModel = SettingsManager.DEFAULT_MODEL
+                            systemPrompt = SettingsManager.DEFAULT_SYSTEM_PROMPT
+                            voiceInputMethod = SettingsManager.VOICE_INPUT_SYSTEM
+                            ttsEnabled = false
+                            autoSendVoice = true
+                            autoStartVoice = false
+                        }
+                    )
                 }
 
-                SettingsSection(title = "About") {
-                SettingsItem(
-                    icon = Icons.Default.Info,
-                    title = "AI Assistant for Android",
-                    subtitle = "v${BuildConfig.VERSION_NAME}", // Dynamic version with build.gradle.kts
-                    onClick = {}
-                )
+                SettingsSection(title = stringResource(R.string.settings_section_about)) {
+                    SettingsItem(
+                        icon = Icons.Default.Info,
+                        title = stringResource(R.string.app_name),
+                        subtitle = "v${BuildConfig.VERSION_NAME}",
+                        onClick = {}
+                    )
 
-                SettingsItem(
-                    icon = Icons.Default.Person,
-                    title = "Developer",
-                    subtitle = "Max",
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            data = Uri.parse("https://github.com/mx37")
+                    SettingsItem(
+                        icon = Icons.Default.Link,
+                        title = "Repository",
+                        subtitle = "View on GitHub",
+                        onClick = {
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                data = Uri.parse("https://github.com/mx37/grapheneos-ai")
+                            }
+                            context.startActivity(intent)
                         }
-                        context.startActivity(intent)
-                    }
-                )
+                    )
 
-                SettingsItem(
-                    icon = Icons.Default.Link,
-                    title = "Repository",
-                    subtitle = "View on GitHub",
-                    onClick = {
-                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                            data = Uri.parse("https://github.com/mx37/grapheneos-ai")
+                    ElevatedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp),
+                        colors = CardDefaults.elevatedCardColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Security,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text(
+                                    stringResource(R.string.settings_privacy_title),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSecondaryContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                            val privacyItems = listOf(
+                                stringResource(R.string.settings_privacy_vosk),
+                                stringResource(R.string.settings_privacy_encryption),
+                                stringResource(R.string.settings_privacy_no_ids),
+                                stringResource(R.string.settings_privacy_search),
+                                stringResource(R.string.settings_privacy_permissions),
+                                stringResource(R.string.settings_privacy_tls)
+                            )
+                            privacyItems.forEach { item ->
+                                Row(
+                                    modifier = Modifier.padding(vertical = 3.dp),
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Text("\u2022", color = MaterialTheme.colorScheme.onSecondaryContainer)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        item,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                                    )
+                                }
+                            }
                         }
-                        context.startActivity(intent)
                     }
-                )
 
-                Surface(
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
-                        Text(
-                            "Privacy-first AI assistant with OpenRouter support. All conversations are processed securely with on-device encryption.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            "This is an independent project and is not affiliated with, endorsed by, or associated with GrapheneOS.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                    Surface(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Text(
+                                stringResource(R.string.settings_about_desc),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                "This is an independent project and is not affiliated with, endorsed by, or associated with GrapheneOS.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
+                        }
                     }
-                }
                 }
             }
 
@@ -2609,4 +2813,38 @@ fun PairHearthDialog(
             }
         }
     )
+}
+
+@Composable
+private fun ActivationRow(
+    icon: ImageVector,
+    title: String,
+    description: String
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Column {
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
 }

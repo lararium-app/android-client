@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -359,7 +360,7 @@ fun CompactAssistantView(
                         }
                         Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            "AI Assistant",
+                            stringResource(app.lararium.R.string.app_name),
                             style = MaterialTheme.typography.titleMedium
                         )
                     }

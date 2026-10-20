@@ -128,7 +128,7 @@ class SettingsManager(context: Context) {
         set(value) = prefs.edit().putBoolean(KEY_MULTILINGUAL_ENABLED, value).apply()
     
     var ttsEnabled: Boolean
-        get() = prefs.getBoolean(KEY_TTS_ENABLED, true)
+        get() = prefs.getBoolean(KEY_TTS_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_TTS_ENABLED, value).apply()
     
     var autoSendVoice: Boolean
