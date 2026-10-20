@@ -14,7 +14,7 @@ class AssistantTileService : TileService() {
         super.onStartListening()
         qsTile?.apply {
             state = Tile.STATE_INACTIVE
-            label = "AI Assistant"
+            label = getString(app.lararium.R.string.assistant_tile_label)
             updateTile()
         }
     }
