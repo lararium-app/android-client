@@ -5,10 +5,10 @@ plugins {
 }
 
 val releaseSigningPropertyNames = listOf(
-    "MYAPP_UPLOAD_STORE_FILE",
-    "MYAPP_UPLOAD_STORE_PASSWORD",
-    "MYAPP_UPLOAD_KEY_ALIAS",
-    "MYAPP_UPLOAD_KEY_PASSWORD"
+    "LARARIUM_UPLOAD_STORE_FILE",
+    "LARARIUM_UPLOAD_STORE_PASSWORD",
+    "LARARIUM_UPLOAD_KEY_ALIAS",
+    "LARARIUM_UPLOAD_KEY_PASSWORD"
 )
 val configuredReleaseSigningProperties = releaseSigningPropertyNames.filter {
     providers.gradleProperty(it).isPresent
@@ -72,10 +72,10 @@ android {
     signingConfigs {
         if (hasReleaseSigning) {
             create("release") {
-                storeFile = file(providers.gradleProperty("MYAPP_UPLOAD_STORE_FILE").get())
-                storePassword = providers.gradleProperty("MYAPP_UPLOAD_STORE_PASSWORD").get()
-                keyAlias = providers.gradleProperty("MYAPP_UPLOAD_KEY_ALIAS").get()
-                keyPassword = providers.gradleProperty("MYAPP_UPLOAD_KEY_PASSWORD").get()
+                storeFile = file(providers.gradleProperty("LARARIUM_UPLOAD_STORE_FILE").get())
+                storePassword = providers.gradleProperty("LARARIUM_UPLOAD_STORE_PASSWORD").get()
+                keyAlias = providers.gradleProperty("LARARIUM_UPLOAD_KEY_ALIAS").get()
+                keyPassword = providers.gradleProperty("LARARIUM_UPLOAD_KEY_PASSWORD").get()
             }
         }
     }
@@ -84,6 +84,12 @@ android {
         debug {
             isMinifyEnabled = false
             isDebuggable = true
+            // When the stable upload key is provided (CI), debug builds are
+            // signed with it too, so installed builds can update in place —
+            // machine-local debug keys change per machine and break updates.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
 
         release {
