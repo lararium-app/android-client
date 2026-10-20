@@ -1044,7 +1044,7 @@ fun SettingsScreen(
                             selectedModel = SettingsManager.DEFAULT_MODEL
                             systemPrompt = SettingsManager.DEFAULT_SYSTEM_PROMPT
                             voiceInputMethod = SettingsManager.VOICE_INPUT_SYSTEM
-                            ttsEnabled = true
+                            ttsEnabled = false
                             autoSendVoice = true
                             autoStartVoice = false
                         }
