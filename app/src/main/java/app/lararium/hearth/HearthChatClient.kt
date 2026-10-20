@@ -1,0 +1,300 @@
+package app.lararium.hearth
+
+import android.content.Context
+import android.content.SharedPreferences
+import app.lararium.llm.ChatSession
+import app.lararium.security.SecureKeyManager
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
+import java.io.IOException
+
+/**
+ * Chat client connecting the Assistant pipeline to the paired hearth's sessions API.
+ * Uses LarariumClient.streamTurn over POST /v1/sessions/{id}/messages.
+ */
+class HearthChatClient(
+    private val endpointProvider: () -> Endpoint?,
+    private val prefs: SharedPreferences,
+    private val clientFactory: (Endpoint) -> LarariumClient = { LarariumClient(it) }
+) {
+
+    companion object {
+        const val KEY_SESSION_ID = "hearth_session_id"
+        const val APPROVAL_NOTICE = "Your hearth is asking for approval on another device"
+
+        /**
+         * Checks whether an error message or exception names the session or indicates a 404.
+         */
+        fun isSessionError(message: String, sessionId: String?): Boolean {
+            val lower = message.lowercase()
+            if (lower.contains("404")) return true
+            if (lower.contains("no_such_session") || lower.contains("session not found") || lower.contains("invalid session")) return true
+            if (lower.contains("session") && (lower.contains("not found") || lower.contains("missing") || lower.contains("expired") || lower.contains("unknown") || lower.contains("closed") || lower.contains("drop"))) return true
+            if (!sessionId.isNullOrBlank() && lower.contains(sessionId.lowercase())) return true
+            return false
+        }
+
+        /**
+         * Maps raw error strings, HTTP status codes, or exception messages to clean, friendly user text.
+         * Guarantees no raw hostnames, IPs, or exception traces are exposed.
+         */
+        fun friendlyErrorMessage(raw: String): String {
+            val trimmed = raw.trim()
+            if (trimmed.isEmpty()) return "Hearth request failed."
+
+            val errText = if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+                try {
+                    val json = JSONObject(trimmed)
+                    json.optString("error").ifEmpty { json.optString("message", "") }
+                } catch (_: Exception) {
+                    trimmed
+                }
+            } else trimmed
+
+            val lower = errText.lowercase()
+            return when {
+                lower.contains("404") || lower.contains("no_such_session") || lower.contains("session not found") ->
+                    "Hearth session not found."
+                lower.contains("401") || lower.contains("403") || lower.contains("unauthorized") || lower.contains("forbidden") ->
+                    "Hearth authentication failed. Please check your token in Settings."
+                lower.contains("500") || lower.contains("502") || lower.contains("503") || lower.contains("504") || lower.contains("server error") ->
+                    "Hearth server error. Please try again later."
+                lower.contains("timeout") || lower.contains("timed out") ->
+                    "Connection to hearth timed out."
+                lower.contains("refused") || lower.contains("connectexception") ->
+                    "Could not connect to hearth. Please ensure the server is reachable."
+                lower.contains("dns") || lower.contains("unknownhost") ->
+                    "Could not resolve hearth host on the network."
+                lower.contains("ssl") || lower.contains("tls") || lower.contains("cert") || lower.contains("handshake") ->
+                    "Secure connection to hearth failed."
+                lower.contains("cleartext") ->
+                    "Cleartext connection is only allowed on private networks."
+                lower.contains("overloaded") ->
+                    "Hearth is currently overloaded. Please try again shortly."
+                lower.contains("rate") && lower.contains("limit") ->
+                    "Hearth rate limit exceeded. Please wait a moment."
+                lower.contains("cancel") ->
+                    "Turn cancelled."
+                else ->
+                    "Hearth request failed. Please check your connection and pairing."
+            }
+        }
+    }
+
+    constructor(context: Context, keyManager: SecureKeyManager) : this(
+        endpointProvider = {
+            keyManager.getHearthEndpoint()?.let {
+                Endpoint(it.first, it.second, it.third)
+            }
+        },
+        prefs = context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+    )
+
+    private val clientScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    @Volatile
+    private var activeSessionId: String? = null
+
+    private var explicitEndpoint: Endpoint? = null
+
+    val chatSession = ChatSession()
+
+    fun setEndpoint(ep: Endpoint?) {
+        explicitEndpoint = ep
+    }
+
+    private fun currentEndpoint(): Endpoint? = explicitEndpoint ?: endpointProvider()
+
+    fun clearSession() {
+        chatSession.clear()
+        // A fresh conversation must also be fresh on the hearth: without
+        // dropping the stored id the model would keep remembering "cleared"
+        // history on the next turn.
+        clearStoredSessionId()
+    }
+
+    fun getStoredSessionId(): String? =
+        prefs.getString(KEY_SESSION_ID, null)?.takeIf { it.isNotBlank() }
+
+    fun setStoredSessionId(id: String) {
+        prefs.edit().putString(KEY_SESSION_ID, id).apply()
+    }
+
+    fun clearStoredSessionId() {
+        prefs.edit().remove(KEY_SESSION_ID).apply()
+    }
+
+    private suspend fun getOrCreateSessionId(client: LarariumClient): String {
+        val existing = getStoredSessionId()
+        if (existing != null) return existing
+        return createNewSession(client)
+    }
+
+    private suspend fun createNewSession(client: LarariumClient): String {
+        val resp = client.createSession()
+        val id = resp.optString("id").ifEmpty { resp.optString("session_id") }
+        if (id.isBlank()) throw IOException("Invalid session response from hearth")
+        setStoredSessionId(id)
+        return id
+    }
+
+    /**
+     * Stop/cancel current turn on the hearth.
+     */
+    fun cancel() {
+        val id = activeSessionId ?: getStoredSessionId() ?: return
+        val ep = currentEndpoint() ?: return
+        clientScope.launch {
+            try {
+                clientFactory(ep).cancel(id)
+            } catch (_: Exception) {
+            }
+        }
+    }
+
+    /**
+     * Streams a chat turn to the paired hearth.
+     * Maps: Delta -> onDelta(text); TurnDone -> onDone(accumulated); Error -> onError(friendly message).
+     * ApprovalRequest -> emits friendly notice via onDelta and continues streaming.
+     * Retries once on 404 or session error event by dropping session id and recreating. Never loops.
+     */
+    suspend fun streamChat(
+        message: String,
+        onDelta: (String) -> Unit,
+        onDone: (String) -> Unit,
+        onError: (String) -> Unit
+    ) = withContext(Dispatchers.IO) {
+        val ep = currentEndpoint()
+        if (ep == null) {
+            onError("Not paired with your hearth yet — use Pair hearth in Settings")
+            return@withContext
+        }
+
+        val client = clientFactory(ep)
+        var attempt = 0
+        var terminalDelivered = false
+        var currentSessionId: String? = null
+
+        while (attempt <= 1 && !terminalDelivered) {
+            val sessionId = currentSessionId ?: try {
+                getOrCreateSessionId(client)
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                onError(friendlyErrorMessage(e.message ?: "Failed to connect to hearth"))
+                return@withContext
+            }
+            activeSessionId = sessionId
+
+            val accumulated = StringBuilder()
+            var shouldRetry = false
+
+            try {
+                client.streamTurn(sessionId, message) { event ->
+                    when (event) {
+                        is HearthEvent.Delta -> {
+                            if (event.text.isNotEmpty()) {
+                                accumulated.append(event.text)
+                                onDelta(event.text)
+                            }
+                        }
+                        is HearthEvent.ApprovalRequest -> {
+                            val notice = "\n\n[$APPROVAL_NOTICE]\n\n"
+                            accumulated.append(notice)
+                            onDelta(notice)
+                        }
+                        is HearthEvent.TurnDone -> {
+                            terminalDelivered = true
+                            onDone(accumulated.toString())
+                        }
+                        is HearthEvent.Error -> {
+                            if (attempt == 0 && accumulated.isEmpty() && isSessionError(event.message, sessionId)) {
+                                shouldRetry = true
+                            } else {
+                                terminalDelivered = true
+                                onError(friendlyErrorMessage(event.message))
+                            }
+                        }
+                        is HearthEvent.ToolStart, is HearthEvent.ToolDone -> {
+                            // Ignored for display per requirement 1b
+                        }
+                    }
+                }
+
+                if (!terminalDelivered && !shouldRetry) {
+                    terminalDelivered = true
+                    onDone(accumulated.toString())
+                }
+            } catch (e: CancellationException) {
+                try {
+                    client.cancel(sessionId)
+                } catch (_: Exception) {}
+                throw e
+            } catch (e: Exception) {
+                val errorMsg = e.message ?: ""
+                if (attempt == 0 && accumulated.isEmpty() && isSessionError(errorMsg, sessionId)) {
+                    shouldRetry = true
+                } else {
+                    terminalDelivered = true
+                    onError(friendlyErrorMessage(errorMsg))
+                }
+            } finally {
+                activeSessionId = null
+            }
+
+            if (shouldRetry) {
+                attempt++
+                clearStoredSessionId()
+                currentSessionId = try {
+                    createNewSession(client)
+                } catch (e: Exception) {
+                    if (e is CancellationException) throw e
+                    terminalDelivered = true
+                    onError(friendlyErrorMessage(e.message ?: "Failed to recreate hearth session"))
+                    return@withContext
+                }
+            } else {
+                break
+            }
+        }
+    }
+
+    /**
+     * Overload accepting message history list.
+     */
+    suspend fun streamChat(
+        messages: List<ChatSession.Message>,
+        onDelta: (String) -> Unit,
+        onDone: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
+        val lastUserMessage = messages.lastOrNull { it.role == "user" }?.content ?: ""
+        streamChat(lastUserMessage, onDelta, onDone, onError)
+    }
+
+    /**
+     * Flow-based streaming completion matching OpenRouterClient/LlamaCppClient.
+     */
+    fun streamCompletion(
+        userQuery: String,
+        imageBase64: String? = null
+    ): Flow<String> = kotlinx.coroutines.flow.channelFlow {
+        var failureMessage: String? = null
+        streamChat(
+            message = userQuery,
+            onDelta = { chunk -> trySend(chunk) },
+            onDone = { /* finished */ },
+            onError = { err -> failureMessage = err }
+        )
+        if (failureMessage != null) {
+            throw IOException(failureMessage)
+        }
+    }.flowOn(Dispatchers.IO)
+}

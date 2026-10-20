@@ -4,4 +4,37 @@
     <string name="accessibility_service_description">Enable this service to activate the AI assistant using volume button combinations. The service monitors key events but does not read screen content.</string>
     <string name="approvals_all_caught_up">All caught up</string>
     <string name="approvals_badge_description">Approvals</string>
+
+    <!-- AI Providers -->
+    <string name="provider_lararium">Lararium hearth</string>
+    <string name="provider_lararium_desc">Connect to your paired hearth</string>
+    <string name="provider_hermes">Self-hosted (OpenAI)</string>
+    <string name="provider_hermes_desc">Custom OpenAI-compatible endpoint</string>
+    <string name="provider_local">On-device (offline)</string>
+    <string name="provider_local_desc">Runs a model on this phone, no internet needed</string>
+    <string name="provider_openrouter">OpenRouter (advanced)</string>
+    <string name="provider_openrouter_desc">Hosted cloud fallback — for testing only</string>
+
+    <!-- Hearth Pairing & Chat -->
+    <string name="hearth_pair_title">Pair hearth</string>
+    <string name="hearth_paired_title">Paired hearth</string>
+    <string name="hearth_paired_as">Paired with %1$s</string>
+    <string name="hearth_not_paired">Not paired</string>
+    <string name="hearth_unpair">Unpair</string>
+    <string name="hearth_pair_dialog_title">Pair with hearth</string>
+    <string name="hearth_pair_dialog_instructions">Enter a pairing link or your server URL and token.</string>
+    <string name="hearth_pairing_link_label">Pairing link</string>
+    <string name="hearth_pairing_link_hint">lararium://pair?host=...&amp;token=...</string>
+    <string name="hearth_or_divider">OR</string>
+    <string name="hearth_server_url_label">Server URL</string>
+    <string name="hearth_server_url_hint">https://example.com:8443</string>
+    <string name="hearth_token_label">Token</string>
+    <string name="hearth_token_hint">lar1_...</string>
+    <string name="hearth_pair_button">Pair</string>
+    <string name="hearth_cancel_button">Cancel</string>
+    <string name="hearth_connecting">Connecting…</string>
+    <string name="hearth_pair_error_invalid">Invalid pairing link or URL/token</string>
+    <string name="hearth_pair_error_failed">Pairing failed: %1$s</string>
+    <string name="hearth_not_paired_error">Not paired with your hearth yet — use Pair hearth in Settings</string>
+    <string name="hearth_approval_notice">Your hearth is asking for approval on another device</string>
 </resources>

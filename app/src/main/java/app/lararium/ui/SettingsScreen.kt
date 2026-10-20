@@ -2,6 +2,7 @@ package app.lararium.ui
 
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.util.Log
@@ -46,6 +47,14 @@ import app.lararium.llm.LocalModelManager
 import app.lararium.service.AssistantService
 import app.lararium.tts.TTSManager
 import app.lararium.BuildConfig
+import app.lararium.R
+import app.lararium.hearth.Endpoint
+import app.lararium.hearth.EndpointPolicy
+import app.lararium.hearth.HearthChatClient
+import app.lararium.hearth.LarariumClient
+import app.lararium.hearth.PairingLink
+import app.lararium.hearth.watch.HearthWatchScheduler
+import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 
 private enum class SettingsCategory(val label: String) {
@@ -98,6 +107,9 @@ fun SettingsScreen(
     var hasBraveApiKey by remember { mutableStateOf(app.secureKeyManager.hasBraveApiKey()) }
     var hasExaApiKey by remember { mutableStateOf(app.secureKeyManager.hasExaApiKey()) }
     var hasLangSearchApiKey by remember { mutableStateOf(app.secureKeyManager.hasLangSearchApiKey()) }
+    var showPairHearthDialog by remember { mutableStateOf(false) }
+    var hearthEndpoint by remember { mutableStateOf(app.secureKeyManager.getHearthEndpoint()) }
+    val hasHearthEndpoint = hearthEndpoint != null
     var searchEngine by remember { mutableStateOf(settingsManager.searchEngine) }
 
     var selectedLanguage by remember { mutableStateOf(settingsManager.voiceLanguage) }
@@ -120,12 +132,15 @@ fun SettingsScreen(
 
     val providerLabel = when (apiProvider) {
         SettingsManager.PROVIDER_LOCAL -> "On-device"
-        SettingsManager.PROVIDER_HERMES -> "Lararium"
+        SettingsManager.PROVIDER_LARARIUM -> stringResource(R.string.provider_lararium)
+        SettingsManager.PROVIDER_HERMES -> "Self-hosted"
         else -> "OpenRouter"
     }
     val selectedModelLabel = if (apiProvider == SettingsManager.PROVIDER_LOCAL) {
         LocalModelManager.AVAILABLE_MODELS
             .find { it.id == settingsManager.localModelId }?.name ?: "Select local model"
+    } else if (apiProvider == SettingsManager.PROVIDER_LARARIUM) {
+        hearthEndpoint?.third ?: stringResource(R.string.hearth_not_paired)
     } else if (apiProvider == SettingsManager.PROVIDER_HERMES) {
         settingsManager.hermesModel
     } else {
@@ -145,6 +160,7 @@ fun SettingsScreen(
     }
     val keyStatus = when (apiProvider) {
         SettingsManager.PROVIDER_LOCAL -> "Offline"
+        SettingsManager.PROVIDER_LARARIUM -> if (hasHearthEndpoint) "Paired" else "Not paired"
         SettingsManager.PROVIDER_HERMES -> if (hasHermesKey) "API key saved" else "API key needed"
         else -> if (hasApiKey) "API key saved" else "API key needed"
     }
@@ -177,7 +193,7 @@ fun SettingsScreen(
                     provider = providerLabel,
                     model = selectedModelLabel,
                     voice = voiceLabel,
-                    search = if (apiProvider == SettingsManager.PROVIDER_LOCAL) null else searchLabel,
+                    search = if (apiProvider == SettingsManager.PROVIDER_LOCAL || apiProvider == SettingsManager.PROVIDER_LARARIUM) null else searchLabel,
                     keyStatus = keyStatus
                 )
 
@@ -191,14 +207,16 @@ fun SettingsScreen(
                 var showProviderDialog by remember { mutableStateOf(false) }
 
                 val providerName = when (apiProvider) {
-                    SettingsManager.PROVIDER_LOCAL -> "On-device (offline)"
-                    SettingsManager.PROVIDER_HERMES -> "Lararium hearth"
-                    else -> "OpenRouter (advanced)"
+                    SettingsManager.PROVIDER_LOCAL -> stringResource(R.string.provider_local)
+                    SettingsManager.PROVIDER_LARARIUM -> stringResource(R.string.provider_lararium)
+                    SettingsManager.PROVIDER_HERMES -> stringResource(R.string.provider_hermes)
+                    else -> stringResource(R.string.provider_openrouter)
                 }
 
                 SettingsItem(
                     icon = when (apiProvider) {
                         SettingsManager.PROVIDER_LOCAL -> Icons.Default.OfflineBolt
+                        SettingsManager.PROVIDER_LARARIUM -> Icons.Default.Sync
                         else -> Icons.Default.Cloud
                     },
                     title = "AI Provider",
@@ -213,9 +231,10 @@ fun SettingsScreen(
                         text = {
                             Column {
                                 listOf(
-                                    Triple(SettingsManager.PROVIDER_HERMES, "Lararium hearth", "Your own hearthd server — set URL and API key"),
-                                    Triple(SettingsManager.PROVIDER_LOCAL, "On-device (offline)", "Runs a model on this phone, no internet needed"),
-                                    Triple(SettingsManager.PROVIDER_OPENROUTER, "OpenRouter (advanced)", "Hosted cloud fallback — for testing only")
+                                    Triple(SettingsManager.PROVIDER_LARARIUM, stringResource(R.string.provider_lararium), stringResource(R.string.provider_lararium_desc)),
+                                    Triple(SettingsManager.PROVIDER_HERMES, stringResource(R.string.provider_hermes), stringResource(R.string.provider_hermes_desc)),
+                                    Triple(SettingsManager.PROVIDER_LOCAL, stringResource(R.string.provider_local), stringResource(R.string.provider_local_desc)),
+                                    Triple(SettingsManager.PROVIDER_OPENROUTER, stringResource(R.string.provider_openrouter), stringResource(R.string.provider_openrouter_desc))
                                 ).forEach { (provider, name, description) ->
                                     Row(
                                         modifier = Modifier.fillMaxWidth()
@@ -249,9 +268,47 @@ fun SettingsScreen(
                             }
                         },
                         confirmButton = {
-                            TextButton(onClick = { showProviderDialog = false }) { Text("Cancel") }
+                            TextButton(onClick = { showProviderDialog = false }) { Text(stringResource(R.string.hearth_cancel_button)) }
                         }
                     )
+                }
+
+                if (apiProvider == SettingsManager.PROVIDER_LARARIUM) {
+                    SettingsItem(
+                        icon = Icons.Default.Link,
+                        title = stringResource(R.string.hearth_pair_title),
+                        subtitle = if (hearthEndpoint != null) {
+                            stringResource(R.string.hearth_paired_as, hearthEndpoint!!.third)
+                        } else {
+                            stringResource(R.string.hearth_not_paired)
+                        },
+                        onClick = { showPairHearthDialog = true }
+                    )
+                    if (hearthEndpoint != null) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            FilledTonalButton(
+                                onClick = {
+                                    app.secureKeyManager.clearHearthEndpoint()
+                                    context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                                        .edit()
+                                        .remove(HearthChatClient.KEY_SESSION_ID)
+                                        .apply()
+                                    hearthEndpoint = null
+                                },
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.errorContainer,
+                                    contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            ) {
+                                Text(stringResource(R.string.hearth_unpair))
+                            }
+                        }
+                    }
                 }
 
                 if (apiProvider == SettingsManager.PROVIDER_OPENROUTER) {
@@ -286,7 +343,7 @@ fun SettingsScreen(
                 )
             }
 
-            if (apiProvider != SettingsManager.PROVIDER_LOCAL) {
+            if (apiProvider != SettingsManager.PROVIDER_LOCAL && apiProvider != SettingsManager.PROVIDER_LARARIUM) {
                 SettingsSection(title = "Web Search") {
                     // Search remains available in Hermes mode: the agent's tool loop uses it.
                     val searchEngineName = when (searchEngine) {
@@ -344,7 +401,7 @@ fun SettingsScreen(
                 }
             }
 
-            if (apiProvider != SettingsManager.PROVIDER_LOCAL && apiProvider != SettingsManager.PROVIDER_HERMES) {
+            if (apiProvider != SettingsManager.PROVIDER_LOCAL && apiProvider != SettingsManager.PROVIDER_HERMES && apiProvider != SettingsManager.PROVIDER_LARARIUM) {
                 SettingsSection(title = "AI Model") {
                     val modelName = SettingsManager.AVAILABLE_MODELS
                         .find { it.id == selectedModel }?.name ?: selectedModel
@@ -1059,6 +1116,15 @@ fun SettingsScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showHermesApiKeyDialog = false }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showPairHearthDialog) {
+        PairHearthDialog(
+            onDismiss = { showPairHearthDialog = false },
+            onPaired = { ep ->
+                hearthEndpoint = Triple(ep.baseUrl, ep.token, ep.name)
             }
         )
     }
@@ -2354,4 +2420,193 @@ private fun LocalModelSelectionDialog(
             }
         }
     }
+}
+
+@Composable
+fun PairHearthDialog(
+    onDismiss: () -> Unit,
+    onPaired: (Endpoint) -> Unit
+) {
+    val context = LocalContext.current
+    val app = context.applicationContext as AssistantApplication
+    val scope = rememberCoroutineScope()
+
+    var pairingLink by remember { mutableStateOf("") }
+    var serverUrl by remember { mutableStateOf("") }
+    var token by remember { mutableStateOf("") }
+    var isConnecting by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+
+    fun doPair() {
+        errorMessage = null
+        val rawLink = pairingLink.trim()
+        val rawUrl = serverUrl.trim()
+        val rawToken = token.trim()
+
+        val parsed: Pair<Endpoint, String?>? = when {
+            rawLink.isNotEmpty() -> PairingLink.parse(rawLink)
+            rawUrl.isNotEmpty() && rawToken.isNotEmpty() -> {
+                val normalizedUrl = if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+                    val hostPart = rawUrl.substringBefore(':')
+                    if (EndpointPolicy.isPrivateV4(hostPart) || hostPart == "localhost" || hostPart == "127.0.0.1") "http://$rawUrl" else "https://$rawUrl"
+                } else rawUrl
+                val built = "lararium://pair?host=" +
+                    java.net.URLEncoder.encode(normalizedUrl, "UTF-8") +
+                    "&token=" + java.net.URLEncoder.encode(rawToken, "UTF-8")
+                PairingLink.parse(built)
+            }
+            else -> null
+        }
+
+        if (parsed == null) {
+            errorMessage = context.getString(R.string.hearth_pair_error_invalid)
+            return
+        }
+
+        val (ep, _) = parsed
+        isConnecting = true
+
+        scope.launch {
+            try {
+                val client = LarariumClient(ep)
+                client.health()
+                app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                    .edit()
+                    .remove(HearthChatClient.KEY_SESSION_ID)
+                    .apply()
+                HearthWatchScheduler.ensurePeriodic(app)
+                HearthWatchScheduler.refreshNow(app)
+                onPaired(ep)
+                onDismiss()
+            } catch (e: Exception) {
+                val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
+                errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
+            } finally {
+                isConnecting = false
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = { if (!isConnecting) onDismiss() },
+        title = {
+            Text(
+                stringResource(R.string.hearth_pair_dialog_title),
+                style = MaterialTheme.typography.headlineSmall
+            )
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text(
+                    stringResource(R.string.hearth_pair_dialog_instructions),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = pairingLink,
+                    onValueChange = {
+                        pairingLink = it
+                        if (it.isNotBlank()) {
+                            serverUrl = ""
+                            token = ""
+                        }
+                        errorMessage = null
+                    },
+                    label = { Text(stringResource(R.string.hearth_pairing_link_label)) },
+                    placeholder = { Text(stringResource(R.string.hearth_pairing_link_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isConnecting
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    HorizontalDivider(modifier = Modifier.weight(1f))
+                    Text(
+                        stringResource(R.string.hearth_or_divider),
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    HorizontalDivider(modifier = Modifier.weight(1f))
+                }
+
+                OutlinedTextField(
+                    value = serverUrl,
+                    onValueChange = {
+                        serverUrl = it
+                        if (it.isNotBlank()) pairingLink = ""
+                        errorMessage = null
+                    },
+                    label = { Text(stringResource(R.string.hearth_server_url_label)) },
+                    placeholder = { Text(stringResource(R.string.hearth_server_url_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    enabled = !isConnecting
+                )
+
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = {
+                        token = it
+                        if (it.isNotBlank()) pairingLink = ""
+                        errorMessage = null
+                    },
+                    label = { Text(stringResource(R.string.hearth_token_label)) },
+                    placeholder = { Text(stringResource(R.string.hearth_token_hint)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    enabled = !isConnecting
+                )
+
+                if (isConnecting) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                        Text(
+                            stringResource(R.string.hearth_connecting),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+
+                if (errorMessage != null) {
+                    Text(
+                        text = errorMessage!!,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { doPair() },
+                enabled = !isConnecting && (pairingLink.isNotBlank() || (serverUrl.isNotBlank() && token.isNotBlank()))
+            ) {
+                Text(stringResource(R.string.hearth_pair_button))
+            }
+        },
+        dismissButton = {
+            TextButton(
+                onClick = onDismiss,
+                enabled = !isConnecting
+            ) {
+                Text(stringResource(R.string.hearth_cancel_button))
+            }
+        }
+    )
 }

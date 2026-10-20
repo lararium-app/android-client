@@ -18,6 +18,7 @@ import app.lararium.audio.SpeechRecognizerManager
 import app.lararium.audio.VoiceActivityDetector
 import app.lararium.audio.VoskTranscriber
 import app.lararium.audio.WhisperTranscriber
+import app.lararium.hearth.HearthChatClient
 import app.lararium.llm.*
 import app.lararium.search.BraveSearchClient
 import app.lararium.search.ExaSearchClient
@@ -56,6 +57,9 @@ class AssistantService : Service() {
         private set
     val isOpenRouterReady: Boolean get() = ::openRouterClient.isInitialized
     private lateinit var llamaCppClient: LlamaCppClient
+    lateinit var hearthChatClient: HearthChatClient
+        private set
+    val isHearthReady: Boolean get() = ::hearthChatClient.isInitialized
     lateinit var localModelManager: LocalModelManager
         private set
     private lateinit var braveSearchClient: BraveSearchClient
@@ -110,6 +114,10 @@ class AssistantService : Service() {
      * Safely check if current model supports vision, even if OpenRouter client hasn't been initialized yet.
      */
     fun isVisionCapable(): Boolean {
+        if (settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL ||
+            settingsManager.apiProvider == SettingsManager.PROVIDER_LARARIUM) {
+            return false
+        }
         return isOpenRouterReady && openRouterClient.isVisionCapable()
     }
     
@@ -234,6 +242,9 @@ class AssistantService : Service() {
         llamaCppClient = LlamaCppClient().apply {
             setSystemPrompt(settingsManager.systemPrompt)
         }
+
+        // Initialize hearth client
+        hearthChatClient = HearthChatClient(this, app.secureKeyManager)
         
         // Do not load a local model merely because the app was opened or the
         // settings screen bound this service. Large GGUF models allocate native
@@ -695,6 +706,11 @@ class AssistantService : Service() {
                 _chatMessages.value = llamaCppClient.chatSession.getAllMessages()
                 Log.d(TAG, "Added to Local LLM session: '$query'")
             }
+            SettingsManager.PROVIDER_LARARIUM -> {
+                hearthChatClient.chatSession.addUserMessage(query, imageBase64)
+                _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
+                Log.d(TAG, "Added to Hearth session: '$query'")
+            }
             else -> {
                 openRouterClient.chatSession.addUserMessage(query, imageBase64)
                 _chatMessages.value = openRouterClient.chatSession.getAllMessages()
@@ -726,7 +742,22 @@ class AssistantService : Service() {
     private suspend fun processQueryInternal(query: String, imageBase64: String? = null) {
         try {
             val sanitizedQuery = sanitizeQuery(query)
-            val isLocal = settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL
+            val provider = settingsManager.apiProvider
+
+            if (provider == SettingsManager.PROVIDER_LARARIUM) {
+                val app = application as AssistantApplication
+                val endpoint = app.secureKeyManager.getHearthEndpoint()
+                if (endpoint == null) {
+                    val notPairedError = "Not paired with your hearth yet — use Pair hearth in Settings"
+                    _response.value = notPairedError
+                    _assistantState.value = AssistantState.Error(notPairedError)
+                    return
+                }
+                streamHearth(sanitizedQuery)
+                return
+            }
+
+            val isLocal = provider == SettingsManager.PROVIDER_LOCAL
 
             if (_webSearchEnabled.value && imageBase64 == null && !isLocal) {
                 when (classifyRetrievalIntent(sanitizedQuery)) {
@@ -1034,6 +1065,51 @@ class AssistantService : Service() {
     }
 
     /**
+     * Direct streaming turn through the paired hearth.
+     * Tool injection and web search are bypassed — hearth runs its own guarded loop.
+     */
+    private suspend fun streamHearth(query: String) {
+        _response.value = ""
+        _assistantState.value = AssistantState.Responding
+
+        val fullResponse = StringBuilder()
+
+        try {
+            hearthChatClient.streamChat(
+                message = query,
+                onDelta = { chunk ->
+                    fullResponse.append(chunk)
+                    _response.value = fullResponse.toString()
+                },
+                onDone = { accumulated ->
+                    // Handled below via finalizeResponse
+                },
+                onError = { friendlyError ->
+                    Log.e(TAG, "Hearth streaming error: $friendlyError")
+                    _response.value = friendlyError
+                    _assistantState.value = AssistantState.Error(friendlyError)
+                }
+            )
+
+            if (_assistantState.value !is AssistantState.Error) {
+                finalizeResponse(fullResponse.toString(), emptyList())
+            }
+        } catch (e: CancellationException) {
+            Log.i(TAG, "Hearth streaming cancelled")
+            hearthChatClient.cancel()
+            if (_assistantState.value !is AssistantState.Complete) {
+                _assistantState.value = AssistantState.Idle
+            }
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in streamHearth", e)
+            val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
+            _response.value = friendly
+            _assistantState.value = AssistantState.Error(friendly)
+        }
+    }
+
+    /**
      * Direct streaming without function calling (local models or search disabled).
      */
     private suspend fun streamDirect(query: String, imageBase64: String? = null) {
@@ -1113,26 +1189,32 @@ class AssistantService : Service() {
         }
 
         val useLocal = settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL
+        val isHearth = settingsManager.apiProvider == SettingsManager.PROVIDER_LARARIUM
         _response.value = cleaned
 
         // Append sources if web search was used
-        if (sources.isNotEmpty() && !useLocal) {
+        if (sources.isNotEmpty() && !useLocal && !isHearth) {
             val sourcesText = "\n\n📚 Sources:\n" + sources.take(3).mapIndexed { i, url ->
                 "${i + 1}. $url"
             }.joinToString("\n")
             _response.value = cleaned + sourcesText
         }
 
+        if (isHearth) {
+            hearthChatClient.chatSession.addAssistantMessage(cleaned)
+        }
+
         // Update chat messages for UI
         withContext(Dispatchers.Main) {
             _chatMessages.value = when {
                 useLocal -> llamaCppClient.chatSession.getAllMessages()
+                isHearth -> hearthChatClient.chatSession.getAllMessages()
                 else -> openRouterClient.chatSession.getAllMessages()
             }
         }
 
         // URL detection
-        if (!useLocal) {
+        if (!useLocal && !isHearth) {
             val urlsToOpen = detectUrlsToOpen(cleaned)
             if (urlsToOpen.isNotEmpty()) {
                 _pendingUrls.value = urlsToOpen
@@ -1247,6 +1329,9 @@ class AssistantService : Service() {
         
         openRouterClient.clearSession()
         llamaCppClient.clearSession()
+        if (::hearthChatClient.isInitialized) {
+            hearthChatClient.clearSession()
+        }
         _chatMessages.value = emptyList()
         _response.value = ""
         _transcription.value = ""
@@ -1271,6 +1356,7 @@ class AssistantService : Service() {
         val provider = settingsManager.apiProvider
         val session = when (provider) {
             SettingsManager.PROVIDER_LOCAL -> llamaCppClient.chatSession
+            SettingsManager.PROVIDER_LARARIUM -> hearthChatClient.chatSession
             else -> openRouterClient.chatSession
         }
         
@@ -1461,6 +1547,9 @@ class AssistantService : Service() {
                 settingsManager.hermesModel else settingsManager.getEffectiveModel())
             setSystemPrompt(settingsManager.systemPrompt)
         }
+
+        // Reload hearth client with updated settings
+        hearthChatClient = HearthChatClient(this, secureKeys)
     }
 
     /**
@@ -1492,6 +1581,9 @@ class AssistantService : Service() {
         ttsManager.stop()
         // Also stop local generation if running
         llamaCppClient.stopGeneration()
+        if (::hearthChatClient.isInitialized) {
+            hearthChatClient.cancel()
+        }
         _assistantState.value = AssistantState.Idle
     }
 
@@ -1507,6 +1599,9 @@ class AssistantService : Service() {
         activeResponseJob = null
         ttsManager.stop()
         llamaCppClient.stopGeneration()
+        if (::hearthChatClient.isInitialized) {
+            hearthChatClient.cancel()
+        }
 
         if (wasSpeakingOnly) {
             // TTS was in progress — stop speech silently, don't modify the response
@@ -1517,12 +1612,21 @@ class AssistantService : Service() {
         val hadPartialResponse = wasActive && _response.value.isNotBlank()
         if (hadPartialResponse) {
             val partial = _response.value.trim() + "\n\n[Stopped]"
-            if (settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL) {
-                llamaCppClient.chatSession.addAssistantMessage(partial)
-                _chatMessages.value = llamaCppClient.chatSession.getAllMessages()
-            } else {
-                openRouterClient.chatSession.addAssistantMessage(partial)
-                _chatMessages.value = openRouterClient.chatSession.getAllMessages()
+            when (settingsManager.apiProvider) {
+                SettingsManager.PROVIDER_LOCAL -> {
+                    llamaCppClient.chatSession.addAssistantMessage(partial)
+                    _chatMessages.value = llamaCppClient.chatSession.getAllMessages()
+                }
+                SettingsManager.PROVIDER_LARARIUM -> {
+                    if (::hearthChatClient.isInitialized) {
+                        hearthChatClient.chatSession.addAssistantMessage(partial)
+                        _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
+                    }
+                }
+                else -> {
+                    openRouterClient.chatSession.addAssistantMessage(partial)
+                    _chatMessages.value = openRouterClient.chatSession.getAllMessages()
+                }
             }
             _response.value = ""
         }
