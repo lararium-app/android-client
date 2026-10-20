@@ -12,12 +12,15 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import app.lararium.hearth.Endpoint
+import app.lararium.R
 import app.lararium.hearth.LarariumClient
+import app.lararium.hearth.badge.HearthBadgeState
 import app.lararium.hearth.watch.CardInfo
 import app.lararium.hearth.watch.WatchLogic
 import app.lararium.security.SecureKeyManager
@@ -83,6 +86,7 @@ fun ApprovalsScreen(onBack: () -> Unit) {
                     withContext(Dispatchers.Main) {
                         cards = cards?.filter { it.id != cardId }
                     }
+                    HearthBadgeState.refresh(context)
                 } else {
                     val failureMessage = describeResolveFailure(status, body)
                     snackbarHostState.showSnackbar(failureMessage)
@@ -169,7 +173,7 @@ fun ApprovalsScreen(onBack: () -> Unit) {
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = "No approvals waiting.",
+                            text = stringResource(R.string.approvals_all_caught_up),
                             style = MaterialTheme.typography.bodyLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

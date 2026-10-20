@@ -37,9 +37,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -54,14 +58,19 @@ import app.lararium.audio.VoskTranscriber
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.PairingLink
+import app.lararium.hearth.badge.BadgeLogic
+import app.lararium.hearth.badge.HearthBadgeState
 import app.lararium.security.SecureKeyManager
 import app.lararium.ui.approvals.ApprovalsScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+
+private const val BADGE_REFRESH_MS = 30_000L
 
 class MainActivity : ComponentActivity() {
 
@@ -192,6 +201,16 @@ class MainActivity : ComponentActivity() {
                             ) != PackageManager.PERMISSION_GRANTED
                         ) {
                             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
+                    }
+                }
+
+                // Pending-approval badge: refresh on every ON_START, then every 30s while foregrounded.
+                LaunchedEffect(Unit) {
+                    lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                        while (true) {
+                            HearthBadgeState.refresh(context)
+                            delay(BADGE_REFRESH_MS)
                         }
                     }
                 }
@@ -375,6 +394,8 @@ fun MainScreen(
         } else false
     }
     
+    val pendingApprovals by HearthBadgeState.pending.collectAsStateWithLifecycle()
+
     val voskTranscriber = remember { VoskTranscriber(context) }
     var isModelDownloaded by remember { mutableStateOf(!voskTranscriber.needsModelDownload()) }
 
@@ -408,10 +429,21 @@ fun MainScreen(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (SecureKeyManager(context).getHearthEndpoint() != null) {
                     IconButton(onClick = onOpenApprovals) {
-                        Icon(
-                            Icons.Default.VerifiedUser,
-                            contentDescription = "Approvals"
-                        )
+                        BadgedBox(
+                            badge = {
+                                BadgeLogic.badgeText(pendingApprovals)?.let { text ->
+                                    Badge(
+                                        containerColor = MaterialTheme.colorScheme.error,
+                                        contentColor = MaterialTheme.colorScheme.onError
+                                    ) { Text(text) }
+                                }
+                            }
+                        ) {
+                            Icon(
+                                Icons.Default.VerifiedUser,
+                                contentDescription = stringResource(R.string.approvals_badge_description)
+                            )
+                        }
                     }
                 }
                 IconButton(onClick = onOpenSettings) {
@@ -456,6 +488,39 @@ fun MainScreen(
                         contentDescription = "Launch",
                         tint = MaterialTheme.colorScheme.primaryContainer,
                         modifier = Modifier.padding(14.dp)
+                    )
+                }
+            }
+        }
+
+        if (pendingApprovals > 0 && SecureKeyManager(context).getHearthEndpoint() != null) {
+            Card(
+                onClick = onOpenApprovals,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.errorContainer
+                )
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.VerifiedUser,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onErrorContainer
+                    )
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        pluralStringResource(
+                            R.plurals.approvals_waiting_banner,
+                            pendingApprovals,
+                            pendingApprovals
+                        ),
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onErrorContainer,
+                        maxLines = 1
                     )
                 }
             }
