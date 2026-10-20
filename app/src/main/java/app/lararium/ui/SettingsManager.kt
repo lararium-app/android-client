@@ -35,6 +35,7 @@ class SettingsManager(context: Context) {
         const val WHISPER_OPENAI = "openai"
         
         // API Providers
+        const val PROVIDER_LARARIUM = "lararium"
         const val PROVIDER_OPENROUTER = "openrouter"
         const val PROVIDER_HERMES = "hermes"  // Self-hosted OpenAI-compatible
         const val PROVIDER_LOCAL = "local"  // Local llama.cpp models
@@ -166,6 +167,11 @@ class SettingsManager(context: Context) {
     var hermesModel: String
         get() = prefs.getString("hermes_model", DEFAULT_HEARTH_MODEL) ?: DEFAULT_HEARTH_MODEL
         set(value) = prefs.edit().putString("hermes_model", value).apply()
+
+    /**
+     * Check if current provider is Lararium hearth
+     */
+    fun isHearthProvider(): Boolean = apiProvider == PROVIDER_LARARIUM
 
     /**
      * Check if current provider is local (offline)

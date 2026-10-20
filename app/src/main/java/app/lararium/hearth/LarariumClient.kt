@@ -47,7 +47,7 @@ sealed class HearthEvent {
  * Thin, coroutine-friendly wrapper around the hearthd v1 REST surface.
  * Uses only platform-included `org.json`; no new Gradle dependencies.
  */
-class LarariumClient(private val endpoint: Endpoint) {
+open class LarariumClient(private val endpoint: Endpoint) {
 
     private val auth get() = mapOf("Authorization" to "Bearer ${endpoint.token}")
 
@@ -55,7 +55,7 @@ class LarariumClient(private val endpoint: Endpoint) {
     // Health
     // -----------------------------------------------------------------------
 
-    suspend fun health(): JSONObject = withContext(Dispatchers.IO) {
+    open suspend fun health(): JSONObject = withContext(Dispatchers.IO) {
         val resp = Net.get("${endpoint.baseUrl}/v1/health", auth)
         check(resp.status == 200) { "health returned ${resp.status}" }
         JSONObject(resp.body)
@@ -65,13 +65,13 @@ class LarariumClient(private val endpoint: Endpoint) {
     // Sessions
     // -----------------------------------------------------------------------
 
-    suspend fun listSessions(): JSONArray = withContext(Dispatchers.IO) {
+    open suspend fun listSessions(): JSONArray = withContext(Dispatchers.IO) {
         val resp = Net.get("${endpoint.baseUrl}/v1/sessions", auth)
         check(resp.status == 200) { "listSessions returned ${resp.status}" }
         JSONArray(resp.body)
     }
 
-    suspend fun createSession(title: String? = null): JSONObject = withContext(Dispatchers.IO) {
+    open suspend fun createSession(title: String? = null): JSONObject = withContext(Dispatchers.IO) {
         val body = if (title != null) JSONObject().put("title", title).toString() else "{}"
         val resp = Net.post("${endpoint.baseUrl}/v1/sessions", body, auth)
         check(resp.status == 201) { "createSession returned ${resp.status}" }
@@ -82,7 +82,7 @@ class LarariumClient(private val endpoint: Endpoint) {
     // Events (polling replay)
     // -----------------------------------------------------------------------
 
-    suspend fun events(id: String, afterSeq: Int = 0): JSONObject = withContext(Dispatchers.IO) {
+    open suspend fun events(id: String, afterSeq: Int = 0): JSONObject = withContext(Dispatchers.IO) {
         val url = "${endpoint.baseUrl}/v1/sessions/$id/events?after_seq=$afterSeq&limit=200"
         val resp = Net.get(url, auth)
         check(resp.status == 200) { "events returned ${resp.status}" }
@@ -93,7 +93,7 @@ class LarariumClient(private val endpoint: Endpoint) {
     // Cancel
     // -----------------------------------------------------------------------
 
-    suspend fun cancel(id: String): JSONObject = withContext(Dispatchers.IO) {
+    open suspend fun cancel(id: String): JSONObject = withContext(Dispatchers.IO) {
         val resp = Net.post("${endpoint.baseUrl}/v1/sessions/$id/cancel", "{}", auth)
         check(resp.status in 200..299) { "cancel returned ${resp.status}" }
         JSONObject(resp.body)
@@ -103,7 +103,7 @@ class LarariumClient(private val endpoint: Endpoint) {
     // Custos (watch / approvals)
     // -----------------------------------------------------------------------
 
-    suspend fun custosCards(): String = withContext(Dispatchers.IO) {
+    open suspend fun custosCards(): String = withContext(Dispatchers.IO) {
         val resp = Net.get("${endpoint.baseUrl}/v1/custos/cards", auth)
         check(resp.status == 200) { "custosCards returned ${resp.status}" }
         resp.body
@@ -113,7 +113,7 @@ class LarariumClient(private val endpoint: Endpoint) {
      * Resolves a custody card with the specified verdict ("once", "always", or "deny").
      * Returns the HTTP status code and response body without throwing on non-2xx responses.
      */
-    suspend fun resolveCard(id: String, verdict: String): Pair<Int, String> = withContext(Dispatchers.IO) {
+    open suspend fun resolveCard(id: String, verdict: String): Pair<Int, String> = withContext(Dispatchers.IO) {
         val body = JSONObject().put("verdict", verdict).toString()
         val resp = Net.post("${endpoint.baseUrl}/v1/custos/cards/$id/resolve", body, auth)
         resp.status to resp.body
@@ -136,7 +136,7 @@ class LarariumClient(private val endpoint: Endpoint) {
      * - no character reader anywhere — everything over raw bytes decoded at
      *   the boundary where a complete UTF-8 string is known to be whole.
      */
-    suspend fun streamTurn(
+    open suspend fun streamTurn(
         id: String,
         text: String,
         approval: JSONObject? = null,
