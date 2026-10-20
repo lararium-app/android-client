@@ -48,9 +48,18 @@
         </trust-anchors>
     </domain-config>
     
-    <!-- Self-hosted endpoints are user-configured; cleartext is permitted for
-         private-network hosts at runtime by EndpointPolicy, not baked here.
-         Add your own LAN/tailnet host above if your ROM needs the NSC entry. -->
+    <!-- Self-hosted endpoints are user-configured. Net.kt re-checks host
+         policy at runtime (including on resolved addresses), but auxiliary
+         OpenAI-compatible probes use the platform HTTP stack, which enforces
+         NSC before app code runs. Permit cleartext for private ranges only:
+         RFC1918, Tailscale CGNAT, and loopback. -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.0.0/8</domain>
+        <domain includeSubdomains="true">172.16.0.0/12</domain>
+        <domain includeSubdomains="true">192.168.0.0/16</domain>
+        <domain includeSubdomains="true">100.64.0.0/10</domain>
+        <domain includeSubdomains="true">127.0.0.1</domain>
+    </domain-config>
     
     <!-- Debug overrides for user-installed CAs during development -->
     <debug-overrides>
