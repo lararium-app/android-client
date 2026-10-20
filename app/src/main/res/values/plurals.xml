@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <plurals name="approvals_waiting_banner">
+        <item quantity="one">%d approval waiting</item>
+        <item quantity="other">%d approvals waiting</item>
+    </plurals>
+</resources>
