@@ -2,4 +2,6 @@
     <string name="app_name">Lararium</string>
     <string name="assistant_tile_label">Lararium</string>
     <string name="accessibility_service_description">Enable this service to activate the AI assistant using volume button combinations. The service monitors key events but does not read screen content.</string>
+    <string name="approvals_all_caught_up">All caught up</string>
+    <string name="approvals_badge_description">Approvals</string>
 </resources>
