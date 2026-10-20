@@ -152,7 +152,7 @@ class LarariumClient(private val endpoint: Endpoint) {
         )
 
         openSseSocket(
-            "${endpoint.baseUrl}/v1/sessions/$id/turns",
+            "${endpoint.baseUrl}/v1/sessions/$id/messages",
             body,
             extraHeaders,
         ).use { ctx ->
