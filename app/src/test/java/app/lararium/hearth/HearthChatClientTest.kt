@@ -565,4 +565,55 @@ class HearthChatClientTest {
             }
         }
     }
+
+    @Test
+    fun clearSession_dropsStoredSessionId_soNewChatIsFreshOnHearth() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        var createCount = 0
+
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun createSession(title: String?): JSONObject {
+                createCount++
+                return JSONObject().put("id", "sess-$createCount")
+            }
+
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                onEvent(HearthEvent.Delta("ok", 1))
+                onEvent(HearthEvent.TurnDone(2, JSONObject()))
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        chatClient.streamChat(
+            message = "first",
+            onDelta = {},
+            onDone = {},
+            onError = { fail("Unexpected error: $it") }
+        )
+        assertEquals("sess-1", prefs.getString("hearth_session_id", null))
+
+        // "New chat": the stored hearth session must not survive the clear,
+        // or the model keeps remembering the cleared conversation.
+        chatClient.clearSession()
+        assertNull(prefs.getString("hearth_session_id", null))
+
+        chatClient.streamChat(
+            message = "second",
+            onDelta = {},
+            onDone = {},
+            onError = { fail("Unexpected error: $it") }
+        )
+        assertEquals(2, createCount)
+        assertEquals("sess-2", prefs.getString("hearth_session_id", null))
+    }
 }

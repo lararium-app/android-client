@@ -39,6 +39,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        testOptions {
+            // Pure-JVM tests exercise classes that log via android.util.Log;
+            // unmocked framework methods must no-op, not crash the runner.
+            unitTests.isReturnDefaultValues = true
+        }
+
         ndk {
             abiFilters += listOf("arm64-v8a")
         }

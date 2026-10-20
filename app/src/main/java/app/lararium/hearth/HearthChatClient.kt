@@ -115,6 +115,10 @@ class HearthChatClient(
 
     fun clearSession() {
         chatSession.clear()
+        // A fresh conversation must also be fresh on the hearth: without
+        // dropping the stored id the model would keep remembering "cleared"
+        // history on the next turn.
+        clearStoredSessionId()
     }
 
     fun getStoredSessionId(): String? =
