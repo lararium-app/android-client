@@ -34,6 +34,12 @@ object Net {
         timeoutMs: Int = 10_000,
     ): HttpResponse = request("POST", urlString, body, headers, timeoutMs)
 
+    fun delete(
+        urlString: String,
+        headers: Map<String, String> = emptyMap(),
+        timeoutMs: Int = 10_000,
+    ): HttpResponse = request("DELETE", urlString, null, headers, timeoutMs)
+
     private fun request(
         method: String,
         urlString: String,

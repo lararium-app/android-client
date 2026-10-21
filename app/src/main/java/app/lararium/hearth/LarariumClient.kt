@@ -78,6 +78,11 @@ open class LarariumClient(private val endpoint: Endpoint) {
         JSONObject(resp.body)
     }
 
+    open suspend fun deleteSession(id: String): Unit = withContext(Dispatchers.IO) {
+        val resp = Net.delete("${endpoint.baseUrl}/v1/sessions/$id", auth)
+        check(resp.status == 204) { "deleteSession returned ${resp.status}" }
+    }
+
     // -----------------------------------------------------------------------
     // Events (polling replay)
     // -----------------------------------------------------------------------

@@ -58,6 +58,12 @@
     <string name="chat_composer_stop">Stop response</string>
     <string name="conversations_title">Chats</string>
     <string name="refresh_conversations">Refresh conversations</string>
+    <string name="delete_session_title">Delete chat</string>
+    <string name="delete_session_confirm">Delete “%1$s”?</string>
+    <string name="delete_session_confirm_button">Delete</string>
+    <string name="cancel">Cancel</string>
+    <string name="delete_session_failed">Failed to delete chat</string>
+    <string name="delete_session_cannot_delete_main">Cannot delete the main chat</string>
 
     <!-- Settings Sections -->
     <string name="settings_section_connection">Connection</string>

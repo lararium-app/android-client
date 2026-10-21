@@ -3,6 +3,7 @@ package app.lararium.ui
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -76,7 +77,100 @@ class DrawerLogicTest {
         assertEquals(1700000000L, parsed[0].updatedAt)
 
         assertEquals("sess-2", parsed[1].id)
-        assertEquals("Conversation sess-2", parsed[1].title)
+        assertEquals("New chat", parsed[1].title)
+    }
+
+    @Test
+    fun resolveSessionTitle_headerTitleWhenPresent() {
+        assertEquals("Custom Title", DrawerLogic.resolveSessionTitle("Custom Title"))
+        assertEquals("Custom Title", DrawerLogic.resolveSessionTitle("  Custom Title  "))
+    }
+
+    @Test
+    fun resolveSessionTitle_fallbackToFirstUserMessageSnippet() {
+        val events = JSONArray().apply {
+            put(JSONObject().apply {
+                put("t", "tool_call"); put("role", "assistant")
+            })
+            put(JSONObject().apply {
+                put("t", "msg"); put("role", "user"); put("text", "What is the capital of France?")
+            })
+            put(JSONObject().apply {
+                put("t", "msg"); put("role", "assistant"); put("text", "Paris")
+            })
+        }
+        assertEquals("What is the capital of France?", DrawerLogic.resolveSessionTitle(null, events))
+        assertEquals("What is the capital of France?", DrawerLogic.resolveSessionTitle("", events))
+    }
+
+    @Test
+    fun resolveSessionTitle_fallbackToNewChatWhenNoUserMessageOrEvents() {
+        val eventsWithoutUser = JSONArray().apply {
+            put(JSONObject().apply {
+                put("t", "msg"); put("role", "assistant"); put("text", "Hello")
+            })
+        }
+        assertEquals("New chat", DrawerLogic.resolveSessionTitle(null, eventsWithoutUser))
+        assertEquals("New chat", DrawerLogic.resolveSessionTitle(null, null))
+        assertEquals("New chat", DrawerLogic.resolveSessionTitle("", JSONArray()))
+    }
+
+    @Test
+    fun parseSessionMessages_parsesSeqWhenPresent() {
+        val eventsJson = JSONObject().apply {
+            put("events", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("t", "msg"); put("role", "user"); put("text", "Hi"); put("seq", 1)
+                })
+                put(JSONObject().apply {
+                    put("t", "msg"); put("role", "assistant"); put("text", "Hello"); put("seq", 2)
+                })
+            })
+        }.toString()
+
+        val messages = DrawerLogic.parseSessionMessages(eventsJson)
+        assertEquals(2, messages.size)
+        assertEquals(1, messages[0].seq)
+        assertEquals(2, messages[1].seq)
+    }
+
+    @Test
+    fun mergeMessages_dedupesBySeqAndReplacesOptimistic() {
+        val current = listOf(
+            app.lararium.llm.ChatSession.Message(role = "user", content = "Hello", seq = null),
+            app.lararium.llm.ChatSession.Message(role = "assistant", content = "Hi there!", seq = null)
+        )
+        val incoming = listOf(
+            app.lararium.llm.ChatSession.Message(role = "user", content = "Hello", seq = 1),
+            app.lararium.llm.ChatSession.Message(role = "assistant", content = "Hi there!", seq = 2)
+        )
+
+        val merged = DrawerLogic.mergeMessages(current, incoming)
+        assertEquals(2, merged.size)
+        assertEquals(1, merged[0].seq)
+        assertEquals("Hello", merged[0].content)
+        assertEquals(2, merged[1].seq)
+        assertEquals("Hi there!", merged[1].content)
+    }
+
+    @Test
+    fun mergeMessages_preservesUnpersistedOptimisticUserMessage() {
+        val current = listOf(
+            app.lararium.llm.ChatSession.Message(role = "user", content = "Hello", seq = 1),
+            app.lararium.llm.ChatSession.Message(role = "assistant", content = "Hi", seq = 2),
+            app.lararium.llm.ChatSession.Message(role = "user", content = "Pending question", seq = null)
+        )
+        val incoming = listOf(
+            app.lararium.llm.ChatSession.Message(role = "user", content = "Hello", seq = 1),
+            app.lararium.llm.ChatSession.Message(role = "assistant", content = "Hi", seq = 2)
+        )
+
+        val merged = DrawerLogic.mergeMessages(current, incoming)
+        assertEquals(3, merged.size)
+        assertEquals(1, merged[0].seq)
+        assertEquals(2, merged[1].seq)
+        assertNull(merged[2].seq)
+        assertEquals("Pending question", merged[2].content)
     }
 
     @Test

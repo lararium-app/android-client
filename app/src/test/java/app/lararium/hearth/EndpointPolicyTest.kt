@@ -305,6 +305,16 @@ class EndpointPolicyTest {
         }
     }
 
+    @Test fun clientDeleteSession() {
+        val noContent = "HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n".toByteArray(Charsets.US_ASCII)
+        withFakeServer(response = noContent) { port ->
+            val ep = Endpoint("http://127.0.0.1:$port", "lar1_test", "local")
+            kotlinx.coroutines.runBlocking {
+                LarariumClient(ep).deleteSession("s1")
+            }
+        }
+    }
+
     // -----------------------------------------------------------------------
     // Live integration probe (env-gated, self-skips in CI)
     // -----------------------------------------------------------------------
