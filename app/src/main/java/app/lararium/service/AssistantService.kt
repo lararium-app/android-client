@@ -246,7 +246,12 @@ class AssistantService : Service() {
 
         // Initialize hearth client
         hearthChatClient = HearthChatClient(this, app.secureKeyManager)
-        
+
+        // Restore the chat after process death (e.g. Android reclaiming the app
+        // while backgrounded): the message list lives in memory, the hearth's
+        // event log is the durable source of truth.
+        maybeRestoreHearthChat()
+
         // Do not load a local model merely because the app was opened or the
         // settings screen bound this service. Large GGUF models allocate native
         // memory and can make Android kill the whole process before the user
@@ -1399,6 +1404,25 @@ class AssistantService : Service() {
         }
         _response.value = ""
         Log.i(TAG, "Loaded hearth session $sessionId with ${messages.size} messages")
+    }
+
+    /**
+     * Cold-start restore: after the process was killed (e.g. Android reclaiming
+     * the app while backgrounded), rehydrate the active chat from the stored
+     * session's event log. No-op when unpaired, without a stored session, or
+     * when messages have already arrived.
+     */
+    private fun maybeRestoreHearthChat() {
+        serviceScope.launch(Dispatchers.IO) {
+            val sid = HearthChatClient.getStoredSessionId(this@AssistantService) ?: return@launch
+            if (_chatMessages.value.isNotEmpty()) return@launch
+            val raw = hearthChatClient.replayStoredSession() ?: return@launch
+            val restored = DrawerLogic.parseSessionMessages(raw)
+            if (restored.isNotEmpty() && _chatMessages.value.isEmpty()) {
+                loadHearthSession(sid, restored)
+                Log.i(TAG, "Restored ${restored.size} messages from hearth event log")
+            }
+        }
     }
     
     private suspend fun loadLocalModelInternal(
