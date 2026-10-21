@@ -31,6 +31,7 @@ import app.lararium.llm.parseDsmlToolCalls
 import app.lararium.storage.ChatHistoryManager
 import app.lararium.tts.TTSManager
 import app.lararium.ui.CompactAssistantActivity
+import app.lararium.ui.DrawerLogic
 import app.lararium.ui.SettingsManager
 import app.lararium.weather.OpenMeteoClient
 import kotlinx.coroutines.*
@@ -1201,7 +1202,7 @@ class AssistantService : Service() {
         }
 
         if (isHearth) {
-            hearthChatClient.chatSession.addAssistantMessage(cleaned)
+            hearthChatClient.chatSession.addAssistantMessage(cleaned, seq = hearthChatClient.lastTurnSeq)
         }
 
         // Update chat messages for UI
@@ -1211,6 +1212,7 @@ class AssistantService : Service() {
                 isHearth -> hearthChatClient.chatSession.getAllMessages()
                 else -> openRouterClient.chatSession.getAllMessages()
             }
+            _response.value = ""
         }
 
         // URL detection
@@ -1375,15 +1377,17 @@ class AssistantService : Service() {
      * Load an existing session from the paired hearth into active session.
      */
     fun loadHearthSession(sessionId: String, messages: List<ChatSession.Message>) {
-        clearSession(saveToHistory = false)
         _currentChatId = null
         if (::hearthChatClient.isInitialized) {
-            hearthChatClient.setStoredSessionId(sessionId)
-            messages.forEach { msg ->
-                when (msg.role) {
-                    "user" -> hearthChatClient.chatSession.addUserMessage(msg.content, msg.imageBase64)
-                    "assistant" -> hearthChatClient.chatSession.addAssistantMessage(msg.content)
-                }
+            val isSameSession = hearthChatClient.getStoredSessionId() == sessionId
+            if (isSameSession) {
+                val current = hearthChatClient.chatSession.getAllMessages()
+                val merged = DrawerLogic.mergeMessages(current, messages)
+                hearthChatClient.chatSession.setMessages(merged)
+            } else {
+                hearthChatClient.clearSession()
+                hearthChatClient.setStoredSessionId(sessionId)
+                hearthChatClient.chatSession.setMessages(messages)
             }
             _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
         } else {
@@ -1393,6 +1397,7 @@ class AssistantService : Service() {
                 .apply()
             _chatMessages.value = messages
         }
+        _response.value = ""
         Log.i(TAG, "Loaded hearth session $sessionId with ${messages.size} messages")
     }
     

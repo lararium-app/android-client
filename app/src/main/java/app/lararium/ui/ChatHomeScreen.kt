@@ -67,8 +67,10 @@ fun ChatHomeScreen(
 
     val topBarTitle = DrawerLogic.formatTopBarTitle(hearthEndpoint)
 
+    // Inset strategy: window adjustResize with Scaffold consuming WindowInsets.ime without extra imePadding on the bottomBar.
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        contentWindowInsets = WindowInsets.ime,
         topBar = {
             TopAppBar(
                 title = {
@@ -131,7 +133,6 @@ fun ChatHomeScreen(
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
                     .navigationBarsPadding()
-                    .imePadding()
             ) {
                 Row(
                     modifier = Modifier
@@ -238,7 +239,13 @@ fun ChatHomeScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(messages) { message ->
+                    items(
+                        items = messages,
+                        key = { msg ->
+                            if (msg.seq != null) "seq_${msg.seq}"
+                            else "${msg.role}_${msg.timestamp}_${msg.content.hashCode()}"
+                        }
+                    ) { message ->
                         if (message.role == "user") {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -272,8 +279,8 @@ fun ChatHomeScreen(
                         }
                     }
 
-                    if (streamingResponse.isNotEmpty()) {
-                        item {
+                    if (isTurnOpen && streamingResponse.isNotEmpty()) {
+                        item(key = "streaming_response") {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.Start
@@ -287,7 +294,7 @@ fun ChatHomeScreen(
                             }
                         }
                     } else if (isTurnOpen) {
-                        item {
+                        item(key = "typing_indicator") {
                             TypingIndicator()
                         }
                     }
