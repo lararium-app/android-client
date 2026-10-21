@@ -20,7 +20,8 @@ class ChatSession {
         val role: String, // "user", "assistant", "system"
         val content: String,
         val timestamp: Long = System.currentTimeMillis(),
-        val imageBase64: String? = null // For vision capability
+        val imageBase64: String? = null, // For vision capability
+        val seq: Int? = null
     )
     
     private val messages = mutableListOf<Message>()
@@ -29,8 +30,8 @@ class ChatSession {
     /**
      * Add a user message to the session.
      */
-    fun addUserMessage(content: String, imageBase64: String? = null) {
-        messages.add(Message("user", content, imageBase64 = imageBase64))
+    fun addUserMessage(content: String, imageBase64: String? = null, seq: Int? = null) {
+        messages.add(Message("user", content, imageBase64 = imageBase64, seq = seq))
         trimHistory()
         Log.d(TAG, "Added user message, total: ${messages.size}")
     }
@@ -38,10 +39,20 @@ class ChatSession {
     /**
      * Add an assistant response to the session.
      */
-    fun addAssistantMessage(content: String) {
-        messages.add(Message("assistant", content))
+    fun addAssistantMessage(content: String, seq: Int? = null) {
+        messages.add(Message("assistant", content, seq = seq))
         trimHistory()
         Log.d(TAG, "Added assistant message, total: ${messages.size}")
+    }
+
+    /**
+     * Set full list of messages in session.
+     */
+    fun setMessages(newMessages: List<Message>) {
+        messages.clear()
+        messages.addAll(newMessages)
+        trimHistory()
+        Log.d(TAG, "Set messages, total: ${messages.size}")
     }
     
     /**

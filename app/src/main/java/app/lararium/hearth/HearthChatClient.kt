@@ -12,6 +12,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
@@ -27,8 +29,20 @@ class HearthChatClient(
 ) {
 
     companion object {
+        const val PREFS_NAME = "assistant_settings"
         const val KEY_SESSION_ID = "hearth_session_id"
         const val APPROVAL_NOTICE = "Your hearth is asking for approval on another device"
+
+        fun clearStoredSessionId(context: Context) {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .remove(KEY_SESSION_ID)
+                .apply()
+        }
+
+        fun getStoredSessionId(context: Context): String? =
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .getString(KEY_SESSION_ID, null)?.takeIf { it.isNotBlank() }
 
         /**
          * Checks whether an error message or exception names the session or indicates a 404.
@@ -95,10 +109,15 @@ class HearthChatClient(
                 Endpoint(it.first, it.second, it.third)
             }
         },
-        prefs = context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+        prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     )
 
     private val clientScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val sessionMutex = Mutex()
+
+    @Volatile
+    var lastTurnSeq: Int? = null
+        private set
 
     @Volatile
     private var activeSessionId: String? = null
@@ -132,10 +151,10 @@ class HearthChatClient(
         prefs.edit().remove(KEY_SESSION_ID).apply()
     }
 
-    private suspend fun getOrCreateSessionId(client: LarariumClient): String {
+    private suspend fun getOrCreateSessionId(client: LarariumClient): String = sessionMutex.withLock {
         val existing = getStoredSessionId()
-        if (existing != null) return existing
-        return createNewSession(client)
+        if (existing != null) return@withLock existing
+        return@withLock createNewSession(client)
     }
 
     private suspend fun createNewSession(client: LarariumClient): String {
@@ -172,6 +191,7 @@ class HearthChatClient(
         onDone: (String) -> Unit,
         onError: (String) -> Unit
     ) = withContext(Dispatchers.IO) {
+        lastTurnSeq = null
         val ep = currentEndpoint()
         if (ep == null) {
             onError("Not paired with your hearth yet — use Pair hearth in Settings")
@@ -200,6 +220,9 @@ class HearthChatClient(
                 client.streamTurn(sessionId, message) { event ->
                     when (event) {
                         is HearthEvent.Delta -> {
+                            if (event.seq != null) {
+                                lastTurnSeq = event.seq
+                            }
                             if (event.text.isNotEmpty()) {
                                 accumulated.append(event.text)
                                 onDelta(event.text)
@@ -211,6 +234,9 @@ class HearthChatClient(
                             onDelta(notice)
                         }
                         is HearthEvent.TurnDone -> {
+                            if (event.seq != null) {
+                                lastTurnSeq = event.seq
+                            }
                             terminalDelivered = true
                             onDone(accumulated.toString())
                         }
@@ -253,7 +279,10 @@ class HearthChatClient(
                 attempt++
                 clearStoredSessionId()
                 currentSessionId = try {
-                    createNewSession(client)
+                    sessionMutex.withLock {
+                        val existing = getStoredSessionId()
+                        existing ?: createNewSession(client)
+                    }
                 } catch (e: Exception) {
                     if (e is CancellationException) throw e
                     terminalDelivered = true

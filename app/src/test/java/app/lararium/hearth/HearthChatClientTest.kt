@@ -1,6 +1,7 @@
 package app.lararium.hearth
 
 import android.content.SharedPreferences
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -75,6 +76,48 @@ class HearthChatClientTest {
         assertEquals("Echo: second turn", result2)
         assertEquals(1, createCount) // Still 1, not recreated
         assertEquals("sess-1", prefs.getString("hearth_session_id", null))
+    }
+
+    @Test
+    fun sessionId_concurrentCreationShared() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        var createCount = 0
+
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun createSession(title: String?): JSONObject {
+                kotlinx.coroutines.delay(50)
+                createCount++
+                return JSONObject().put("id", "sess-shared")
+            }
+
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                onEvent(HearthEvent.Delta("Echo: $text", 1))
+                onEvent(HearthEvent.TurnDone(2, JSONObject()))
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        val j1 = async {
+            chatClient.streamChat("first", onDelta = {}, onDone = {}, onError = { fail(it) })
+        }
+        val j2 = async {
+            chatClient.streamChat("second", onDelta = {}, onDone = {}, onError = { fail(it) })
+        }
+        j1.await()
+        j2.await()
+
+        assertEquals(1, createCount)
+        assertEquals("sess-shared", prefs.getString("hearth_session_id", null))
     }
 
     @Test
