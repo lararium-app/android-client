@@ -19,6 +19,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -57,8 +58,10 @@ fun ChatHomeScreen(
             state is AssistantState.Responding
     val isGenerating = isTurnOpen || state is AssistantState.Speaking
 
-    // Auto-scroll to latest token / message
-    LaunchedEffect(messages.size, streamingResponse.length, isTurnOpen) {
+    // Auto-scroll to latest token / message (also when the keyboard opens, so the
+    // newest bubble stays visible above the composer).
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(messages.size, streamingResponse.length, isTurnOpen, imeBottom) {
         val totalItems = messages.size + (if (streamingResponse.isNotEmpty() || isTurnOpen) 1 else 0)
         if (totalItems > 0) {
             listState.animateScrollToItem(totalItems - 1)
@@ -67,10 +70,13 @@ fun ChatHomeScreen(
 
     val topBarTitle = DrawerLogic.formatTopBarTitle(hearthEndpoint)
 
-    // Inset strategy: window adjustResize with Scaffold consuming WindowInsets.ime without extra imePadding on the bottomBar.
+    // Inset strategy (edge-to-edge window; adjustResize does NOT resize under enableEdgeToEdge):
+    // the bottomBar itself carries the ime∪navigationBars union padding, so the composer rides
+    // above the keyboard. Content adds no bottom inset of its own — Scaffold already reserves
+    // the bottomBar's (now keyboard-aware) height.
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        contentWindowInsets = WindowInsets.ime,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             TopAppBar(
                 title = {
@@ -132,7 +138,7 @@ fun ChatHomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp)
-                    .navigationBarsPadding()
+                    .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
             ) {
                 Row(
                     modifier = Modifier
