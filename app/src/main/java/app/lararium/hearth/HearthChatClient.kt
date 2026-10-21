@@ -166,6 +166,21 @@ class HearthChatClient(
     }
 
     /**
+     * Replays the stored session's event log for cold-start restore.
+     * Returns the raw JSON object string (with an "events" array) or null when
+     * unpaired, no stored session, or the replay fails.
+     */
+    suspend fun replayStoredSession(): String? {
+        val ep = currentEndpoint() ?: return null
+        val id = getStoredSessionId() ?: return null
+        return try {
+            clientFactory(ep).events(id, afterSeq = 0).toString()
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
      * Stop/cancel current turn on the hearth.
      */
     fun cancel() {
