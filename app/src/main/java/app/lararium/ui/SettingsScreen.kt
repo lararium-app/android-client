@@ -1065,7 +1065,7 @@ fun SettingsScreen(
                         subtitle = "View on GitHub",
                         onClick = {
                             val intent = Intent(Intent.ACTION_VIEW).apply {
-                                data = Uri.parse("https://github.com/mx37/grapheneos-ai")
+                                data = Uri.parse("https://github.com/lararium-app/android-client")
                             }
                             context.startActivity(intent)
                         }
