@@ -14,11 +14,9 @@ class OrientationLogicTest {
     @Test
     fun defaultLocked_returnsPortrait() {
         // Default parameter locked -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, orientationForSetting())
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, OrientationLogic.orientationForSetting())
 
         // Explicit locked = true -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, orientationForSetting(locked = true))
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, OrientationLogic.orientationForSetting(locked = true))
 
         // Default setting flag is locked (true)
@@ -28,17 +26,12 @@ class OrientationLogicTest {
     @Test
     fun unlocked_returnsUnspecified() {
         // Explicit locked = false -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, orientationForSetting(locked = false))
         assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, OrientationLogic.orientationForSetting(locked = false))
     }
 
     @Test
-    fun settingsManager_mirrorsOrientationLogicDefaults() {
+    fun settingsManager_pinsOrientationLockKey() {
         assertTrue(SettingsManager.DEFAULT_LOCK_ORIENTATION)
         assertEquals("lock_orientation", SettingsManager.KEY_LOCK_ORIENTATION)
-
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, SettingsManager.orientationForSetting())
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT, SettingsManager.orientationForSetting(locked = true))
-        assertEquals(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED, SettingsManager.orientationForSetting(locked = false))
     }
 }

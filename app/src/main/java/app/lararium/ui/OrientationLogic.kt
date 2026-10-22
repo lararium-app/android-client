@@ -22,10 +22,3 @@ object OrientationLogic {
         }
     }
 }
-
-/**
- * Top-level pure helper for orientation setting resolution.
- * Default is locked (portrait).
- */
-fun orientationForSetting(locked: Boolean = OrientationLogic.DEFAULT_LOCKED): Int =
-    OrientationLogic.orientationForSetting(locked)

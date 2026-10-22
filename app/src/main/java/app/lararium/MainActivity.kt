@@ -49,7 +49,7 @@ import app.lararium.service.AssistantAccessibilityService
 import app.lararium.service.AssistantService
 import app.lararium.ui.SettingsManager
 import app.lararium.ui.SettingsScreen
-import app.lararium.ui.orientationForSetting
+import app.lararium.ui.OrientationLogic
 import app.lararium.ui.VoskLanguageManagerScreen
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import app.lararium.audio.VoskTranscriber
@@ -150,7 +150,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
 
         val settingsManager = SettingsManager(this)
-        setRequestedOrientation(orientationForSetting(settingsManager.lockOrientation))
+        setRequestedOrientation(OrientationLogic.orientationForSetting(settingsManager.lockOrientation))
 
         enableEdgeToEdge()
 
@@ -302,7 +302,7 @@ class MainActivity : ComponentActivity() {
                                         onOpenAccessibilitySettings = ::openAccessibilitySettings,
                                         onOpenAssistantSettings = ::openAssistantSettings,
                                         onOrientationLockChanged = { locked ->
-                                            setRequestedOrientation(orientationForSetting(locked))
+                                            setRequestedOrientation(OrientationLogic.orientationForSetting(locked))
                                         }
                                     )
                                 }

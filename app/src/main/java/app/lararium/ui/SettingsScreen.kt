@@ -1,7 +1,5 @@
 package app.lararium.ui
 
-import android.app.Activity
-import android.content.ContextWrapper
 import android.Manifest
 import android.app.role.RoleManager
 import android.content.ClipData
@@ -52,7 +50,6 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import app.lararium.AssistantApplication
-import app.lararium.MainActivity
 import app.lararium.audio.VoskTranscriber
 import app.lararium.llm.DownloadProgress
 import app.lararium.llm.LocalModelManager
@@ -75,15 +72,6 @@ private enum class SettingsCategory(val label: String) {
     ASSISTANT("Assistant"),
     NOTIFICATIONS("Notifications"),
     ABOUT("About")
-}
-
-private fun Context.findActivity(): Activity? {
-    var ctx = this
-    while (ctx is ContextWrapper) {
-        if (ctx is Activity) return ctx
-        ctx = ctx.baseContext
-    }
-    return null
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -942,11 +930,6 @@ fun SettingsScreen(
                         lockOrientation = it
                         settingsManager.lockOrientation = it
                         onOrientationLockChanged?.invoke(it)
-                        context.findActivity()?.let { activity ->
-                            if (activity is MainActivity) {
-                                activity.setRequestedOrientation(orientationForSetting(it))
-                            }
-                        }
                     }
                 )
                 }
@@ -1080,11 +1063,6 @@ fun SettingsScreen(
                             autoStartVoice = false
                             lockOrientation = SettingsManager.DEFAULT_LOCK_ORIENTATION
                             onOrientationLockChanged?.invoke(SettingsManager.DEFAULT_LOCK_ORIENTATION)
-                            context.findActivity()?.let { activity ->
-                                if (activity is MainActivity) {
-                                    activity.setRequestedOrientation(orientationForSetting(SettingsManager.DEFAULT_LOCK_ORIENTATION))
-                                }
-                            }
                         }
                     )
                 }

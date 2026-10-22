@@ -12,17 +12,6 @@ import app.lararium.service.AssistantState
 object ChatStateLogic {
 
     /**
-     * UI presentation state representing the chat screen content.
-     */
-    data class ChatUiState(
-        val messages: List<ChatSession.Message> = emptyList(),
-        val streamingResponse: String = "",
-        val assistantState: AssistantState = AssistantState.Idle,
-        val isTurnOpen: Boolean = false,
-        val isGenerating: Boolean = false
-    )
-
-    /**
      * Determines whether an in-flight streaming turn is currently active.
      */
     fun isInFlight(state: AssistantState, streamingResponse: String): Boolean {
@@ -48,60 +37,5 @@ object ChatStateLogic {
         if (inMemoryMessages.isNotEmpty()) return false
         if (isInFlight(state, streamingResponse)) return false
         return true
-    }
-
-    /**
-     * Reconciles the UI view state when a view attaches (or re-attaches after rotation)
-     * to the state holder / service.
-     */
-    fun resolveUiState(
-        messages: List<ChatSession.Message>,
-        streamingResponse: String,
-        state: AssistantState
-    ): ChatUiState {
-        val inFlight = isInFlight(state, streamingResponse)
-        val isGenerating = inFlight || state is AssistantState.Speaking
-        return ChatUiState(
-            messages = messages,
-            streamingResponse = streamingResponse,
-            assistantState = state,
-            isTurnOpen = inFlight,
-            isGenerating = isGenerating
-        )
-    }
-
-    /**
-     * Updates the UI state when a new streaming token arrives mid-turn.
-     */
-    fun appendToken(current: ChatUiState, token: String): ChatUiState {
-        val updated = current.streamingResponse + token
-        return current.copy(
-            streamingResponse = updated,
-            isTurnOpen = true,
-            isGenerating = true
-        )
-    }
-
-    /**
-     * Transitions the UI state when the in-flight turn settles into a completed turn.
-     * Appends the completed assistant message to history and clears the partial reply.
-     */
-    fun settleTurn(
-        current: ChatUiState,
-        settledAssistantReply: String,
-        seq: Int? = null
-    ): ChatUiState {
-        val newMessages = current.messages + ChatSession.Message(
-            role = "assistant",
-            content = settledAssistantReply,
-            seq = seq
-        )
-        return current.copy(
-            messages = newMessages,
-            streamingResponse = "",
-            assistantState = AssistantState.Complete,
-            isTurnOpen = false,
-            isGenerating = false
-        )
     }
 }

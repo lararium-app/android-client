@@ -2,7 +2,6 @@ package app.lararium.ui
 
 import app.lararium.llm.ChatSession
 import app.lararium.service.AssistantState
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -21,10 +20,11 @@ class ChatStateLogicTest {
     )
 
     /**
-     * (a) mid-turn state present → recreated view shows partial + completes
+     * Mid-turn state present: the turn counts as in flight and cold-start
+     * rehydration must be suppressed so a live turn is never stomped.
      */
     @Test
-    fun midTurnStatePresent_recreatedViewShowsPartialAndCompletes() {
+    fun midTurnState_inFlightAndRehydrationSuppressed() {
         val inFlightUserMsg = ChatSession.Message(
             role = "user",
             content = "What is the capital of France?",
@@ -34,100 +34,31 @@ class ChatStateLogicTest {
         val partialReply = "The capital of France is"
         val activeState = AssistantState.Responding
 
-        // 1. Verify in-flight detection
         assertTrue(ChatStateLogic.isInFlight(activeState, partialReply))
-
-        // 2. Cold-start rehydration must be suppressed while a mid-turn turn is in flight
         assertFalse(ChatStateLogic.shouldRehydrate(messagesWithUser, activeState, partialReply))
-
-        // 3. Activity recreation: View attaches to the state holder mid-turn
-        val recreatedViewState = ChatStateLogic.resolveUiState(
-            messages = messagesWithUser,
-            streamingResponse = partialReply,
-            state = activeState
-        )
-
-        // (a) Shows prior history
-        assertEquals(3, recreatedViewState.messages.size)
-        assertEquals("Earlier question", recreatedViewState.messages[0].content)
-        assertEquals("Earlier answer", recreatedViewState.messages[1].content)
-
-        // (b) Shows in-flight user message plus partial reply accumulated so far
-        assertEquals("What is the capital of France?", recreatedViewState.messages[2].content)
-        assertEquals("The capital of France is", recreatedViewState.streamingResponse)
-        assertTrue(recreatedViewState.isTurnOpen)
-        assertTrue(recreatedViewState.isGenerating)
-
-        // (c) Keeps appending live tokens as they arrive
-        val withNextToken = ChatStateLogic.appendToken(recreatedViewState, " Paris.")
-        assertEquals("The capital of France is Paris.", withNextToken.streamingResponse)
-        assertTrue(withNextToken.isTurnOpen)
-        assertTrue(withNextToken.isGenerating)
-
-        // Settles into the final reply
-        val settledState = ChatStateLogic.settleTurn(
-            current = withNextToken,
-            settledAssistantReply = "The capital of France is Paris.",
-            seq = 3
-        )
-
-        assertEquals(4, settledState.messages.size)
-        assertEquals("assistant", settledState.messages[3].role)
-        assertEquals("The capital of France is Paris.", settledState.messages[3].content)
-        assertEquals("", settledState.streamingResponse)
-        assertFalse(settledState.isTurnOpen)
-        assertFalse(settledState.isGenerating)
     }
 
     /**
-     * (b) no in-flight turn → history only
+     * Idle with empty streaming text is not an open turn.
      */
     @Test
-    fun noInFlightTurn_historyOnly() {
-        val idleState = AssistantState.Idle
-        assertFalse(ChatStateLogic.isInFlight(idleState, ""))
-
-        val viewState = ChatStateLogic.resolveUiState(
-            messages = sampleHistory,
-            streamingResponse = "",
-            state = idleState
-        )
-
-        // View shows history only, with no open turn and no streaming text
-        assertEquals(2, viewState.messages.size)
-        assertEquals("Earlier question", viewState.messages[0].content)
-        assertEquals("Earlier answer", viewState.messages[1].content)
-        assertEquals("", viewState.streamingResponse)
-        assertFalse(viewState.isTurnOpen)
-        assertFalse(viewState.isGenerating)
+    fun noInFlightTurn_idleIsNotOpen() {
+        assertFalse(ChatStateLogic.isInFlight(AssistantState.Idle, ""))
     }
 
     /**
-     * (c) process-death path unchanged (regression)
+     * Process-death path unchanged (regression): clean memory and idle state
+     * must allow restoring from the durable hearth event log.
      */
     @Test
     fun processDeathPathUnchanged_regression() {
-        // After process death, in-memory state is empty
-        val inMemoryMessages = emptyList<ChatSession.Message>()
-        val state = AssistantState.Idle
-        val streamingResponse = ""
-
-        // shouldRehydrate must allow restoring from the durable hearth event log
-        assertTrue(ChatStateLogic.shouldRehydrate(inMemoryMessages, state, streamingResponse))
-
-        // Once rehydrated from log, resolved state shows history
-        val rehydratedMessages = sampleHistory
-        val postRehydrationState = ChatStateLogic.resolveUiState(
-            messages = rehydratedMessages,
-            streamingResponse = "",
-            state = AssistantState.Idle
+        assertTrue(
+            ChatStateLogic.shouldRehydrate(
+                inMemoryMessages = emptyList(),
+                state = AssistantState.Idle,
+                streamingResponse = ""
+            )
         )
-
-        assertEquals(2, postRehydrationState.messages.size)
-        assertEquals("Earlier question", postRehydrationState.messages[0].content)
-        assertEquals("Earlier answer", postRehydrationState.messages[1].content)
-        assertEquals("", postRehydrationState.streamingResponse)
-        assertFalse(postRehydrationState.isTurnOpen)
     }
 
     @Test
