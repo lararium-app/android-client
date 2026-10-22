@@ -13,7 +13,7 @@ import android.view.accessibility.AccessibilityEvent
 /**
  * Accessibility Service for detecting power button long-press.
  * 
- * On GrapheneOS/AOSP, direct power button interception is restricted.
+ * On AOSP, direct power button interception is restricted.
  * This service uses accessibility key event filtering as a secure alternative.
  * 
  * Activation methods supported:

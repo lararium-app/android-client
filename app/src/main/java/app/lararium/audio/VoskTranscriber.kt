@@ -18,7 +18,7 @@ import java.io.FileInputStream
 
 /**
  * Vosk-based offline speech recognition with multi-language support.
- * Works without Google Services - perfect for GrapheneOS.
+ * Works without Google Services - perfect for de-Googled devices.
  */
 class VoskTranscriber(private val context: Context) {
 
@@ -394,7 +394,7 @@ class VoskTranscriber(private val context: Context) {
                 // Longer timeouts for large models (1.8GB can take time)
                 connection.connectTimeout = 60000
                 connection.readTimeout = 300000  // 5 minutes
-                connection.setRequestProperty("User-Agent", "GrapheneOS-AI-Assistant/1.0")
+                connection.setRequestProperty("User-Agent", "Lararium/1.0")
                 connection.connect()
                 
                 val responseCode = connection.responseCode

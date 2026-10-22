@@ -42,7 +42,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * Foreground service managing the AI assistant lifecycle.
+ * Foreground service managing the Lararium service lifecycle.
  * Supports chat sessions with context, including local offline LLMs.
  */
 class AssistantService : Service() {
@@ -297,7 +297,7 @@ class AssistantService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_ACTIVATE -> {
-                startForeground(NOTIFICATION_ID, createNotification("Assistant ready"))
+                startForeground(NOTIFICATION_ID, createNotification("Ready"))
                 // Clear session on each activation for fresh start
                 clearSession()
                 if (intent.getBooleanExtra(EXTRA_LAUNCH_OVERLAY, true)) {
@@ -522,7 +522,7 @@ class AssistantService : Service() {
 
     private fun systemRecognitionUnavailableMessage(): String {
         return "Android system speech recognition is not available on this device. " +
-            "On GrapheneOS, install and select a compatible speech recognition service, " +
+            "Install and select a compatible speech recognition service, " +
             "or choose Vosk (Offline) and download its language model in Settings."
     }
     

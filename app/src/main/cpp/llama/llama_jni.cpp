@@ -1,7 +1,7 @@
 /**
  * JNI bridge for llama.cpp
  * Provides native inference for local LLM models on Android
- * Optimized for ARM64 (Pixel devices with GrapheneOS)
+ * Optimized for ARM64 (Pixel devices)
  */
 
 #include <jni.h>
