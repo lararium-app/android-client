@@ -24,6 +24,12 @@ object HearthNotifier {
     const val GROUP_REPLIES = "app.lararium.replies"
 
     /**
+     * Lock-screen visibility for custody card notifications (issue #8).
+     * Approval cards never render on a secured lock screen.
+     */
+    fun cardVisibility(): Int = NotificationCompat.VISIBILITY_SECRET
+
+    /**
      * Idempotently ensures the required notification channels exist on API 26+.
      */
     fun ensureChannels(context: Context) {
@@ -103,6 +109,8 @@ object HearthNotifier {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Approval cards never render on a secured lock screen (issue #8).
+            .setVisibility(cardVisibility()) // NotificationCompat.VISIBILITY_SECRET
             .addAction(0, "Allow once", allowOncePendingIntent)
             .addAction(0, "Deny", denyPendingIntent)
             .build()
@@ -146,6 +154,8 @@ object HearthNotifier {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Approval cards never render on a secured lock screen (issue #8).
+            .setVisibility(cardVisibility()) // NotificationCompat.VISIBILITY_SECRET
             .build()
 
         runCatching {
@@ -192,6 +202,8 @@ object HearthNotifier {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            // Approval cards never render on a secured lock screen (issue #8).
+            .setVisibility(cardVisibility()) // NotificationCompat.VISIBILITY_SECRET
             .build()
 
         runCatching {
@@ -272,3 +284,7 @@ object HearthNotifier {
         }
     }
 }
+
+/** Top-level shortcut delegating to [HearthNotifier.cardVisibility]. */
+fun cardVisibility(): Int = HearthNotifier.cardVisibility()
+
