@@ -769,6 +769,9 @@ class AssistantService : Service() {
                 Log.d(TAG, "Added to Local LLM session: '$query'")
             }
             SettingsManager.PROVIDER_LARARIUM -> {
+                // Retry-after-failure re-submits the same query while it is still the
+                // session tail (the failed attempt never got an assistant reply);
+                // adding it again would duplicate the bubble.
                 val existing = hearthChatClient.chatSession.getAllMessages().lastOrNull()
                 if (existing?.role != "user" || existing.content != query || imageBase64 != null) {
                     hearthChatClient.chatSession.addUserMessage(query, imageBase64)
@@ -1799,7 +1802,7 @@ class AssistantService : Service() {
         }
     }
 
-    fun isMonitoringEligible(): Boolean {
+    private fun isMonitoringEligible(): Boolean {
         val app = application as? AssistantApplication ?: return false
         val endpoint = app.secureKeyManager.getHearthEndpoint()
         return endpoint != null && settingsManager.apiProvider == SettingsManager.PROVIDER_LARARIUM

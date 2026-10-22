@@ -42,8 +42,6 @@ sealed interface ConnectionState {
     }
 }
 
-fun messageFor(state: ConnectionState): String = state.messageFor()
-
 sealed interface ConnectionEvent {
     object ProbeSuccess : ConnectionEvent
     data class ProbeFailure(val statusCode: Int? = null) : ConnectionEvent
@@ -56,13 +54,7 @@ sealed interface ConnectionEvent {
 data class ConnectionTransition(
     val state: ConnectionState,
     val nextProbeDelayMs: Long?
-) {
-    val nextProbeDelaySeconds: Long?
-        get() = nextProbeDelayMs?.let { it / 1000 }
-
-    val delayMs: Long?
-        get() = nextProbeDelayMs
-}
+)
 
 val BACKOFF_SCHEDULE_MS = listOf(2_000L, 5_000L, 15_000L, 30_000L, 60_000L)
 
@@ -91,6 +83,7 @@ class ConnectionMachine(
     var state: ConnectionState = initialState
         private set
 
+    @Volatile
     var epoch: Long = initialEpoch
         private set
 
@@ -98,6 +91,9 @@ class ConnectionMachine(
 
     fun isStale(epochAtSend: Long): Boolean = isStale(epochAtSend, epoch)
 
+    // Driven from several threads (IO probes, turn callbacks, main-thread
+    // network callback) — transitions must be atomic.
+    @Synchronized
     fun process(event: ConnectionEvent): ConnectionTransition {
         val oldState = state
         val (newState, nextDelay) = when (event) {
