@@ -2,13 +2,10 @@ package app.lararium
 
 import android.Manifest
 import android.app.role.RoleManager
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.ServiceConnection
 import android.os.Build
 import android.os.Bundle
-import android.os.IBinder
 import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.activity.ComponentActivity
@@ -52,6 +49,7 @@ import app.lararium.service.AssistantAccessibilityService
 import app.lararium.service.AssistantService
 import app.lararium.ui.SettingsManager
 import app.lararium.ui.SettingsScreen
+import app.lararium.ui.OrientationLogic
 import app.lararium.ui.VoskLanguageManagerScreen
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import app.lararium.audio.VoskTranscriber
@@ -63,9 +61,11 @@ import app.lararium.hearth.badge.HearthBadgeState
 import app.lararium.security.SecureKeyManager
 import app.lararium.ui.approvals.ApprovalsScreen
 import app.lararium.ui.ChatHomeScreen
+import app.lararium.ui.ChatViewModel
 import app.lararium.ui.DrawerLogic
 import app.lararium.ui.LarariumDrawerContent
 import app.lararium.ui.SessionsScreen
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -79,9 +79,6 @@ private const val BADGE_REFRESH_MS = 30_000L
 
 class MainActivity : ComponentActivity() {
 
-    private var assistantService: AssistantService? = null
-    private var serviceBound = mutableStateOf(false)
-
     /** Deep-link target route to navigate to once the compose navigation graph is ready. */
     private val openRoute = MutableStateFlow<String?>(null)
 
@@ -90,19 +87,6 @@ class MainActivity : ComponentActivity() {
 
     /** Scope for fire-and-forget work that must outlive individual compositions. */
     private val activityScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-
-    private val serviceConnection = object : ServiceConnection {
-        override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
-            val localBinder = binder as? AssistantService.AssistantBinder
-            assistantService = localBinder?.getService()
-            serviceBound.value = true
-        }
-
-        override fun onServiceDisconnected(name: ComponentName?) {
-            assistantService = null
-            serviceBound.value = false
-        }
-    }
 
     /** Hot deep link: activity already running when link is tapped. */
     override fun onNewIntent(intent: Intent) {
@@ -156,25 +140,18 @@ class MainActivity : ComponentActivity() {
     
     override fun onStart() {
         super.onStart()
-        Intent(this, AssistantService::class.java).also { intent ->
-            bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-        }
         val app = applicationContext as AssistantApplication
         if (app.secureKeyManager.getHearthEndpoint() != null) {
             HearthWatchScheduler.refreshNow(this)
         }
     }
-    
-    override fun onStop() {
-        super.onStop()
-        if (serviceBound.value) {
-            unbindService(serviceConnection)
-            serviceBound.value = false
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val settingsManager = SettingsManager(this)
+        setRequestedOrientation(OrientationLogic.orientationForSetting(settingsManager.lockOrientation))
+
         enableEdgeToEdge()
 
         permissionLauncher.launch(
@@ -220,8 +197,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
+                val chatViewModel: ChatViewModel = viewModel()
+                val boundService by chatViewModel.assistantService.collectAsStateWithLifecycle()
                 val navController = rememberNavController()
-                val bound by serviceBound
                 val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
                 val snackbarHostState = remember { SnackbarHostState() }
                 val status by pairingStatus
@@ -281,12 +259,13 @@ class MainActivity : ComponentActivity() {
                             NavHost(navController = navController, startDestination = "main") {
                                 composable("main") {
                                     ChatHomeScreen(
-                                        assistantService = if (bound) assistantService else null,
+                                        assistantService = boundService,
                                         hearthEndpoint = hearthEndpoint,
                                         pendingApprovals = pendingApprovals,
                                         onOpenDrawer = { scope.launch { drawerState.open() } },
                                         onOpenApprovals = { navController.navigate("approvals") },
-                                        onNewChat = { assistantService?.clearSession() }
+                                        onNewChat = { chatViewModel.clearSession() },
+                                        viewModel = chatViewModel
                                     )
                                 }
                                 composable("sessions") {
@@ -306,7 +285,7 @@ class MainActivity : ComponentActivity() {
                                                 } else emptyList()
 
                                                 withContext(Dispatchers.Main) {
-                                                    assistantService?.loadHearthSession(sessionId, messages)
+                                                    chatViewModel.loadHearthSession(sessionId, messages)
                                                     navController.navigate("main") {
                                                         popUpTo("main") { inclusive = true }
                                                     }
@@ -318,16 +297,19 @@ class MainActivity : ComponentActivity() {
                                 composable("settings") {
                                     SettingsScreen(
                                         onNavigateBack = { navController.popBackStack() },
-                                        assistantService = if (bound) assistantService else null,
+                                        assistantService = boundService,
                                         onNavigateToLanguages = { navController.navigate("voice_languages") },
                                         onOpenAccessibilitySettings = ::openAccessibilitySettings,
-                                        onOpenAssistantSettings = ::openAssistantSettings
+                                        onOpenAssistantSettings = ::openAssistantSettings,
+                                        onOrientationLockChanged = { locked ->
+                                            setRequestedOrientation(OrientationLogic.orientationForSetting(locked))
+                                        }
                                     )
                                 }
                                 composable("voice_languages") {
                                     VoskLanguageManagerScreen(
                                         onNavigateBack = { navController.popBackStack() },
-                                        assistantService = if (bound) assistantService else null
+                                        assistantService = boundService
                                     )
                                 }
                                 composable("approvals") {

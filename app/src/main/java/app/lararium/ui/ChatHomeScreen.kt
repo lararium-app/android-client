@@ -44,18 +44,17 @@ fun ChatHomeScreen(
     onOpenDrawer: () -> Unit,
     onOpenApprovals: () -> Unit,
     onNewChat: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    viewModel: ChatViewModel? = null
 ) {
     var textInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    val messages = assistantService?.chatMessages?.collectAsStateWithLifecycle()?.value ?: emptyList()
-    val state = assistantService?.assistantState?.collectAsStateWithLifecycle()?.value ?: AssistantState.Idle
-    val streamingResponse = assistantService?.response?.collectAsStateWithLifecycle()?.value ?: ""
+    val messages = (viewModel?.chatMessages ?: assistantService?.chatMessages)?.collectAsStateWithLifecycle()?.value ?: emptyList()
+    val state = (viewModel?.assistantState ?: assistantService?.assistantState)?.collectAsStateWithLifecycle()?.value ?: AssistantState.Idle
+    val streamingResponse = (viewModel?.streamingResponse ?: assistantService?.response)?.collectAsStateWithLifecycle()?.value ?: ""
 
-    val isTurnOpen = state is AssistantState.Processing ||
-            state is AssistantState.Searching ||
-            state is AssistantState.Responding
+    val isTurnOpen = ChatStateLogic.isInFlight(state, streamingResponse)
     val isGenerating = isTurnOpen || state is AssistantState.Speaking
 
     // Auto-scroll to latest token / message (also when the keyboard opens, so the
@@ -174,7 +173,7 @@ fun ChatHomeScreen(
 
                     if (isGenerating) {
                         FilledIconButton(
-                            onClick = { assistantService?.stopResponse() },
+                            onClick = { viewModel?.stopResponse() ?: assistantService?.stopResponse() },
                             colors = IconButtonDefaults.filledIconButtonColors(
                                 containerColor = MaterialTheme.colorScheme.error,
                                 contentColor = MaterialTheme.colorScheme.onError
@@ -193,7 +192,7 @@ fun ChatHomeScreen(
                                 val query = textInput.trim()
                                 if (query.isNotEmpty()) {
                                     textInput = ""
-                                    assistantService?.processTextQuery(query)
+                                    viewModel?.processTextQuery(query) ?: assistantService?.processTextQuery(query)
                                 }
                             },
                             colors = IconButtonDefaults.filledIconButtonColors(
@@ -212,9 +211,9 @@ fun ChatHomeScreen(
                         IconButton(
                             onClick = {
                                 if (state is AssistantState.Listening) {
-                                    assistantService?.stopVoiceCapture()
+                                    viewModel?.stopVoiceCapture() ?: assistantService?.stopVoiceCapture()
                                 } else {
-                                    assistantService?.startVoiceCapture()
+                                    viewModel?.startVoiceCapture() ?: assistantService?.startVoiceCapture()
                                 }
                             },
                             modifier = Modifier.size(40.dp)
