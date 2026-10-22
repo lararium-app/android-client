@@ -1,7 +1,7 @@
 <resources>
     <string name="app_name">Lararium</string>
-    <string name="assistant_tile_label">Lararium</string>
-    <string name="accessibility_service_description">Enable this service to activate the AI assistant using volume button combinations. The service monitors key events but does not read screen content.</string>
+    <string name="app_tagline">Your keys, your models, your home.</string>
+    <string name="accessibility_service_description">Enable this service to activate Lararium using volume button combinations. The service monitors key events but does not read screen content.</string>
     <string name="approvals_all_caught_up">All caught up</string>
     <string name="approvals_badge_description">Approvals</string>
 
@@ -107,5 +107,4 @@
     <string name="settings_privacy_search">Configurable privacy-focused search providers</string>
     <string name="settings_privacy_permissions">Minimal permissions required</string>
     <string name="settings_privacy_tls">TLS 1.3 for all network requests</string>
-    <string name="settings_about_desc">Privacy-first AI assistant and hearth client for Android. All conversations are processed securely with on-device encryption.</string>
 </resources>

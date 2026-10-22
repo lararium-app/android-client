@@ -16,7 +16,7 @@ import java.util.Locale
 
 /**
  * Android SpeechRecognizer wrapper for voice input.
- * Works with system speech recognition (Google, or alternative providers on GrapheneOS).
+ * Works with system speech recognition (Google, or alternative providers on de-Googled devices).
  */
 class SpeechRecognizerManager(private val context: Context) {
 

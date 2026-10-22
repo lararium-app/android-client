@@ -10,7 +10,7 @@ import app.lararium.hearth.watch.HearthWatchScheduler
 import app.lararium.security.SecureKeyManager
 
 /**
- * Application class for the AI Assistant.
+ * Application class for Lararium.
  * Initializes secure key storage and notification channels.
  */
 class AssistantApplication : Application() {
@@ -45,20 +45,20 @@ class AssistantApplication : Application() {
             // Foreground service channel
             val serviceChannel = NotificationChannel(
                 CHANNEL_SERVICE,
-                "Assistant Service",
+                "Lararium Service",
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Notification for assistant background processing"
+                description = "Notification for Lararium background processing"
                 setShowBadge(false)
             }
 
             // Interaction channel
             val interactionChannel = NotificationChannel(
                 CHANNEL_INTERACTION,
-                "Assistant Interactions",
+                "Lararium Interactions",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Notifications for assistant responses"
+                description = "Notifications for Lararium responses"
                 enableVibration(true)
             }
 

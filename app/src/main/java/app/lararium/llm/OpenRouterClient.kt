@@ -733,9 +733,9 @@ class OpenRouterClient(
             
             setRequestProperty("Content-Type", "application/json")
             setRequestProperty("Authorization", "Bearer $apiKey")
-            setRequestProperty("HTTP-Referer", "https://github.com/user/ai-assistant")
-            setRequestProperty("X-Title", "GrapheneOS AI Assistant")
-            setRequestProperty("User-Agent", "AIAssistant/1.0")
+            setRequestProperty("HTTP-Referer", "https://github.com/lararium-app/android-client")
+            setRequestProperty("X-Title", "Lararium")
+            setRequestProperty("User-Agent", "Lararium/1.0")
         }
     }
 

@@ -68,7 +68,7 @@ fun ChatHomeScreen(
         }
     }
 
-    val topBarTitle = DrawerLogic.formatTopBarTitle(hearthEndpoint)
+    val topBarTitle = DrawerLogic.formatTopBarTitle(hearthEndpoint, stringResource(R.string.app_name))
 
     // Inset strategy (edge-to-edge window; adjustResize does NOT resize under enableEdgeToEdge):
     // the bottomBar itself carries the ime∪navigationBars union padding, so the composer rides

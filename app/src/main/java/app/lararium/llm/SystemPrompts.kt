@@ -5,7 +5,7 @@ package app.lararium.llm
  */
 object SystemPrompts {
 
-    const val CLOUD_DEFAULT = """You are a capable, accurate AI assistant on a mobile device.
+    const val CLOUD_DEFAULT = """You are a capable, accurate assistant on a mobile device.
 
 Your goal is to help the user solve their problem: answer directly, stay on topic, and match response length to the task — brief for simple questions, more detail when needed.
 
