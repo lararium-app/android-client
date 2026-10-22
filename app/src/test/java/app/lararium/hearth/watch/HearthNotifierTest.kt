@@ -17,8 +17,6 @@ class HearthNotifierTest {
     fun cardVisibility_isSecret() {
         // Approval cards never render on a secured lock screen (issue #8).
         assertEquals(NotificationCompat.VISIBILITY_SECRET, HearthNotifier.cardVisibility())
-        assertEquals(NotificationCompat.VISIBILITY_SECRET, cardVisibility())
-        assertEquals(-1, HearthNotifier.cardVisibility())
     }
 
     @Test

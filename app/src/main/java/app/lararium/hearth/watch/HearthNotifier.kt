@@ -110,7 +110,7 @@ object HearthNotifier {
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             // Approval cards never render on a secured lock screen (issue #8).
-            .setVisibility(cardVisibility()) // NotificationCompat.VISIBILITY_SECRET
+            .setVisibility(cardVisibility())
             .addAction(0, "Allow once", allowOncePendingIntent)
             .addAction(0, "Deny", denyPendingIntent)
             .build()
@@ -155,7 +155,7 @@ object HearthNotifier {
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             // Approval cards never render on a secured lock screen (issue #8).
-            .setVisibility(cardVisibility()) // NotificationCompat.VISIBILITY_SECRET
+            .setVisibility(cardVisibility())
             .build()
 
         runCatching {
@@ -203,7 +203,7 @@ object HearthNotifier {
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             // Approval cards never render on a secured lock screen (issue #8).
-            .setVisibility(cardVisibility()) // NotificationCompat.VISIBILITY_SECRET
+            .setVisibility(cardVisibility())
             .build()
 
         runCatching {
@@ -285,6 +285,4 @@ object HearthNotifier {
     }
 }
 
-/** Top-level shortcut delegating to [HearthNotifier.cardVisibility]. */
-fun cardVisibility(): Int = HearthNotifier.cardVisibility()
 
