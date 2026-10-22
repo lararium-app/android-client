@@ -82,7 +82,8 @@ fun SettingsScreen(
     assistantService: AssistantService? = null,
     onNavigateToLanguages: (() -> Unit)? = null,
     onOpenAccessibilitySettings: (() -> Unit)? = null,
-    onOpenAssistantSettings: (() -> Unit)? = null
+    onOpenAssistantSettings: (() -> Unit)? = null,
+    onOrientationLockChanged: ((Boolean) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val app = context.applicationContext as AssistantApplication
@@ -95,6 +96,7 @@ fun SettingsScreen(
     var systemPrompt by remember { mutableStateOf(settingsManager.systemPrompt) }
     var voiceInputMethod by remember { mutableStateOf(settingsManager.voiceInputMethod) }
     var ttsEnabled by remember { mutableStateOf(settingsManager.ttsEnabled) }
+    var lockOrientation by remember { mutableStateOf(settingsManager.lockOrientation) }
     var autoSendVoice by remember { mutableStateOf(settingsManager.autoSendVoice) }
     var autoStartVoice by remember { mutableStateOf(settingsManager.autoStartVoice) }
     var apiProvider by remember { mutableStateOf(settingsManager.apiProvider) }
@@ -918,6 +920,18 @@ fun SettingsScreen(
                         )
                     }
                 }
+
+                SettingsItemWithSwitch(
+                    icon = Icons.Default.ScreenLockPortrait,
+                    title = stringResource(R.string.settings_lock_orientation_title),
+                    subtitle = stringResource(R.string.settings_lock_orientation_desc),
+                    checked = lockOrientation,
+                    onCheckedChange = {
+                        lockOrientation = it
+                        settingsManager.lockOrientation = it
+                        onOrientationLockChanged?.invoke(it)
+                    }
+                )
                 }
 
                 SettingsSection(title = "System Integration") {
@@ -1047,6 +1061,8 @@ fun SettingsScreen(
                             ttsEnabled = false
                             autoSendVoice = true
                             autoStartVoice = false
+                            lockOrientation = SettingsManager.DEFAULT_LOCK_ORIENTATION
+                            onOrientationLockChanged?.invoke(SettingsManager.DEFAULT_LOCK_ORIENTATION)
                         }
                     )
                 }

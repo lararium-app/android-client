@@ -33,6 +33,7 @@ import app.lararium.tts.TTSManager
 import app.lararium.ui.CompactAssistantActivity
 import app.lararium.ui.DrawerLogic
 import app.lararium.ui.SettingsManager
+import app.lararium.ui.ChatStateLogic
 import app.lararium.weather.OpenMeteoClient
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -316,6 +317,17 @@ class AssistantService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
+
+    override fun onUnbind(intent: Intent?): Boolean {
+        Log.i(TAG, "AssistantService unbound")
+        // Retain state and allow rebind so that in-flight turns survive UI detachment
+        return true
+    }
+
+    override fun onRebind(intent: Intent?) {
+        super.onRebind(intent)
+        Log.i(TAG, "AssistantService rebound")
+    }
 
     override fun onDestroy() {
         super.onDestroy()
@@ -1415,10 +1427,10 @@ class AssistantService : Service() {
     private fun maybeRestoreHearthChat() {
         serviceScope.launch(Dispatchers.IO) {
             val sid = HearthChatClient.getStoredSessionId(this@AssistantService) ?: return@launch
-            if (_chatMessages.value.isNotEmpty()) return@launch
+            if (!ChatStateLogic.shouldRehydrate(_chatMessages.value, _assistantState.value, _response.value)) return@launch
             val raw = hearthChatClient.replayStoredSession() ?: return@launch
             val restored = DrawerLogic.parseSessionMessages(raw)
-            if (restored.isNotEmpty() && _chatMessages.value.isEmpty()) {
+            if (restored.isNotEmpty() && ChatStateLogic.shouldRehydrate(_chatMessages.value, _assistantState.value, _response.value)) {
                 loadHearthSession(sid, restored)
                 Log.i(TAG, "Restored ${restored.size} messages from hearth event log")
             }

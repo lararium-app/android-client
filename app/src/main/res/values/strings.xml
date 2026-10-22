@@ -99,6 +99,10 @@
     <string name="settings_activation_tile_title">Quick Settings Tile</string>
     <string name="settings_activation_tile_desc">Add tile to notification panel</string>
 
+    <!-- Settings: Display / Orientation -->
+    <string name="settings_lock_orientation_title">Lock orientation</string>
+    <string name="settings_lock_orientation_desc">Keeps the chat in portrait</string>
+
     <!-- Settings: Privacy -->
     <string name="settings_privacy_title">Privacy-First Design</string>
     <string name="settings_privacy_vosk">On-device speech recognition (Vosk)</string>

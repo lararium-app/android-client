@@ -25,6 +25,8 @@ class SettingsManager(context: Context) {
         private const val KEY_WHISPER_PROVIDER = "whisper_provider"
         private const val KEY_SEARCH_ENGINE = "search_engine"
         private const val KEY_TTS_LANGUAGE = "tts_language"
+        const val KEY_LOCK_ORIENTATION = "lock_orientation"
+        const val DEFAULT_LOCK_ORIENTATION = true
         
         const val VOICE_INPUT_SYSTEM = "system"
         const val VOICE_INPUT_VOSK = "vosk"
@@ -130,6 +132,10 @@ class SettingsManager(context: Context) {
     var ttsEnabled: Boolean
         get() = prefs.getBoolean(KEY_TTS_ENABLED, false)
         set(value) = prefs.edit().putBoolean(KEY_TTS_ENABLED, value).apply()
+
+    var lockOrientation: Boolean
+        get() = prefs.getBoolean(KEY_LOCK_ORIENTATION, DEFAULT_LOCK_ORIENTATION)
+        set(value) = prefs.edit().putBoolean(KEY_LOCK_ORIENTATION, value).apply()
     
     var autoSendVoice: Boolean
         get() = prefs.getBoolean(KEY_AUTO_SEND_VOICE, true)
