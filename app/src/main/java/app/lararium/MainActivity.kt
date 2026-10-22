@@ -49,6 +49,7 @@ import app.lararium.service.AssistantAccessibilityService
 import app.lararium.service.AssistantService
 import app.lararium.ui.SettingsManager
 import app.lararium.ui.SettingsScreen
+import app.lararium.ui.orientationForSetting
 import app.lararium.ui.VoskLanguageManagerScreen
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import app.lararium.audio.VoskTranscriber
@@ -147,6 +148,10 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        val settingsManager = SettingsManager(this)
+        setRequestedOrientation(orientationForSetting(settingsManager.lockOrientation))
+
         enableEdgeToEdge()
 
         permissionLauncher.launch(
@@ -295,7 +300,10 @@ class MainActivity : ComponentActivity() {
                                         assistantService = boundService,
                                         onNavigateToLanguages = { navController.navigate("voice_languages") },
                                         onOpenAccessibilitySettings = ::openAccessibilitySettings,
-                                        onOpenAssistantSettings = ::openAssistantSettings
+                                        onOpenAssistantSettings = ::openAssistantSettings,
+                                        onOrientationLockChanged = { locked ->
+                                            setRequestedOrientation(orientationForSetting(locked))
+                                        }
                                     )
                                 }
                                 composable("voice_languages") {
