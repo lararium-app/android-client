@@ -1055,7 +1055,8 @@ fun SettingsScreen(
                     SettingsItem(
                         icon = Icons.Default.Info,
                         title = stringResource(R.string.app_name),
-                        subtitle = stringResource(R.string.app_tagline),
+                        subtitle = stringResource(R.string.app_tagline) +
+                            " · v" + BuildConfig.VERSION_NAME,
                         onClick = {}
                     )
 
