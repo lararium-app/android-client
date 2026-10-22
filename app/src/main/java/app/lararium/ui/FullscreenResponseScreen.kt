@@ -324,7 +324,7 @@ private fun parseMarkdown(
 
 private fun copyToClipboard(context: Context, text: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("AI Response", text)
+    val clip = ClipData.newPlainText("Response", text)
     clipboard.setPrimaryClip(clip)
     Toast.makeText(context, "Copied to clipboard", Toast.LENGTH_SHORT).show()
 }

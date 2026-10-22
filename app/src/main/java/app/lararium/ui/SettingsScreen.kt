@@ -1055,7 +1055,7 @@ fun SettingsScreen(
                     SettingsItem(
                         icon = Icons.Default.Info,
                         title = stringResource(R.string.app_name),
-                        subtitle = "v${BuildConfig.VERSION_NAME}",
+                        subtitle = stringResource(R.string.app_tagline),
                         onClick = {}
                     )
 
@@ -1122,24 +1122,7 @@ fun SettingsScreen(
                         }
                     }
 
-                    Surface(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                    ) {
-                        Column(modifier = Modifier.padding(12.dp)) {
-                            Text(
-                                stringResource(R.string.settings_about_desc),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                "This is an independent project and is not affiliated with, endorsed by, or associated with GrapheneOS.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic)
-                        }
-                    }
+
                 }
             }
 
@@ -1850,7 +1833,7 @@ fun SystemPromptDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                Text("This prompt defines how the AI assistant behaves.",
+                Text("This prompt defines how the assistant behaves.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
 

@@ -1,5 +1,5 @@
 # CMakeLists.txt for native llama.cpp integration
-# Optimized for ARM64 (Pixel devices on GrapheneOS)
+# Optimized for ARM64 (Pixel devices)
 cmake_minimum_required(VERSION 3.22.1)
 project(llama_jni)
 

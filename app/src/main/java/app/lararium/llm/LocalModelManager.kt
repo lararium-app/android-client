@@ -16,7 +16,7 @@ import java.nio.file.StandardCopyOption
 
 /**
  * Manages downloading and storage of local AI models (GGUF format)
- * Models are optimized for ARM64 Pixel devices running GrapheneOS
+ * Models are optimized for ARM64 devices
  */
 class LocalModelManager(private val context: Context) {
 
@@ -404,7 +404,7 @@ class LocalModelManager(private val context: Context) {
             connectTimeout = 30000
             readTimeout = 60000
             instanceFollowRedirects = true
-            setRequestProperty("User-Agent", "GrapheneOS-AI-Assistant/1.0")
+            setRequestProperty("User-Agent", "Lararium/1.0")
             setRequestProperty("Accept-Encoding", "identity")
 
             if (resumeOffset > 0L) {

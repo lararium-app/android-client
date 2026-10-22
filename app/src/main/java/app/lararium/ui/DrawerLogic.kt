@@ -35,13 +35,13 @@ object DrawerLogic {
     }
 
     /**
-     * Formats the top bar title: hearth name if paired, otherwise "Lararium".
+     * Formats the top bar title: hearth name if paired, otherwise "Lararium" (or custom fallback).
      */
-    fun formatTopBarTitle(hearthEndpoint: Triple<String, String, String>?): String {
+    fun formatTopBarTitle(hearthEndpoint: Triple<String, String, String>?, fallback: String = "Lararium"): String {
         return if (hearthEndpoint != null && hearthEndpoint.third.isNotBlank()) {
             hearthEndpoint.third.trim()
         } else {
-            "Lararium"
+            fallback
         }
     }
 
