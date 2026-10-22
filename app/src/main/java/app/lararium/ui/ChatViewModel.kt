@@ -8,6 +8,7 @@ import android.content.ServiceConnection
 import android.os.IBinder
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import app.lararium.hearth.ConnectionState
 import app.lararium.llm.ChatSession
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
@@ -38,6 +39,12 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     private val _streamingResponse = MutableStateFlow("")
     val streamingResponse: StateFlow<String> = _streamingResponse.asStateFlow()
 
+    private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Unknown)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    private val _failedSend = MutableStateFlow<FailedSend?>(null)
+    val failedSend: StateFlow<FailedSend?> = _failedSend.asStateFlow()
+
     private var serviceCollectorsJob: Job? = null
     private var isBound = false
 
@@ -52,6 +59,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
         override fun onServiceDisconnected(name: ComponentName?) {
             _assistantService.value = null
+            _connectionState.value = ConnectionState.Unknown
+            _failedSend.value = null
             isBound = false
             serviceCollectorsJob?.cancel()
             serviceCollectorsJob = null
@@ -78,6 +87,8 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         _chatMessages.value = svc.chatMessages.value
         _assistantState.value = svc.assistantState.value
         _streamingResponse.value = svc.response.value
+        _connectionState.value = svc.connectionState.value
+        _failedSend.value = svc.failedSend.value
 
         serviceCollectorsJob = viewModelScope.launch {
             launch {
@@ -93,6 +104,16 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
             launch {
                 svc.response.collect { resp ->
                     _streamingResponse.value = resp
+                }
+            }
+            launch {
+                svc.connectionState.collect { state ->
+                    _connectionState.value = state
+                }
+            }
+            launch {
+                svc.failedSend.collect { failed ->
+                    _failedSend.value = failed
                 }
             }
         }
@@ -123,6 +144,21 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadHearthSession(sessionId: String, messages: List<ChatSession.Message>) {
         _assistantService.value?.loadHearthSession(sessionId, messages)
+    }
+
+    fun retryConnectionNow() {
+        _assistantService.value?.retryConnectionNow()
+    }
+
+    fun clearFailedSend() {
+        _failedSend.value = null
+        _assistantService.value?.clearFailedSend()
+    }
+
+    fun retryFailedSend() {
+        val failed = _failedSend.value ?: return
+        clearFailedSend()
+        processTextQuery(failed.query)
     }
 
     override fun onCleared() {

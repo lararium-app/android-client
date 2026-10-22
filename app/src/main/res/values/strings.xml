@@ -111,4 +111,15 @@
     <string name="settings_privacy_search">Configurable privacy-focused search providers</string>
     <string name="settings_privacy_permissions">Minimal permissions required</string>
     <string name="settings_privacy_tls">TLS 1.3 for all network requests</string>
+
+    <!-- Connection State & Send Failure (#21) -->
+    <string name="connection_dialog_title">Connection status</string>
+    <string name="connection_retry_now">Retry now</string>
+    <string name="connection_repair">Re-pair</string>
+    <string name="send_failed_retry_hint">Not delivered — tap to retry</string>
+    <string name="send_failed_retry_button">Retry</string>
+    <string name="connection_dot_desc_live">Connected to hearth</string>
+    <string name="connection_dot_desc_reconnecting">Reconnecting to hearth</string>
+    <string name="connection_dot_desc_offline">Offline</string>
+    <string name="connection_dot_desc_unknown">Connection status unknown</string>
 </resources>

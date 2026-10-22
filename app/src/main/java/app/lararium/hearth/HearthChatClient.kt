@@ -204,7 +204,8 @@ class HearthChatClient(
         message: String,
         onDelta: (String) -> Unit,
         onDone: (String) -> Unit,
-        onError: (String) -> Unit
+        onError: (String) -> Unit,
+        onTurnEvent: ((HearthEvent) -> Unit)? = null,
     ) = withContext(Dispatchers.IO) {
         lastTurnSeq = null
         val ep = currentEndpoint()
@@ -233,6 +234,7 @@ class HearthChatClient(
 
             try {
                 client.streamTurn(sessionId, message) { event ->
+                    onTurnEvent?.invoke(event)
                     when (event) {
                         is HearthEvent.Delta -> {
                             if (event.seq != null) {

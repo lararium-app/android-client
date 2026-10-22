@@ -2,6 +2,7 @@ package app.lararium.ui
 
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -18,15 +19,19 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lararium.R
+import app.lararium.hearth.ConnectionState
 import app.lararium.hearth.badge.BadgeLogic
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
@@ -45,7 +50,8 @@ fun ChatHomeScreen(
     onOpenApprovals: () -> Unit,
     onNewChat: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: ChatViewModel? = null
+    viewModel: ChatViewModel? = null,
+    onRepair: (() -> Unit)? = null
 ) {
     var textInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -53,21 +59,73 @@ fun ChatHomeScreen(
     val messages = (viewModel?.chatMessages ?: assistantService?.chatMessages)?.collectAsStateWithLifecycle()?.value ?: emptyList()
     val state = (viewModel?.assistantState ?: assistantService?.assistantState)?.collectAsStateWithLifecycle()?.value ?: AssistantState.Idle
     val streamingResponse = (viewModel?.streamingResponse ?: assistantService?.response)?.collectAsStateWithLifecycle()?.value ?: ""
+    val connectionState = (viewModel?.connectionState ?: assistantService?.connectionState)?.collectAsStateWithLifecycle()?.value ?: ConnectionState.Unknown
+    val failedSend = (viewModel?.failedSend ?: assistantService?.failedSend)?.collectAsStateWithLifecycle()?.value
+    var showConnectionDialog by remember { mutableStateOf(false) }
 
     val isTurnOpen = ChatStateLogic.isInFlight(state, streamingResponse)
     val isGenerating = isTurnOpen || state is AssistantState.Speaking
 
+    val showStatusDot = connectionState !is ConnectionState.Unknown || hearthEndpoint != null
+
     // Auto-scroll to latest token / message (also when the keyboard opens, so the
     // newest bubble stays visible above the composer).
     val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
-    LaunchedEffect(messages.size, streamingResponse.length, isTurnOpen, imeBottom) {
-        val totalItems = messages.size + (if (streamingResponse.isNotEmpty() || isTurnOpen) 1 else 0)
+    LaunchedEffect(messages.size, streamingResponse.length, isTurnOpen, imeBottom, failedSend != null) {
+        val totalItems = messages.size +
+            (if (streamingResponse.isNotEmpty() || isTurnOpen) 1 else 0) +
+            (if (failedSend != null) 1 else 0)
         if (totalItems > 0) {
             listState.animateScrollToItem(totalItems - 1)
         }
     }
 
     val topBarTitle = DrawerLogic.formatTopBarTitle(hearthEndpoint, stringResource(R.string.app_name))
+
+    if (showConnectionDialog) {
+        AlertDialog(
+            onDismissRequest = { showConnectionDialog = false },
+            title = {
+                Text(
+                    text = stringResource(R.string.connection_dialog_title),
+                    style = MaterialTheme.typography.titleLarge
+                )
+            },
+            text = {
+                Text(
+                    text = connectionState.messageFor(),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showConnectionDialog = false
+                        viewModel?.retryConnectionNow() ?: assistantService?.retryConnectionNow()
+                    }
+                ) {
+                    Text(stringResource(R.string.connection_retry_now))
+                }
+            },
+            dismissButton = {
+                Row {
+                    if (connectionState.needsRepair && onRepair != null) {
+                        TextButton(
+                            onClick = {
+                                showConnectionDialog = false
+                                onRepair()
+                            }
+                        ) {
+                            Text(stringResource(R.string.connection_repair))
+                        }
+                    }
+                    TextButton(onClick = { showConnectionDialog = false }) {
+                        Text(stringResource(R.string.cancel))
+                    }
+                }
+            }
+        )
+    }
 
     // Inset strategy (edge-to-edge window; adjustResize does NOT resize under enableEdgeToEdge):
     // the bottomBar itself carries the ime∪navigationBars union padding, so the composer rides
@@ -79,13 +137,25 @@ fun ChatHomeScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text(
-                        text = topBarTitle,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = topBarTitle,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (showStatusDot) {
+                            ConnectionStatusDot(
+                                state = connectionState,
+                                onClick = { showConnectionDialog = true }
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onOpenDrawer) {
@@ -235,7 +305,7 @@ fun ChatHomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
-            if (messages.isEmpty() && streamingResponse.isEmpty() && !isTurnOpen) {
+            if (messages.isEmpty() && streamingResponse.isEmpty() && !isTurnOpen && failedSend == null) {
                 TastefulEmptyChatState(modifier = Modifier.fillMaxSize())
             } else {
                 LazyColumn(
@@ -281,6 +351,25 @@ fun ChatHomeScreen(
                                     )
                                 }
                             }
+                        }
+                    }
+
+                    if (failedSend != null) {
+                        item(key = "failed_send_row") {
+                            FailedSendRow(
+                                failedSend = failedSend,
+                                isUnauthorized = connectionState.needsRepair,
+                                onRowClick = {
+                                    if (connectionState.needsRepair) {
+                                        showConnectionDialog = true
+                                    }
+                                },
+                                onRetry = {
+                                    val queryToRetry = failedSend.query
+                                    viewModel?.clearFailedSend() ?: assistantService?.clearFailedSend()
+                                    viewModel?.processTextQuery(queryToRetry) ?: assistantService?.processTextQuery(queryToRetry)
+                                }
+                            )
                         }
                     }
 
@@ -411,5 +500,112 @@ fun TypingIndicator(modifier: Modifier = Modifier) {
                 .alpha(dot3Alpha)
                 .background(MaterialTheme.colorScheme.onSurfaceVariant, CircleShape)
         )
+    }
+}
+
+@Composable
+fun ConnectionStatusDot(
+    state: ConnectionState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "conn_dot_pulse")
+    val alpha by if (state is ConnectionState.Reconnecting) {
+        infiniteTransition.animateFloat(
+            initialValue = 0.35f,
+            targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(800, easing = LinearEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "pulse_alpha"
+        )
+    } else {
+        remember { mutableFloatStateOf(1f) }
+    }
+
+    val dotColor = when (state) {
+        is ConnectionState.Live -> MaterialTheme.colorScheme.primary
+        is ConnectionState.Reconnecting -> MaterialTheme.colorScheme.tertiary
+        is ConnectionState.Offline -> MaterialTheme.colorScheme.error
+        is ConnectionState.Unknown -> MaterialTheme.colorScheme.outline
+    }
+
+    val desc = when (state) {
+        is ConnectionState.Live -> stringResource(R.string.connection_dot_desc_live)
+        is ConnectionState.Reconnecting -> stringResource(R.string.connection_dot_desc_reconnecting)
+        is ConnectionState.Offline -> stringResource(R.string.connection_dot_desc_offline)
+        is ConnectionState.Unknown -> stringResource(R.string.connection_dot_desc_unknown)
+    }
+
+    Box(
+        modifier = modifier
+            .size(32.dp)
+            .semantics { this.contentDescription = desc }
+            .clickable(onClickLabel = desc, onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .alpha(alpha)
+                .background(dotColor)
+        )
+    }
+}
+
+@Composable
+fun FailedSendRow(
+    failedSend: FailedSend,
+    isUnauthorized: Boolean,
+    onRowClick: () -> Unit,
+    onRetry: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = modifier
+            .fillMaxWidth()
+            .clickable(enabled = isUnauthorized, onClick = onRowClick)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(18.dp)
+                )
+                Text(
+                    text = stringResource(R.string.send_failed_retry_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            TextButton(
+                onClick = onRetry,
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = stringResource(R.string.send_failed_retry_button),
+                    color = MaterialTheme.colorScheme.error,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
     }
 }

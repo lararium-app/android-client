@@ -4,7 +4,11 @@ import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
 import android.app.ActivityManager
+import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Binder
 import android.os.IBinder
@@ -18,7 +22,15 @@ import app.lararium.audio.SpeechRecognizerManager
 import app.lararium.audio.VoiceActivityDetector
 import app.lararium.audio.VoskTranscriber
 import app.lararium.audio.WhisperTranscriber
+import app.lararium.hearth.ConnectionEvent
+import app.lararium.hearth.ConnectionMachine
+import app.lararium.hearth.ConnectionState
+import app.lararium.hearth.Endpoint
 import app.lararium.hearth.HearthChatClient
+import app.lararium.hearth.LarariumClient
+import app.lararium.hearth.OfflineReason
+import app.lararium.hearth.SendGate
+import app.lararium.ui.FailedSend
 import app.lararium.llm.*
 import app.lararium.search.BraveSearchClient
 import app.lararium.search.ExaSearchClient
@@ -100,6 +112,26 @@ class AssistantService : Service() {
     // Pending URL to open (detected from AI response)
     private val _pendingUrl = MutableStateFlow<String?>(null)
     val pendingUrl: StateFlow<String?> = _pendingUrl.asStateFlow()
+
+    // Connection machine & state for Hearth connection monitoring (#21)
+    private val connectionMachine = ConnectionMachine()
+    private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Unknown)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    val connectionEpoch: Long
+        get() = connectionMachine.epoch
+
+    val sendGate = SendGate()
+    private val _failedSend = MutableStateFlow<FailedSend?>(null)
+    val failedSend: StateFlow<FailedSend?> = _failedSend.asStateFlow()
+
+    fun clearFailedSend() {
+        sendGate.succeed()
+        _failedSend.value = null
+    }
+
+    private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private var probeJob: Job? = null
     
     // Currently loaded chat ID (null = new chat)
     private var _currentChatId: String? = null
@@ -293,6 +325,8 @@ class AssistantService : Service() {
                 Log.i(TAG, "Vosk model not downloaded for $language")
             }
         }
+
+        initConnectionMonitoring()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -331,6 +365,15 @@ class AssistantService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        networkCallback?.let {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+            try {
+                cm?.unregisterNetworkCallback(it)
+            } catch (_: Exception) {}
+            networkCallback = null
+        }
+        probeJob?.cancel()
+        probeJob = null
         serviceScope.cancel()
         audioCaptureManager.release()
         speechRecognizerManager.destroy()
@@ -706,6 +749,7 @@ class AssistantService : Service() {
         Log.i(TAG, "Processing query: '$effectiveQuery', hasImage=${imageBase64 != null}, imageLength=${imageBase64?.length}")
         
         // Immediately add user message to chat UI
+        sendGate.record(effectiveQuery)
         addUserMessageToChat(effectiveQuery, imageBase64)
         
         activeResponseJob = serviceScope.launch(Dispatchers.IO) {
@@ -725,7 +769,13 @@ class AssistantService : Service() {
                 Log.d(TAG, "Added to Local LLM session: '$query'")
             }
             SettingsManager.PROVIDER_LARARIUM -> {
-                hearthChatClient.chatSession.addUserMessage(query, imageBase64)
+                // Retry-after-failure re-submits the same query while it is still the
+                // session tail (the failed attempt never got an assistant reply);
+                // adding it again would duplicate the bubble.
+                val existing = hearthChatClient.chatSession.getAllMessages().lastOrNull()
+                if (existing?.role != "user" || existing.content != query || imageBase64 != null) {
+                    hearthChatClient.chatSession.addUserMessage(query, imageBase64)
+                }
                 _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
                 Log.d(TAG, "Added to Hearth session: '$query'")
             }
@@ -1091,26 +1141,68 @@ class AssistantService : Service() {
         _assistantState.value = AssistantState.Responding
 
         val fullResponse = StringBuilder()
+        val epochAtSend = connectionMachine.epoch
+        var receivedAnyToken = false
 
         try {
             hearthChatClient.streamChat(
                 message = query,
+                onTurnEvent = {
+                    if (!connectionMachine.isStale(epochAtSend)) {
+                        dispatchConnectionEvent(ConnectionEvent.TurnEvent)
+                    }
+                },
                 onDelta = { chunk ->
+                    if (connectionMachine.isStale(epochAtSend)) {
+                        Log.w(TAG, "Ignoring late delta on stale epoch")
+                        return@streamChat
+                    }
+                    receivedAnyToken = true
                     fullResponse.append(chunk)
                     _response.value = fullResponse.toString()
                 },
                 onDone = { accumulated ->
-                    // Handled below via finalizeResponse
+                    if (connectionMachine.isStale(epochAtSend)) {
+                        Log.w(TAG, "Ignoring late onDone on stale epoch")
+                        return@streamChat
+                    }
+                    sendGate.succeed()
+                    _failedSend.value = null
                 },
                 onError = { friendlyError ->
+                    if (connectionMachine.isStale(epochAtSend)) {
+                        Log.w(TAG, "Ignoring late onError on stale epoch")
+                        return@streamChat
+                    }
                     Log.e(TAG, "Hearth streaming error: $friendlyError")
-                    _response.value = friendlyError
-                    _assistantState.value = AssistantState.Error(friendlyError)
+                    if (!receivedAnyToken) {
+                        _failedSend.value = sendGate.fail(query)
+                        _response.value = ""
+                        _assistantState.value = AssistantState.Idle
+                    } else {
+                        _response.value = friendlyError
+                        _assistantState.value = AssistantState.Error(friendlyError)
+                    }
+                    val code = if (friendlyError.contains("authentication", ignoreCase = true) ||
+                        friendlyError.contains("unauthorized", ignoreCase = true) ||
+                        friendlyError.contains("401") || friendlyError.contains("403")) 401 else null
+                    dispatchConnectionEvent(ConnectionEvent.ProbeFailure(code))
                 }
             )
 
-            if (_assistantState.value !is AssistantState.Error) {
+            if (connectionMachine.isStale(epochAtSend)) {
+                _failedSend.value = sendGate.fail(query)
+                _response.value = ""
+                _assistantState.value = AssistantState.Idle
+            } else if (!receivedAnyToken && _failedSend.value == null && _assistantState.value !is AssistantState.Error) {
+                _failedSend.value = sendGate.fail(query)
+                _response.value = ""
+                _assistantState.value = AssistantState.Idle
+                dispatchConnectionEvent(ConnectionEvent.ProbeFailure(null))
+            } else if (_assistantState.value !is AssistantState.Error && _failedSend.value == null) {
                 finalizeResponse(fullResponse.toString(), emptyList())
+                sendGate.succeed()
+                _failedSend.value = null
             }
         } catch (e: CancellationException) {
             Log.i(TAG, "Hearth streaming cancelled")
@@ -1121,9 +1213,17 @@ class AssistantService : Service() {
             throw e
         } catch (e: Exception) {
             Log.e(TAG, "Error in streamHearth", e)
-            val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
-            _response.value = friendly
-            _assistantState.value = AssistantState.Error(friendly)
+            val code = extractStatusCode(e)
+            dispatchConnectionEvent(ConnectionEvent.ProbeFailure(code))
+            if (!receivedAnyToken || connectionMachine.isStale(epochAtSend)) {
+                _failedSend.value = sendGate.fail(query)
+                _response.value = ""
+                _assistantState.value = AssistantState.Idle
+            } else {
+                val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
+                _response.value = friendly
+                _assistantState.value = AssistantState.Error(friendly)
+            }
         }
     }
 
@@ -1699,6 +1799,107 @@ class AssistantService : Service() {
 
         if (wasActive) {
             _assistantState.value = if (hadPartialResponse) AssistantState.Complete else AssistantState.Idle
+        }
+    }
+
+    private fun isMonitoringEligible(): Boolean {
+        val app = application as? AssistantApplication ?: return false
+        val endpoint = app.secureKeyManager.getHearthEndpoint()
+        return endpoint != null && settingsManager.apiProvider == SettingsManager.PROVIDER_LARARIUM
+    }
+
+    fun retryConnectionNow() {
+        if (!isMonitoringEligible()) {
+            _connectionState.value = ConnectionState.Unknown
+            return
+        }
+        dispatchConnectionEvent(ConnectionEvent.ManualRetry)
+    }
+
+    private fun initConnectionMonitoring() {
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (isMonitoringEligible()) {
+                    dispatchConnectionEvent(ConnectionEvent.NetworkAvailable)
+                }
+            }
+
+            override fun onLost(network: Network) {
+                if (isMonitoringEligible()) {
+                    dispatchConnectionEvent(ConnectionEvent.NetworkLost)
+                }
+            }
+        }
+        try {
+            cm?.registerDefaultNetworkCallback(callback)
+            networkCallback = callback
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to register network callback", e)
+        }
+
+        if (isMonitoringEligible()) {
+            retryConnectionNow()
+        }
+    }
+
+    private fun dispatchConnectionEvent(event: ConnectionEvent) {
+        val transition = connectionMachine.process(event)
+        _connectionState.value = transition.state
+        probeJob?.cancel()
+        if (transition.nextProbeDelayMs != null) {
+            probeJob = serviceScope.launch(Dispatchers.IO) {
+                if (transition.nextProbeDelayMs > 0) {
+                    delay(transition.nextProbeDelayMs)
+                }
+                runProbe()
+            }
+        }
+    }
+
+    private suspend fun runProbe() {
+        if (!isMonitoringEligible()) return
+        val app = application as? AssistantApplication ?: return
+        val epTriple = app.secureKeyManager.getHearthEndpoint() ?: return
+        val ep = Endpoint(epTriple.first, epTriple.second, epTriple.third)
+
+        val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val activeNet = cm?.activeNetwork
+        val caps = cm?.getNetworkCapabilities(activeNet)
+        val hasInternet = caps?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+
+        if (!hasInternet) {
+            dispatchConnectionEvent(ConnectionEvent.NetworkLost)
+            return
+        }
+
+        try {
+            withContext(Dispatchers.IO) {
+                withTimeout(5_000L) {
+                    val client = LarariumClient(ep)
+                    client.health()
+                }
+            }
+            dispatchConnectionEvent(ConnectionEvent.ProbeSuccess)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            val stillHasInternet = cm?.getNetworkCapabilities(cm.activeNetwork)
+                ?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+            if (!stillHasInternet) {
+                dispatchConnectionEvent(ConnectionEvent.NetworkLost)
+            } else {
+                val code = extractStatusCode(e)
+                dispatchConnectionEvent(ConnectionEvent.ProbeFailure(code))
+            }
+        }
+    }
+
+    private fun extractStatusCode(e: Throwable): Int? {
+        val msg = e.message ?: return null
+        return when {
+            msg.contains("401") -> 401
+            msg.contains("403") -> 403
+            else -> Regex("""\b(4\d\d|5\d\d)\b""").find(msg)?.value?.toIntOrNull()
         }
     }
 }

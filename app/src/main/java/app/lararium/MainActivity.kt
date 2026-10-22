@@ -131,6 +131,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    private val chatViewModel: ChatViewModel by lazy {
+        androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
+    }
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -144,6 +148,7 @@ class MainActivity : ComponentActivity() {
         if (app.secureKeyManager.getHearthEndpoint() != null) {
             HearthWatchScheduler.refreshNow(this)
         }
+        chatViewModel.assistantService.value?.retryConnectionNow()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -197,7 +202,7 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                val chatViewModel: ChatViewModel = viewModel()
+                val chatViewModel = this.chatViewModel
                 val boundService by chatViewModel.assistantService.collectAsStateWithLifecycle()
                 val navController = rememberNavController()
                 val currentRoute = navController.currentBackStackEntryAsState().value?.destination?.route
@@ -265,7 +270,8 @@ class MainActivity : ComponentActivity() {
                                         onOpenDrawer = { scope.launch { drawerState.open() } },
                                         onOpenApprovals = { navController.navigate("approvals") },
                                         onNewChat = { chatViewModel.clearSession() },
-                                        viewModel = chatViewModel
+                                        viewModel = chatViewModel,
+                                        onRepair = { navController.navigate("settings") }
                                     )
                                 }
                                 composable("sessions") {
