@@ -48,6 +48,34 @@ object EndpointPolicy {
 
     private fun List<String>.mapOrNull4(): List<Int>? =
         if (size != 4) null else map { it.toIntOrNull() ?: return null }
+
+    /**
+     * Checks whether a fallback endpoint satisfies the security scheme policy (finding L-20).
+     * Law: fallback endpoints must satisfy the same scheme policy as primary:
+     * - Reuses LinkPolicy from H9 (http/https only with valid authority)
+     * - Enforces EndpointPolicy (https anywhere; http only on localhost, ::1, or private LAN/tailnet)
+     * - Rejects public cleartext http with a specific reason.
+     */
+    fun rejectFallbackReason(url: String): String? {
+        if (!app.lararium.util.LinkPolicy.isSafeExternal(url)) {
+            return "fallback URL rejected by LinkPolicy: scheme must be http(s) with host"
+        }
+        return rejectReason(url)
+    }
+
+    /**
+     * Verifies if a fallback endpoint is permitted.
+     * Rejects insecure fallback endpoints and logs or reports the reason.
+     */
+    fun isAllowedFallback(url: String, onReject: ((String) -> Unit)? = null): Boolean {
+        val reason = rejectFallbackReason(url)
+        if (reason != null) {
+            val msg = "Rejected fallback endpoint ($reason): $url"
+            onReject?.invoke(msg)
+            return false
+        }
+        return true
+    }
 }
 
 /** Parses the hearthd pairing deep link: lararium://pair?host=URL&token=TOKEN[&name=N] */
