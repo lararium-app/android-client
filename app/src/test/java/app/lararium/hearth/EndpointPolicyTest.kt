@@ -46,6 +46,46 @@ class EndpointPolicyTest {
     }
 
     // -----------------------------------------------------------------------
+    // Fallback endpoint scheme policy (L-20)
+    // -----------------------------------------------------------------------
+
+    @Test fun fallbackPolicyAllowsHttps() {
+        assertNull(EndpointPolicy.rejectFallbackReason("https://hearth.example.com:7717"))
+        assertNull(EndpointPolicy.rejectFallbackReason("https://100.111.222.33:7717"))
+        assertTrue(EndpointPolicy.isAllowedFallback("https://hearth.example.com"))
+    }
+
+    @Test fun fallbackPolicyAllowsPrivateNetworks() {
+        assertNull(EndpointPolicy.rejectFallbackReason("http://192.168.1.100:7717"))
+        assertNull(EndpointPolicy.rejectFallbackReason("http://10.0.0.1:7717"))
+        assertNull(EndpointPolicy.rejectFallbackReason("http://100.100.100.100:7717"))
+        assertNull(EndpointPolicy.rejectFallbackReason("http://127.0.0.1:7717"))
+        assertNull(EndpointPolicy.rejectFallbackReason("http://localhost:7717"))
+        assertTrue(EndpointPolicy.isAllowedFallback("http://192.168.1.100:7717"))
+    }
+
+    @Test fun fallbackPolicyRejectsPublicCleartextWithLoggedReason() {
+        var loggedMessage: String? = null
+        val allowed = EndpointPolicy.isAllowedFallback("http://evil.example.com:7717") { loggedMessage = it }
+        assertFalse("public http fallback must be rejected", allowed)
+        assertNotNull("reject reason must be logged", loggedMessage)
+        assertTrue(loggedMessage!!.contains("cleartext http is only allowed on LAN/tailnet hosts"))
+
+        val reason = EndpointPolicy.rejectFallbackReason("http://8.8.8.8:7717")
+        assertNotNull(reason)
+        assertTrue(reason!!.contains("cleartext http"))
+    }
+
+    @Test fun fallbackPolicyRejectsPrivilegedOrInvalidSchemes() {
+        assertNotNull(EndpointPolicy.rejectFallbackReason("content://settings/system"))
+        assertNotNull(EndpointPolicy.rejectFallbackReason("file:///data/data/app/databases"))
+        assertNotNull(EndpointPolicy.rejectFallbackReason("intent:#Intent;action=android.intent.action.VIEW;end"))
+        assertNotNull(EndpointPolicy.rejectFallbackReason("javascript:alert(1)"))
+        assertNotNull(EndpointPolicy.rejectFallbackReason("ftp://ftp.example.com"))
+        assertFalse(EndpointPolicy.isAllowedFallback("file:///etc/hosts"))
+    }
+
+    // -----------------------------------------------------------------------
     // PairingLink parsing
     // -----------------------------------------------------------------------
 
