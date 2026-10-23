@@ -60,12 +60,4 @@
         <domain includeSubdomains="true">100.64.0.0/10</domain>
         <domain includeSubdomains="true">127.0.0.1</domain>
     </domain-config>
-    
-    <!-- Debug overrides for user-installed CAs during development -->
-    <debug-overrides>
-        <trust-anchors>
-            <certificates src="system" />
-            <certificates src="user" />
-        </trust-anchors>
-    </debug-overrides>
 </network-security-config>

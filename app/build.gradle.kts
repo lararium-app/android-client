@@ -93,6 +93,7 @@ android {
         }
 
         release {
+            isDebuggable = false
             isMinifyEnabled = true
             isShrinkResources = true
             // Allows local release builds without checking a private keystore into the project.
