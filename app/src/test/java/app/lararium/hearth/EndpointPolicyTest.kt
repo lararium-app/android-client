@@ -160,6 +160,53 @@ class EndpointPolicyTest {
     }
 
     // -----------------------------------------------------------------------
+    // Net — Content-Length / body size cap bounds (M16)
+    // -----------------------------------------------------------------------
+
+    @Test fun maxBodyBytesCapConstant() {
+        assertEquals(10 * 1024 * 1024, Net.MAX_BODY_BYTES)
+    }
+
+    @Test fun readExactRejectsMaxIntWithoutAllocation() {
+        val ex = runCatching {
+            Net.readExact(java.io.ByteArrayInputStream(ByteArray(0)), Int.MAX_VALUE)
+        }.exceptionOrNull()
+        assertNotNull("readExact with 2^31-1 must throw", ex)
+        assertTrue("must throw IOException, not OOM", ex is java.io.IOException)
+    }
+
+    @Test fun readExactRejectsNegativeLength() {
+        val ex = runCatching {
+            Net.readExact(java.io.ByteArrayInputStream(ByteArray(0)), -1)
+        }.exceptionOrNull()
+        assertNotNull("readExact with negative length must throw", ex)
+        assertTrue(ex is java.io.IOException)
+    }
+
+    @Test fun netRefusesOversizedContentLengthWithoutOOM() {
+        // 2^31 - 1 = 2147483647; must fail with IOException before allocating
+        val header = "HTTP/1.1 200 OK\r\nContent-Length: 2147483647\r\nConnection: close\r\n\r\n"
+        withFakeServer(response = header.toByteArray(Charsets.US_ASCII)) { port ->
+            val ex = runCatching {
+                Net.get("http://127.0.0.1:$port/")
+            }.exceptionOrNull()
+            assertNotNull("oversized Content-Length must throw", ex)
+            assertTrue("must throw IOException, not OOM", ex is java.io.IOException)
+        }
+    }
+
+    @Test fun netRefusesNegativeContentLength() {
+        val header = "HTTP/1.1 200 OK\r\nContent-Length: -1\r\nConnection: close\r\n\r\n"
+        withFakeServer(response = header.toByteArray(Charsets.US_ASCII)) { port ->
+            val ex = runCatching {
+                Net.get("http://127.0.0.1:$port/")
+            }.exceptionOrNull()
+            assertNotNull("negative Content-Length must throw", ex)
+            assertTrue(ex is java.io.IOException)
+        }
+    }
+
+    // -----------------------------------------------------------------------
     // SSE parser fixtures
     // -----------------------------------------------------------------------
 

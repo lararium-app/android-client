@@ -21,6 +21,8 @@ data class HttpResponse(val status: Int, val body: String)
 
 object Net {
 
+    const val MAX_BODY_BYTES: Int = 10 * 1024 * 1024 // 10 MiB cap
+
     fun get(
         urlString: String,
         headers: Map<String, String> = emptyMap(),
@@ -135,8 +137,16 @@ object Net {
         val bodyBytes = if (respHeaders["transfer-encoding"]?.contains("chunked") == true) {
             readChunkedBody(input)
         } else {
-            val cl = respHeaders["content-length"]?.toIntOrNull()
-            if (cl != null) readExact(input, cl) else input.readBytes()
+            val clStr = respHeaders["content-length"]
+            if (clStr != null) {
+                val cl = clStr.toLongOrNull() ?: throw IOException("invalid content-length: $clStr")
+                if (cl < 0 || cl > MAX_BODY_BYTES) {
+                    throw IOException("content-length $cl out of bounds (0..$MAX_BODY_BYTES)")
+                }
+                readExact(input, cl.toInt())
+            } else {
+                input.readBytes()
+            }
         }
 
         return HttpResponse(status, bodyBytes.toString(Charsets.UTF_8))
@@ -168,6 +178,7 @@ object Net {
     private fun readChunkedBody(input: InputStream): ByteArray {
         val out = ArrayList<Byte>(512)
         val lineBuf = StringBuilder()
+        var total = 0
         while (true) {
             // Read chunk-size line.
             lineBuf.clear()
@@ -180,15 +191,22 @@ object Net {
                 .substringBefore(';')  // ignore extensions
                 .toIntOrNull(16) ?: break
             if (chunkSize == 0) break
+            if (chunkSize < 0 || total + chunkSize > MAX_BODY_BYTES) {
+                throw IOException("chunked body size exceeds maximum of $MAX_BODY_BYTES bytes")
+            }
             val chunk = readExact(input, chunkSize)
             chunk.forEach { out.add(it) }
+            total += chunkSize
             // Consume trailing CRLF.
             input.read(); input.read()
         }
         return out.toByteArray()
     }
 
-    private fun readExact(input: InputStream, n: Int): ByteArray {
+    internal fun readExact(input: InputStream, n: Int): ByteArray {
+        if (n < 0 || n > MAX_BODY_BYTES) {
+            throw IOException("declared length $n out of bounds (0..$MAX_BODY_BYTES)")
+        }
         val buf = ByteArray(n)
         var read = 0
         while (read < n) {
