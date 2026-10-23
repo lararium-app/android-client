@@ -45,8 +45,6 @@ jobs:
         with:
           sarif_file: gitleaks.sarif
           category: gitleaks
-        permissions:
-          security-events: write
 
   deps:
     name: deps
