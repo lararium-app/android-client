@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.content.pm.PackageManager
 import android.provider.Settings
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -158,6 +159,24 @@ class MainActivity : ComponentActivity() {
         androidx.lifecycle.ViewModelProvider(this)[ChatViewModel::class.java]
     }
 
+    /**
+     * Prevents screen capture, screenshots, screen recording, and recents previews
+     * for screens displaying secrets (L-10).
+     *
+     * Grep-documented list of covered screens in this single-Activity Compose host:
+     * - Main chat (ChatHomeScreen): may display bearer tokens, approval cards, credentials, sensitive tool payloads
+     * - Pairing / QR screen (PairingDialog / SettingsScreen): displays hearth pairing tokens, QR codes, endpoints
+     * - Settings / keys screens (SettingsScreen): displays API keys (OpenAI, Anthropic, OpenRouter), local token secrets
+     * - Sessions screen (SessionsScreen): lists past chat sessions and titles
+     * - Custody approvals (ApprovalsScreen): displays approval requests with sensitive tool parameters and destinations
+     */
+    private fun applyFlagSecure() {
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
+    }
+
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
@@ -176,6 +195,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        applyFlagSecure()
 
         val settingsManager = SettingsManager(this)
         setRequestedOrientation(OrientationLogic.orientationForSetting(settingsManager.lockOrientation))
