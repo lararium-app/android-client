@@ -1,0 +1,99 @@
+name: Security Gate
+
+# PR-time security audit for the Lararium Android client:
+#   - secrets (gitleaks, full history) — blocking
+#   - dependency review (PRs) — blocking once the repo's Dependency graph
+#     is enabled (Settings → Code security and analysis)
+#   - SAST (CodeQL, Java/Kotlin) — reporting; findings land in the Security tab
+# Runs on every pull request, weekly, and manually.
+
+on:
+  pull_request:
+  schedule:
+    - cron: "23 4 * * 1" # Mondays ~04:23 UTC, pinned so gate checks exist
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # full history
+      - name: gitleaks
+        # v8.21.2 pinned: verified to detect planted secrets with the full
+        # default ruleset (newer 8.30.x silently misses them); the
+        # safe.directory config makes history scanning deterministic inside
+        # the container. Known false positives are allowlisted with reasons
+        # in .gitleaks.toml.
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/repo" -w /repo \
+            --entrypoint sh ghcr.io/gitleaks/gitleaks:v8.21.2 \
+            -c "git config --global --add safe.directory /repo && \
+                gitleaks git --redact --no-banner --exit-code 1 \
+                  -c /repo/.gitleaks.toml \
+                  -f sarif -r /repo/gitleaks.sarif ."
+      - name: Upload SARIF
+        if: always() && hashFiles('gitleaks.sarif') != ''
+        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.28.11
+        with:
+          sarif_file: gitleaks.sarif
+          category: gitleaks
+
+  deps:
+    name: deps
+    # Non-blocking until the Dependency graph is enabled for this repository
+    # (Settings → Code security and analysis → Dependency graph). Flip
+    # continue-on-error away once enabled; the check then fails PRs that add
+    # high-severity vulnerable dependencies.
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/dependency-review-action@3b139cfc5fae8b618d3eae3675e383bb1769c019 # v4.5.0
+        with:
+          fail-on-severity: high
+
+  codeql:
+    name: codeql (java-kotlin)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+      - uses: github/codeql-action/init@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.28.11
+        with:
+          languages: java-kotlin
+          queries: security-and-quality
+      - name: Generate gradle.properties (gitignored upstream)
+        # Same step the app-build workflow uses; without it AndroidX
+        # resolution fails.
+        run: |
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          kotlin.code.style=official
+          EOF
+      - name: Build for extraction
+        # CodeQL requires a real compile for Java/Kotlin (no no-build mode
+        # for this language pair at the pinned toolchain). Same recipe the
+        # app-build workflow proves green on these runners.
+        run: ./gradlew assembleDebug --no-daemon -x lint
+      - uses: github/codeql-action/analyze@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.28.11
+        with:
+          category: /language:java-kotlin

@@ -1,0 +1,17 @@
+# gitleaks configuration for the Security gate (.github/workflows/security.yml).
+# Extends the default ruleset; adds a global allowlist for verified false
+# positives. Every entry states why it is not a secret. Real secrets never
+# belong in this repository — if a future hit is not a false positive, the
+# gate must fail, not the allowlist grow.
+title = "Lararium Android gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "verified false positives: unit-test fixtures"
+paths = [
+  # Unit tests mint fake key-shaped strings on purpose
+  # (AssistantUnitTest.kt generic-api-key hits).
+  '''app/src/test/''',
+]
