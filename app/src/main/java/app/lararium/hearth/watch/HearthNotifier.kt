@@ -60,8 +60,7 @@ object HearthNotifier {
     fun notifyCard(context: Context, card: CardInfo) {
         ensureChannels(context)
         val lane = WatchLogic.cardLane(card)
-        val rawText = if (card.cell.isNotBlank()) "$lane · ${card.cell}" else lane
-        val contentText = WatchLogic.truncate(rawText, 120)
+        val contentText = WatchLogic.notificationText(card)
 
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
@@ -101,6 +100,18 @@ object HearthNotifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
+        val allowOnceAction = NotificationCompat.Action.Builder(
+            0,
+            "Allow once",
+            allowOncePendingIntent,
+        ).setAuthenticationRequired(true).build()
+
+        val denyAction = NotificationCompat.Action.Builder(
+            0,
+            "Deny",
+            denyPendingIntent,
+        ).setAuthenticationRequired(true).build()
+
         val notification = NotificationCompat.Builder(context, CHANNEL_CARDS)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle("Lararium: approval waiting")
@@ -111,9 +122,13 @@ object HearthNotifier {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             // Approval cards never render on a secured lock screen (issue #8).
             .setVisibility(cardVisibility())
-            .addAction(0, "Allow once", allowOncePendingIntent)
-            .addAction(0, "Deny", denyPendingIntent)
+            .addAction(allowOnceAction)
+            .addAction(denyAction)
             .build()
+
+        // Unlock gating: platform notifications have no auth-required field;
+        // only Actions do (API 30+, applied above), and VISIBILITY_PRIVATE
+        // above keeps the content off the secured lock screen (issue #8).
 
         runCatching {
             NotificationManagerCompat.from(context).notify(notifId, notification)
@@ -284,5 +299,6 @@ object HearthNotifier {
         }
     }
 }
+
 
 

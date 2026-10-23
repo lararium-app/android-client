@@ -217,6 +217,23 @@ object WatchLogic {
     fun confirmationText(verdict: String, card: CardInfo, max: Int = 120): String =
         confirmationText(verdict, cardLane(card), max)
 
+    /**
+     * Builds notification content text including lane, destination, and cell.
+     * Blanks are skipped and parts are joined with " · ".
+     * Truncates to [max] chars appending '…' only if truncated.
+     */
+    fun notificationText(card: CardInfo, max: Int = 120): String {
+        val parts = listOf(cardLane(card), card.dest.trim(), card.cell.trim())
+            .filter { it.isNotBlank() }
+        return truncate(parts.joinToString(" · "), max)
+    }
+
+    /**
+     * Returns true when the review text is empty or blank, indicating
+     * arguments are not shown and a blind warning should be displayed.
+     */
+    fun shouldWarnBlind(card: CardInfo): Boolean = card.review.isBlank()
+
 }
 
 /** Top-level shortcut delegating to [WatchLogic.parseCards]. */
@@ -254,4 +271,12 @@ fun confirmationText(verdict: String, lane: String, max: Int = 120): String =
 /** Top-level shortcut delegating to [WatchLogic.confirmationText]. */
 fun confirmationText(verdict: String, card: CardInfo, max: Int = 120): String =
     WatchLogic.confirmationText(verdict, card, max)
+
+/** Top-level shortcut delegating to [WatchLogic.notificationText]. */
+fun notificationText(card: CardInfo, max: Int = 120): String =
+    WatchLogic.notificationText(card, max)
+
+/** Top-level shortcut delegating to [WatchLogic.shouldWarnBlind]. */
+fun shouldWarnBlind(card: CardInfo): Boolean =
+    WatchLogic.shouldWarnBlind(card)
 
