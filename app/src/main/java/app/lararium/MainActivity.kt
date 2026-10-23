@@ -114,6 +114,29 @@ class MainActivity : ComponentActivity() {
             return
         }
         val (ep, _) = parsed
+
+        // H9: a deep link never silently replaces an existing
+        // pairing. The user confirms old -> new; the token is never
+        // displayed.
+        val current = (applicationContext as AssistantApplication)
+            .secureKeyManager.getHearthEndpoint()
+        val prompt = if (current == null) {
+            "Pair this device with \"${ep.name}\"?\n\n${ep.baseUrl}"
+        } else {
+            val (curBase, _, curName) = current
+            "Replace your pairing \"$curName\"\n($curBase)\n" +
+                "\nwith \"${ep.name}\" (${ep.baseUrl})?"
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Lararium pairing")
+            .setMessage(prompt)
+            .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
+            .setPositiveButton("Pair") { _, _ -> connectPairedEndpoint(ep) }
+            .show()
+    }
+
+    /** Verified-pair step of a confirmed deep link. */
+    private fun connectPairedEndpoint(ep: app.lararium.hearth.Endpoint) {
         pairingStatus.value = "Connecting to ${ep.name}…"
 
         activityScope.launch {
