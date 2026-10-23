@@ -53,6 +53,7 @@ import app.lararium.util.PdfExtractor
 import app.lararium.util.PdfResult
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
+import app.lararium.util.LinkPolicy
 
 class CompactAssistantActivity : ComponentActivity() {
 
@@ -429,10 +430,12 @@ fun CompactAssistantView(
                                     color = MaterialTheme.colorScheme.onSurface,
                                     linkColor = MaterialTheme.colorScheme.primary,
                                     onLinkClick = { url ->
-                                        try {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                            context.startActivity(intent)
-                                        } catch (e: Exception) { }
+                                        if (LinkPolicy.isSafeExternal(url)) {
+                                            try {
+                                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                                    context.startActivity(intent)
+                                            } catch (e: Exception) { }
+                                        }
                                     }
                                 )
                             }
@@ -1455,10 +1458,12 @@ fun MessageBubble(
                             color = MaterialTheme.colorScheme.onSurface,
                             linkColor = MaterialTheme.colorScheme.primary,
                             onLinkClick = { url ->
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) { }
+                                if (LinkPolicy.isSafeExternal(url)) {
+                                    try {
+                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                            context.startActivity(intent)
+                                    } catch (e: Exception) { }
+                                }
                             }
                         )
                     }
