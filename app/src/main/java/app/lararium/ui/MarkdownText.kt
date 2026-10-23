@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import app.lararium.util.LinkPolicy
 
 /**
  * Simple Markdown renderer for chat messages.
@@ -47,8 +48,8 @@ fun MarkdownText(
                 .firstOrNull()?.let { annotation ->
                     if (onLinkClick != null) {
                         onLinkClick(annotation.item)
-                    } else {
-                        // Default: open in browser
+                    } else if (LinkPolicy.isSafeExternal(annotation.item)) {
+                        // Default: open in browser (https/http only, H9)
                         try {
                             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(annotation.item))
                             context.startActivity(intent)

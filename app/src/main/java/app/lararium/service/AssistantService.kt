@@ -53,6 +53,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import app.lararium.util.LinkPolicy
 
 /**
  * Foreground service managing the Lararium service lifecycle.
@@ -159,6 +160,11 @@ class AssistantService : Service() {
      * Open URL in default browser.
      */
     fun openUrl(url: String) {
+        if (!LinkPolicy.isSafeExternal(url)) {
+            // H9: agent-supplied links are browser links or nothing.
+            _pendingUrls.value = emptyList()
+            return
+        }
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
