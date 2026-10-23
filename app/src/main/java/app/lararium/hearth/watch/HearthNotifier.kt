@@ -29,6 +29,15 @@ object HearthNotifier {
      */
     fun cardVisibility(): Int = NotificationCompat.VISIBILITY_SECRET
 
+    const val REPLY_PUBLIC_TEXT = "Lararium: new message"
+
+    /**
+     * Lock-screen visibility for agent reply notifications (finding L-11).
+     * Reply notifications use VISIBILITY_PRIVATE with a redacted public version
+     * showing only "Lararium: new message" on secured lock screens.
+     */
+    fun replyVisibility(): Int = NotificationCompat.VISIBILITY_PRIVATE
+
     /**
      * Idempotently ensures the required notification channels exist on API 26+.
      */
@@ -254,6 +263,12 @@ object HearthNotifier {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
+        val publicNotification = NotificationCompat.Builder(context, CHANNEL_REPLIES)
+            .setSmallIcon(android.R.drawable.ic_dialog_info)
+            .setContentTitle("Lararium")
+            .setContentText(REPLY_PUBLIC_TEXT)
+            .build()
+
         val notification = NotificationCompat.Builder(context, CHANNEL_REPLIES)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setContentTitle(title)
@@ -262,6 +277,8 @@ object HearthNotifier {
             .setAutoCancel(true)
             .setContentIntent(pendingIntent)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+            .setVisibility(replyVisibility())
+            .setPublicVersion(publicNotification)
             .build()
 
         runCatching {

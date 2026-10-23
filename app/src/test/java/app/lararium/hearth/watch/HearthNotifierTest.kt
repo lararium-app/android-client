@@ -24,4 +24,23 @@ class HearthNotifierTest {
         assertNotEquals(NotificationCompat.VISIBILITY_PRIVATE, HearthNotifier.cardVisibility())
         assertNotEquals(NotificationCompat.VISIBILITY_PUBLIC, HearthNotifier.cardVisibility())
     }
+
+    @Test
+    fun replyVisibility_isPrivate() {
+        // Agent reply notifications must use VISIBILITY_PRIVATE (finding L-11).
+        assertEquals(NotificationCompat.VISIBILITY_PRIVATE, HearthNotifier.replyVisibility())
+    }
+
+    @Test
+    fun replyVisibility_notSecretOrPublic() {
+        // SECRET can silently suppress on some OEMs; PUBLIC leaks content (finding L-11).
+        assertNotEquals(NotificationCompat.VISIBILITY_SECRET, HearthNotifier.replyVisibility())
+        assertNotEquals(NotificationCompat.VISIBILITY_PUBLIC, HearthNotifier.replyVisibility())
+    }
+
+    @Test
+    fun replyPublicText_matchesLaw() {
+        // Redacted public text leaks nothing beyond "Lararium: new message" (finding L-11).
+        assertEquals("Lararium: new message", HearthNotifier.REPLY_PUBLIC_TEXT)
+    }
 }
