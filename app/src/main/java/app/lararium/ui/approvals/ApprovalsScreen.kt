@@ -1,5 +1,6 @@
 package app.lararium.ui.approvals
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -207,6 +208,8 @@ private fun ApprovalCardItem(
     isPending: Boolean,
     onResolve: (String) -> Unit
 ) {
+    var expanded by remember { mutableStateOf(false) }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -246,14 +249,35 @@ private fun ApprovalCardItem(
                 )
             }
 
+            if (card.dest.isNotBlank()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "→ ${card.dest}",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            if (WatchLogic.shouldWarnBlind(card)) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Arguments not shown — check your hearth if unsure.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+
             if (card.review.isNotBlank()) {
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
                     text = card.review,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 4,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = if (expanded) Int.MAX_VALUE else 4,
+                    overflow = if (expanded) TextOverflow.Clip else TextOverflow.Ellipsis,
+                    modifier = Modifier.clickable { expanded = !expanded }
                 )
             }
 

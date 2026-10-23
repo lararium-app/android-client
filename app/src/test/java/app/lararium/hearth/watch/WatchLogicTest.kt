@@ -478,4 +478,116 @@ class WatchLogicTest {
         // Blank lane fallback
         assertEquals("Allowed once", confirmationText("once", ""))
     }
+
+    // -----------------------------------------------------------------------
+    // notificationText
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun notificationText_includesToolDestCellWhenAllPresent() {
+        val card = CardInfo(
+            id = "c1",
+            cell = "cell-alpha",
+            cred = "cred-prod",
+            dest = "https://api.example.com",
+            tool = "bash",
+            review = "review text"
+        )
+        val expected = "bash · https://api.example.com · cell-alpha"
+        assertEquals(expected, notificationText(card))
+        assertEquals(expected, WatchLogic.notificationText(card))
+    }
+
+    @Test
+    fun notificationText_skipsBlanks() {
+        val noDest = CardInfo(
+            id = "c1",
+            cell = "cell-alpha",
+            cred = "cred-prod",
+            dest = "   ",
+            tool = "bash",
+            review = ""
+        )
+        assertEquals("bash · cell-alpha", notificationText(noDest))
+
+        val noCell = CardInfo(
+            id = "c2",
+            cell = "",
+            cred = "cred-prod",
+            dest = "https://api.example.com",
+            tool = "bash",
+            review = ""
+        )
+        assertEquals("bash · https://api.example.com", notificationText(noCell))
+
+        val noDestNoCell = CardInfo(
+            id = "c3",
+            cell = "  ",
+            cred = "cred-prod",
+            dest = "",
+            tool = "bash",
+            review = ""
+        )
+        assertEquals("bash", notificationText(noDestNoCell))
+    }
+
+    @Test
+    fun notificationText_truncationBounds() {
+        // Below max bound (default 120)
+        val shortCard = CardInfo("c1", "cell", "cred", "dest", "tool", "")
+        val shortResult = notificationText(shortCard)
+        assertEquals("tool · dest · cell", shortResult)
+        assertFalse(shortResult.endsWith("…"))
+
+        // Exact boundary with custom max
+        val exact = "tool · dest · cell"
+        val exactResult = notificationText(shortCard, max = exact.length)
+        assertEquals(exact, exactResult)
+        assertFalse(exactResult.endsWith("…"))
+
+        // Over boundary with default max 120
+        val longCard = CardInfo(
+            id = "c2",
+            cell = "cell",
+            cred = "cred",
+            dest = "a".repeat(150),
+            tool = "tool",
+            review = ""
+        )
+        val overResult = notificationText(longCard, max = 120)
+        assertEquals(121, overResult.length) // 120 chars + '…'
+        assertTrue(overResult.endsWith("…"))
+        assertEquals("tool · " + "a".repeat(120 - "tool · ".length) + "…", overResult)
+
+        // Over boundary with custom max
+        val customMaxResult = notificationText(longCard, max = 50)
+        assertEquals(51, customMaxResult.length)
+        assertTrue(customMaxResult.endsWith("…"))
+    }
+
+    // -----------------------------------------------------------------------
+    // shouldWarnBlind
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun shouldWarnBlind_trueForEmptyOrWhitespace() {
+        val emptyCard = CardInfo("c1", "cell", "cred", "dest", "tool", "")
+        assertTrue(shouldWarnBlind(emptyCard))
+        assertTrue(WatchLogic.shouldWarnBlind(emptyCard))
+
+        val whitespaceCard = CardInfo("c2", "cell", "cred", "dest", "tool", "   \t\n  ")
+        assertTrue(shouldWarnBlind(whitespaceCard))
+        assertTrue(WatchLogic.shouldWarnBlind(whitespaceCard))
+    }
+
+    @Test
+    fun shouldWarnBlind_falseOtherwise() {
+        val normalCard = CardInfo("c1", "cell", "cred", "dest", "tool", "Review argument details")
+        assertFalse(shouldWarnBlind(normalCard))
+        assertFalse(WatchLogic.shouldWarnBlind(normalCard))
+
+        val singleCharCard = CardInfo("c2", "cell", "cred", "dest", "tool", "x")
+        assertFalse(shouldWarnBlind(singleCharCard))
+        assertFalse(WatchLogic.shouldWarnBlind(singleCharCard))
+    }
 }
