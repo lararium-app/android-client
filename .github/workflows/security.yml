@@ -79,6 +79,16 @@ jobs:
         with:
           languages: java-kotlin
           queries: security-and-quality
+      - name: Generate gradle.properties (gitignored upstream)
+        # Same step the app-build workflow uses; without it AndroidX
+        # resolution fails.
+        run: |
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          kotlin.code.style=official
+          EOF
       - name: Build for extraction
         # CodeQL requires a real compile for Java/Kotlin (no no-build mode
         # for this language pair at the pinned toolchain). Same recipe the
