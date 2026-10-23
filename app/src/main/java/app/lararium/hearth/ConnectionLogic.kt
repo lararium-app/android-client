@@ -167,6 +167,32 @@ class SendGate {
         return failure
     }
 
+    /**
+     * Marks a failed send as undeliverable with an optional fallback retry endpoint (finding L-20).
+     * Enforces scheme policy on fallbackEndpoint via EndpointPolicy and LinkPolicy.
+     * Rejects public cleartext http fallback with a logged reason.
+     */
+    fun markUndeliverable(
+        query: String = recordedQuery ?: "",
+        fallbackEndpoint: String? = null,
+        logWarning: ((String) -> Unit)? = null,
+    ): FailedSend {
+        val validFallback = if (fallbackEndpoint != null) {
+            val reason = EndpointPolicy.rejectFallbackReason(fallbackEndpoint)
+            if (reason != null) {
+                logWarning?.invoke("Rejected fallback endpoint ($reason): $fallbackEndpoint")
+                null
+            } else {
+                fallbackEndpoint
+            }
+        } else {
+            null
+        }
+        val failure = FailedSend(query, validFallback)
+        failedSend = failure
+        return failure
+    }
+
     fun retry(query: String? = null): String? {
         val toRetry = query ?: failedSend?.query ?: recordedQuery
         failedSend = null

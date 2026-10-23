@@ -2,6 +2,7 @@ package app.lararium.hearth
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -206,5 +207,32 @@ class ConnectionLogicTest {
         val result = gate.succeed()
         assertNull(result)
         assertNull(gate.failedSend)
+    }
+
+    @Test
+    fun sendGateMarkUndeliverableWithValidFallback() {
+        val gate = SendGate()
+        val failure = gate.markUndeliverable(
+            query = "what is the weather?",
+            fallbackEndpoint = "https://backup.example.com:7717"
+        )
+        assertEquals("what is the weather?", failure.query)
+        assertEquals("https://backup.example.com:7717", failure.fallbackEndpoint)
+        assertEquals(failure, gate.failedSend)
+    }
+
+    @Test
+    fun sendGateMarkUndeliverableRejectsInsecureCleartextFallbackWithLog() {
+        val gate = SendGate()
+        var loggedWarning: String? = null
+        val failure = gate.markUndeliverable(
+            query = "send token",
+            fallbackEndpoint = "http://insecure.example.com:7717",
+            logWarning = { loggedWarning = it }
+        )
+        assertEquals("send token", failure.query)
+        assertNull("insecure fallback endpoint must be rejected", failure.fallbackEndpoint)
+        assertNotNull("rejection reason must be logged", loggedWarning)
+        assertTrue(loggedWarning!!.contains("Rejected fallback endpoint"))
     }
 }

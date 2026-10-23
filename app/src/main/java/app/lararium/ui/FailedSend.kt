@@ -1,3 +1,3 @@
 package app.lararium.ui
 
-data class FailedSend(val query: String)
+data class FailedSend(val query: String, val fallbackEndpoint: String? = null)

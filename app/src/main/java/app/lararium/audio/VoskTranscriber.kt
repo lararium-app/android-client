@@ -15,6 +15,7 @@ import org.vosk.Model
 import org.vosk.Recognizer
 import java.io.File
 import java.io.FileInputStream
+import java.io.IOException
 
 /**
  * Vosk-based offline speech recognition with multi-language support.
@@ -135,6 +136,89 @@ class VoskTranscriber(private val context: Context) {
             
         fun getBaseLanguageCode(code: String): String = 
             code.split("-").first()
+
+        /**
+         * Validates a zip entry name against Zip-Slip path traversal attacks (finding L-18).
+         * Enforces the repo's backup zip-slip law:
+         * 1. Reject absolute paths (starting with '/' or '\\' or File.isAbsolute)
+         * 2. Reject any entry whose canonical path escapes destination directory
+         *
+         * TODO(L-18): Verify downloaded archive against pinned SHA-256 digest when
+         * upstream provides pinned model checksums. Reject extraction of symlinks.
+         */
+        internal fun validateZipEntry(destDir: File, entryName: String): File {
+            if (entryName.startsWith("/") || entryName.startsWith("\\") || File(entryName).isAbsolute) {
+                throw IOException("Zip-slip vector: absolute path rejected: $entryName")
+            }
+            val target = File(destDir, entryName)
+            val canonicalDest = destDir.canonicalFile.path
+            val canonicalTarget = target.canonicalFile.path
+            val prefix = if (canonicalDest.endsWith(File.separator)) canonicalDest else canonicalDest + File.separator
+            if (canonicalTarget != canonicalDest && !canonicalTarget.startsWith(prefix)) {
+                throw IOException("Zip-slip vector: entry escapes destination directory: $entryName")
+            }
+            return target
+        }
+
+        internal fun extractZipWithProgress(
+            zipFile: File,
+            destDir: File,
+            onProgress: (Int) -> Unit = {}
+        ) {
+            // First pass: count total entries for progress and validate against zip-slip
+            var totalEntries = 0
+            java.util.zip.ZipInputStream(zipFile.inputStream()).use { zis ->
+                while (true) {
+                    val entry = zis.nextEntry ?: break
+                    validateZipEntry(destDir, entry.name)
+                    totalEntries++
+                    zis.closeEntry()
+                }
+            }
+
+            Log.i(TAG, "Extracting $totalEntries files from ${zipFile.name}")
+
+            // Second pass: extract with progress and path validation
+            var extractedCount = 0
+            java.util.zip.ZipInputStream(zipFile.inputStream()).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    val newFile = validateZipEntry(destDir, entry.name)
+
+                    try {
+                        if (entry.isDirectory) {
+                            newFile.mkdirs()
+                        } else {
+                            newFile.parentFile?.mkdirs()
+                            newFile.outputStream().use { fos ->
+                                val buffer = ByteArray(8192)
+                                var len: Int
+                                while (zis.read(buffer).also { len = it } > 0) {
+                                    fos.write(buffer, 0, len)
+                                }
+                            }
+                        }
+
+                        extractedCount++
+
+                        // Update progress every 10 files or for large milestones
+                        if (extractedCount % 10 == 0 || extractedCount == totalEntries) {
+                            val progress = if (totalEntries > 0) ((extractedCount * 90) / totalEntries).coerceIn(0, 90) else 90
+                            onProgress(progress)
+                            Log.d(TAG, "Extraction progress: $extractedCount/$totalEntries files ($progress%)")
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed to extract ${entry.name}", e)
+                        throw e
+                    }
+
+                    zis.closeEntry()
+                    entry = zis.nextEntry
+                }
+            }
+
+            Log.i(TAG, "Extracted $extractedCount files successfully")
+        }
     }
 
     data class LanguageModel(
@@ -595,64 +679,6 @@ class VoskTranscriber(private val context: Context) {
             fis.read(header)
             return fis.readBytes()
         }
-    }
-
-    private fun extractZipWithProgress(
-        zipFile: File, 
-        destDir: File,
-        onProgress: (Int) -> Unit = {}
-    ) {
-        // First pass: count total entries for progress
-        var totalEntries = 0
-        java.util.zip.ZipInputStream(zipFile.inputStream()).use { zis ->
-            while (zis.nextEntry != null) {
-                totalEntries++
-                zis.closeEntry()
-            }
-        }
-        
-        Log.i(TAG, "Extracting $totalEntries files from ${zipFile.name}")
-        
-        // Second pass: extract with progress
-        var extractedCount = 0
-        java.util.zip.ZipInputStream(zipFile.inputStream()).use { zis ->
-            var entry = zis.nextEntry
-            while (entry != null) {
-                val newFile = File(destDir, entry.name)
-                
-                try {
-                    if (entry.isDirectory) {
-                        newFile.mkdirs()
-                    } else {
-                        newFile.parentFile?.mkdirs()
-                        newFile.outputStream().use { fos ->
-                            val buffer = ByteArray(8192)
-                            var len: Int
-                            while (zis.read(buffer).also { len = it } > 0) {
-                                fos.write(buffer, 0, len)
-                            }
-                        }
-                    }
-                    
-                    extractedCount++
-                    
-                    // Update progress every 10 files or for large milestones
-                    if (extractedCount % 10 == 0 || extractedCount == totalEntries) {
-                        val progress = ((extractedCount * 90) / totalEntries).coerceIn(0, 90)
-                        onProgress(progress)
-                        Log.d(TAG, "Extraction progress: $extractedCount/$totalEntries files ($progress%)")
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Failed to extract ${entry.name}", e)
-                    throw e
-                }
-                
-                zis.closeEntry()
-                entry = zis.nextEntry
-            }
-        }
-        
-        Log.i(TAG, "Extracted $extractedCount files successfully")
     }
 
     private fun getModelDirectory(languageCode: String = currentLanguage): File {

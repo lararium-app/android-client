@@ -35,6 +35,9 @@ class SecureKeyManager(private val context: Context) {
         private const val PREF_EXA_API_KEY = "exa_api_key"
         private const val PREF_LANGSEARCH_API_KEY = "langsearch_api_key"
         private const val PREF_HEARTH_ENDPOINT = "hearth_endpoint"
+        private const val PREF_PAIRING_CODE = "pairing_code"
+        private const val PLAIN_PREFS_NAME = "local_token"
+        private const val PLAIN_PAIRING_CODE_KEY = "pairingCode"
     }
 
     private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply {
@@ -375,6 +378,63 @@ class SecureKeyManager(private val context: Context) {
 
     fun clearHearthEndpoint() {
         prefs.edit().remove(PREF_HEARTH_ENDPOINT).apply()
+    }
+
+    // ========== Pairing Code Storage (L-21) ==========
+
+    /**
+     * Store 32-hex pairingCode in keystore-wrapped encrypted preferences (finding L-21).
+     * Purges legacy plain value from local_token if present.
+     */
+    fun setPairingCode(pairingCode: String) {
+        val encrypted = encrypt(pairingCode)
+        prefs.edit().putString(PREF_PAIRING_CODE, encrypted).apply()
+        val plainPrefs = context.getSharedPreferences(PLAIN_PREFS_NAME, Context.MODE_PRIVATE)
+        if (plainPrefs.contains(PLAIN_PAIRING_CODE_KEY)) {
+            plainPrefs.edit().remove(PLAIN_PAIRING_CODE_KEY).apply()
+        }
+        Log.i(TAG, "Pairing code stored securely in keystore-wrapped preferences")
+    }
+
+    /**
+     * Retrieve 32-hex pairingCode.
+     * Automatically migrates legacy plain value from local_token prefs on first read (L-21):
+     * reads old, writes to secure prefs, deletes old.
+     */
+    fun getPairingCode(): String? {
+        val encrypted = prefs.getString(PREF_PAIRING_CODE, null)
+        if (encrypted != null) {
+            return try {
+                decrypt(encrypted)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to decrypt pairing code", e)
+                null
+            }
+        }
+
+        // Migrate legacy plain value on first read: read old, write new, delete old
+        val plainPrefs = context.getSharedPreferences(PLAIN_PREFS_NAME, Context.MODE_PRIVATE)
+        val legacyCode = plainPrefs.getString(PLAIN_PAIRING_CODE_KEY, null)
+        if (legacyCode != null) {
+            Log.i(TAG, "Migrating legacy pairingCode from local_token to secure storage (L-21)")
+            setPairingCode(legacyCode)
+            plainPrefs.edit().remove(PLAIN_PAIRING_CODE_KEY).apply()
+            return legacyCode
+        }
+
+        return null
+    }
+
+    fun hasPairingCode(): Boolean {
+        if (prefs.contains(PREF_PAIRING_CODE)) return true
+        val plainPrefs = context.getSharedPreferences(PLAIN_PREFS_NAME, Context.MODE_PRIVATE)
+        return plainPrefs.contains(PLAIN_PAIRING_CODE_KEY)
+    }
+
+    fun clearPairingCode() {
+        prefs.edit().remove(PREF_PAIRING_CODE).apply()
+        val plainPrefs = context.getSharedPreferences(PLAIN_PREFS_NAME, Context.MODE_PRIVATE)
+        plainPrefs.edit().remove(PLAIN_PAIRING_CODE_KEY).apply()
     }
 
     // ========== Token Rotation Support ==========
