@@ -1,9 +1,8 @@
 package app.lararium.llm
 
 import android.util.Log
+import app.lararium.hearth.Net
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Model discovery for self-hosted OpenAI-compatible servers.
@@ -26,27 +25,22 @@ object SelfHostedModels {
         if (baseUrl.isBlank()) return emptyList()
         val root = baseUrl.trimEnd('/').removeSuffix("/chat/completions").trimEnd('/')
         return try {
-            val conn = (URL("$root/models").openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = TIMEOUT_MS
-                readTimeout = TIMEOUT_MS
-                if (!apiKey.isNullOrBlank()) {
-                    setRequestProperty("Authorization", "Bearer $apiKey")
-                }
-                setRequestProperty("Accept", "application/json")
+            // M14: one enforcement point. Net applies the private-host
+            // cleartext policy (with the resolved-address re-check) instead
+            // of leaving it to NSC rules that cannot express address ranges.
+            // Log lines stay host-free (logcat hygiene).
+            val headers = mutableMapOf("Accept" to "application/json")
+            if (!apiKey.isNullOrBlank()) {
+                headers["Authorization"] = "Bearer $apiKey"
             }
-            try {
-                val code = conn.responseCode
-                if (code !in 200..299) {
-                    Log.w(TAG, "GET $root/models -> HTTP $code")
-                    return emptyList()
-                }
-                parse(conn.inputStream.bufferedReader().use { it.readText() })
-            } finally {
-                conn.disconnect()
+            val resp = Net.get("$root/models", headers, TIMEOUT_MS)
+            if (resp.status !in 200..299) {
+                Log.w(TAG, "GET /models -> HTTP ${resp.status}")
+                return emptyList()
             }
+            parse(resp.body)
         } catch (e: Exception) {
-            Log.w(TAG, "Model discovery failed for $root: ${e.message}")
+            Log.w(TAG, "Model discovery failed: ${e.message}")
             emptyList()
         }
     }
