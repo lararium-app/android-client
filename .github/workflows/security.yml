@@ -48,11 +48,9 @@ jobs:
 
   deps:
     name: deps
-    # Non-blocking until the Dependency graph is enabled for this repository
-    # (Settings → Code security and analysis → Dependency graph). Flip
-    # continue-on-error away once enabled; the check then fails PRs that add
+    # Blocking since the Dependency graph was enabled for this repository
+    # (Settings → Code security and analysis). Fails PRs that add
     # high-severity vulnerable dependencies.
-    continue-on-error: true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
