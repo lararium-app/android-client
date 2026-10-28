@@ -62,6 +62,7 @@ import app.lararium.hearth.Endpoint
 import app.lararium.hearth.EndpointPolicy
 import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.LarariumClient
+import app.lararium.hearth.PairError
 import app.lararium.hearth.PairingLink
 import app.lararium.hearth.watch.HearthWatchScheduler
 import androidx.compose.ui.res.stringResource
@@ -2647,6 +2648,60 @@ fun PairHearthDialog(
         val rawUrl = serverUrl.trim()
         val rawToken = token.trim()
 
+        if (PairingLink.isPair1Code(rawLink)) {
+            if (rawUrl.isEmpty()) {
+                errorMessage = context.getString(R.string.hearth_pair_error_invalid)
+                return
+            }
+            val normalizedUrl = if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
+                val hostPart = rawUrl.substringBefore(':')
+                if (EndpointPolicy.isPrivateV4(hostPart) || hostPart == "localhost" || hostPart == "127.0.0.1") "http://$rawUrl" else "https://$rawUrl"
+            } else rawUrl
+            val cleanBaseUrl = normalizedUrl.trimEnd('/')
+
+            val deviceName = (Build.MODEL ?: "")
+                .replace('\r', ' ')
+                .replace('\n', ' ')
+                .take(64)
+
+            isConnecting = true
+            scope.launch {
+                try {
+                    val (redeemedToken, _) = LarariumClient.redeemPairingCode(
+                        cleanBaseUrl,
+                        rawLink.trim(),
+                        deviceName
+                    )
+                    val endpointName = try {
+                        java.net.URI(cleanBaseUrl).host
+                    } catch (e: Exception) {
+                        null
+                    } ?: "hearth"
+                    val ep = Endpoint(cleanBaseUrl, redeemedToken, endpointName)
+
+                    val client = LarariumClient(ep)
+                    client.health()
+                    app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                    context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                        .edit()
+                        .remove(HearthChatClient.KEY_SESSION_ID)
+                        .apply()
+                    HearthWatchScheduler.ensurePeriodic(app)
+                    HearthWatchScheduler.refreshNow(app)
+                    onPaired(ep)
+                    onDismiss()
+                } catch (e: PairError) {
+                    errorMessage = context.getString(e.messageResId)
+                } catch (e: Exception) {
+                    val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
+                    errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
+                } finally {
+                    isConnecting = false
+                }
+            }
+            return
+        }
+
         val parsed: Pair<Endpoint, String?>? = when {
             rawLink.isNotEmpty() -> PairingLink.parse(rawLink)
             rawUrl.isNotEmpty() && rawToken.isNotEmpty() -> {
@@ -2717,7 +2772,7 @@ fun PairHearthDialog(
                     value = pairingLink,
                     onValueChange = {
                         pairingLink = it
-                        if (it.isNotBlank()) {
+                        if (it.isNotBlank() && !it.startsWith("pair1_") && !PairingLink.isPair1Code(it)) {
                             serverUrl = ""
                             token = ""
                         }
@@ -2748,7 +2803,7 @@ fun PairHearthDialog(
                     value = serverUrl,
                     onValueChange = {
                         serverUrl = it
-                        if (it.isNotBlank()) pairingLink = ""
+                        if (it.isNotBlank() && !pairingLink.startsWith("pair1_") && !PairingLink.isPair1Code(pairingLink)) pairingLink = ""
                         errorMessage = null
                     },
                     label = { Text(stringResource(R.string.hearth_server_url_label)) },

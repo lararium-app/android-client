@@ -86,6 +86,10 @@ object PairingLink {
     // Any C0/C1 control character.
     private val CONTROL_RE = Regex("[\\x00-\\x1f\\x7f-\\x9f]")
 
+    private val PAIR1_CODE_RE = Regex("^pair1_[0-9A-Za-z]{20}$")
+
+    fun isPair1Code(raw: String): Boolean = PAIR1_CODE_RE.matches(raw.trim())
+
     fun parse(link: String): Pair<Endpoint, String?>? {
         if (!link.startsWith("lararium://pair?")) return null
         val q = link.substringAfter('?').split("&").mapNotNull {
