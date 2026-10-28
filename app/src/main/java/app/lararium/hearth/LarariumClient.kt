@@ -1,5 +1,6 @@
 package app.lararium.hearth
 
+import app.lararium.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -40,6 +41,17 @@ sealed class HearthEvent {
 }
 
 // ---------------------------------------------------------------------------
+// Pairing errors
+// ---------------------------------------------------------------------------
+
+sealed class PairError(val messageResId: Int, cause: Throwable? = null) : Exception(cause) {
+    class InvalidCode(messageResId: Int = R.string.hearth_pair_error_code_invalid) : PairError(messageResId)
+    class AlreadyPaired(messageResId: Int = R.string.hearth_pair_error_already_paired) : PairError(messageResId)
+    class RateLimited(messageResId: Int = R.string.hearth_pair_error_rate_limited) : PairError(messageResId)
+    class Unreachable(messageResId: Int = R.string.hearth_pair_error_unreachable, cause: Throwable? = null) : PairError(messageResId, cause)
+}
+
+// ---------------------------------------------------------------------------
 // Client
 // ---------------------------------------------------------------------------
 
@@ -50,6 +62,55 @@ sealed class HearthEvent {
 open class LarariumClient(private val endpoint: Endpoint) {
 
     private val auth get() = mapOf("Authorization" to "Bearer ${endpoint.token}")
+
+    // -----------------------------------------------------------------------
+    // Pairing
+    // -----------------------------------------------------------------------
+
+    open suspend fun redeemPairingCode(
+        baseUrl: String,
+        code: String,
+        deviceName: String,
+    ): Pair<String, String> = Companion.redeemPairingCode(baseUrl, code, deviceName)
+
+    companion object {
+        suspend fun redeemPairingCode(
+            baseUrl: String,
+            code: String,
+            deviceName: String,
+        ): Pair<String, String> = withContext(Dispatchers.IO) {
+            val cleanUrl = baseUrl.trimEnd('/')
+            val url = "$cleanUrl/v1/pair"
+            val bodyJson = JSONObject().apply {
+                put("code", code)
+                if (deviceName.isNotEmpty()) {
+                    put("device_name", deviceName)
+                }
+            }
+            val resp = try {
+                Net.post(url, bodyJson.toString())
+            } catch (e: Exception) {
+                throw PairError.Unreachable(cause = e)
+            }
+
+            when (resp.status) {
+                200 -> {
+                    try {
+                        val json = JSONObject(resp.body)
+                        val token = json.getString("token")
+                        val userId = json.getString("user_id")
+                        Pair(token, userId)
+                    } catch (e: Exception) {
+                        throw PairError.Unreachable(cause = e)
+                    }
+                }
+                400, 401 -> throw PairError.InvalidCode()
+                409 -> throw PairError.AlreadyPaired()
+                429 -> throw PairError.RateLimited()
+                else -> throw PairError.Unreachable()
+            }
+        }
+    }
 
     // -----------------------------------------------------------------------
     // Health
