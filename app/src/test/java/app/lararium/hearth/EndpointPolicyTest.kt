@@ -166,6 +166,43 @@ class EndpointPolicyTest {
     }
 
     // -----------------------------------------------------------------------
+    // PairingLink isPair1Code
+    // -----------------------------------------------------------------------
+
+    @Test fun isPair1CodeAcceptsValidCode() {
+        val validCode = "pair1_1234567890abcdefABCD"
+        assertTrue(PairingLink.isPair1Code(validCode))
+        assertTrue(PairingLink.isPair1Code("  $validCode  "))
+    }
+
+    @Test fun isPair1CodeRejectsWrongPrefix() {
+        assertFalse(PairingLink.isPair1Code("pair0_1234567890abcdefABCD"))
+        assertFalse(PairingLink.isPair1Code("pair2_1234567890abcdefABCD"))
+        assertFalse(PairingLink.isPair1Code("lar1_1234567890abcdefABCD"))
+        assertFalse(PairingLink.isPair1Code("hearth_1234567890abcdefABCD"))
+    }
+
+    @Test fun isPair1CodeRejectsInvalidTailLength() {
+        // 19-char tail
+        assertFalse(PairingLink.isPair1Code("pair1_1234567890abcdefABC"))
+        // 21-char tail
+        assertFalse(PairingLink.isPair1Code("pair1_1234567890abcdefABCDE"))
+    }
+
+    @Test fun isPair1CodeRejectsInnerWhitespace() {
+        assertFalse(PairingLink.isPair1Code("pair1_12345 67890abcdefABC"))
+        assertFalse(PairingLink.isPair1Code("pair1_ 1234567890abcdefABCD"))
+        assertFalse(PairingLink.isPair1Code("pair 1_1234567890abcdefABCD"))
+    }
+
+    @Test fun isPair1CodeRejectsEmptyAndPrefixAlone() {
+        assertFalse(PairingLink.isPair1Code(""))
+        assertFalse(PairingLink.isPair1Code("   "))
+        assertFalse(PairingLink.isPair1Code("pair1_"))
+        assertFalse(PairingLink.isPair1Code("  pair1_  "))
+    }
+
+    // -----------------------------------------------------------------------
     // Header injection guard
     // -----------------------------------------------------------------------
 
