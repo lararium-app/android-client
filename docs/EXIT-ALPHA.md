@@ -8,32 +8,41 @@ run, or release note), we tag beta.
 
 ## Versioning plan
 
-- The client joins the daemon's version family: **v1.0.0-beta1** follows
-  v0.9.5-alpha. The `-alpha` suffix drops when every blocker below is
-  checked; beta says "install it", release says "trust it".
+- **The client exits alpha with the daemon.** When hearthd ships
+  v1.0.0, the client ships v1.0.0 and the `-alpha` suffix drops. Until
+  then every client release stays on the 0.9.x-alpha line — the gates
+  below close *before* the 1.0 tag, not after.
 - The stable signing cert is unchanged, so 0.9.x installs upgrade in
   place — pairing, tokens, and history survive the version bump.
 
 ## A. First run is honest (blocker)
 
-- [ ] **Pairing selects the hearth lane.** Redeeming a `pair1_` code (QR
-      or deep link) switches the chat provider to the paired hearth.
-      Today pairing stores the endpoint but leaves the provider on the
-      legacy default, so a paired stranger's chat goes nowhere. Guard:
-      unit test on the pairing-store path asserting the provider flip.
-- [ ] **A fresh install defaults to the hearth lane**, not to a legacy
-      self-hosted endpoint the user never configured. Unpaired chat says
+- [ ] **Pairing makes chat work with no other step.** Redeeming a
+      `pair1_` code (QR or deep link) is all a chat needs: the paired
+      hearth is the chat lane by definition, not a provider the user
+      must also select. Today pairing stores the endpoint but a legacy
+      provider default can still capture the send, so a paired
+      stranger's first chat goes nowhere.
+      Guard: unit test asserting a freshly paired store produces a
+      ready chat lane, and an unpaired store produces the friendly
+      not-paired error rather than a network attempt.
+- [ ] **A fresh install is pair-first.** No shipped path asks a new
+      user for an API key or a server URL before they have seen what
+      the app does with a hearth. Unpaired chat says
       "Not paired with your hearth yet" and routes the user to Pair.
 - [ ] **First run names what a hearth is** and links the install guide;
       no dead-end screens that require an API key to function.
 
-## B. One product, not two (blocker)
+## B. One product, not two (blocker — purge decided by the PO)
 
 - [ ] **The hearth is the only model lane.** Remove the fork-era
       providers (hosted aggregator, Groq, generic self-hosted, local
-      llama.cpp settings) and their API-key dialogs. On-device speech
-      recognition and system text-to-speech stay — they are input and
-      output, not a second brain.
+      llama.cpp settings), their API-key dialogs, and the provider
+      toggle itself — with one lane there is nothing to switch between.
+      Legacy values already stored in preferences must be ignored
+      cleanly, never crash. On-device speech recognition and system
+      text-to-speech stay — they are input and output, not a second
+      brain.
 - [ ] **Zero upstream residue in user-visible strings.** No references
       to another project's key files or names anywhere the user can
       see. Gate: `scripts/branding-hygiene.sh` literal list extended in
