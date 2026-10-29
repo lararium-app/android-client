@@ -100,4 +100,5 @@ jobs:
           packageName: app.lararium
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
           tracks: internal
+          releaseName: ${{ steps.stage.outputs.versionName }}
           status: ${{ (inputs.draft == false || inputs.draft == 'false') && 'completed' || 'draft' }}
