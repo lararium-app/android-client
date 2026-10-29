@@ -95,6 +95,8 @@ CI builds debug APKs on every push to `main` (Actions → *Build APK*).
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — code structure and data flow
+- [Roadmap](docs/ROADMAP.md) — where the product is heading and why
+- [Exit-alpha criteria](docs/EXIT-ALPHA.md) — what "alpha" means here
 
 ## Contributing
 
