@@ -88,6 +88,11 @@
     <string name="settings_accessibility_title">Accessibility Service</string>
     <string name="settings_accessibility_enabled">Enabled</string>
     <string name="settings_accessibility_disabled">Required for volume key shortcuts</string>
+    <!-- Prominent disclosure for the Accessibility service (Google Play policy). -->
+    <string name="accessibility_disclosure_title">Before you enable</string>
+    <string name="accessibility_disclosure_body">Lararium uses Android\'s Accessibility service for exactly one purpose: launching the assistant when you press a hardware button combination (triple-press power, or a volume-key combo).\n\nWhy Accessibility: Android only exposes these button gestures through the Accessibility API. There is no other way for an app to react to them.\n\nWhat it does NOT do: it never reads screen content, never captures what you type, never performs gestures on your behalf, and never collects, stores, or shares any personal or sensitive data. The service runs only after you enable it, and you can disable it at any time in system Settings &gt; Accessibility.</string>
+    <string name="accessibility_disclosure_confirm">Open Accessibility settings</string>
+    <string name="accessibility_disclosure_cancel">Cancel</string>
     <string name="settings_activation_title">Activation Methods</string>
     <string name="settings_activation_home_title">Long-press Home</string>
     <string name="settings_activation_home_desc">Hold home button or swipe from corner</string>
