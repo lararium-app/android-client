@@ -7,13 +7,6 @@
 
     <!-- AI Providers -->
     <string name="provider_lararium">Lararium hearth</string>
-    <string name="provider_lararium_desc">Connect to your paired hearth</string>
-    <string name="provider_hermes">Self-hosted (OpenAI)</string>
-    <string name="provider_hermes_desc">Custom OpenAI-compatible endpoint</string>
-    <string name="provider_local">On-device (offline)</string>
-    <string name="provider_local_desc">Runs a model on this phone, no internet needed</string>
-    <string name="provider_openrouter">OpenRouter (advanced)</string>
-    <string name="provider_openrouter_desc">Hosted cloud fallback — for testing only</string>
 
     <!-- Hearth Pairing & Chat -->
     <string name="hearth_pair_title">Pair hearth</string>
@@ -112,7 +105,6 @@
     <string name="settings_privacy_vosk">On-device speech recognition (Vosk)</string>
     <string name="settings_privacy_encryption">Encrypted API key storage</string>
     <string name="settings_privacy_no_ids">No device identifiers sent to cloud</string>
-    <string name="settings_privacy_search">Configurable privacy-focused search providers</string>
     <string name="settings_privacy_permissions">Minimal permissions required</string>
     <string name="settings_privacy_tls">TLS 1.3 for all network requests</string>
 

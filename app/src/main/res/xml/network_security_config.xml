@@ -13,10 +13,9 @@
     raw sockets and applies the private-host policy itself (string check
     first, re-check on RESOLVED addresses to defeat DNS rebinding).
     Everything that reaches this config is either loopback or HTTPS: the
-    base rule below already covers every SaaS host (openrouter.ai,
-    huggingface.co, alphacephei.com, open-meteo.com, github.com — all
-    TLS-only), so their old cleartext=false domain blocks granted nothing
-    and are gone too.
+    base rule below already covers every external host (alphacephei.com,
+    github.com — all TLS-only), so their old cleartext=false domain blocks
+    granted nothing and are gone too.
 -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false">
@@ -25,7 +24,7 @@
         </trust-anchors>
     </base-config>
     <domain-config cleartextTrafficPermitted="true">
-        <!-- Literal matches; the paired local llama.cpp / hearthd server. -->
+        <!-- Literal matches; the paired local hearthd server. -->
         <domain includeSubdomains="false">127.0.0.1</domain>
         <domain includeSubdomains="false">localhost</domain>
     </domain-config>

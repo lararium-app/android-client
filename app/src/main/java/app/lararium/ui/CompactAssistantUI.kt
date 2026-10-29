@@ -44,9 +44,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.lararium.llm.LocalModelManager
-import app.lararium.llm.SelfHostedModels
 import app.lararium.AssistantApplication
+import app.lararium.R
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
@@ -104,7 +103,6 @@ class CompactAssistantActivity : ComponentActivity() {
                     val messages by service!!.chatMessages.collectAsStateWithLifecycle()
                     val transcription by service!!.transcription.collectAsStateWithLifecycle()
                     val pendingUrls by service!!.pendingUrls.collectAsStateWithLifecycle()
-                    val webSearchEnabled by service!!.webSearchEnabled.collectAsStateWithLifecycle()
 
                     if (pendingUrls.isNotEmpty()) {
                         UrlSelectionDialog(
@@ -148,8 +146,6 @@ class CompactAssistantActivity : ComponentActivity() {
                                     response = response,
                                     transcription = transcription,
                                     messages = messages,
-                                    webSearchEnabled = webSearchEnabled,
-                                    onToggleWebSearch = { service!!.toggleWebSearch() },
                                     onCollapse = { isExpanded = false },
                                     onDismiss = { finish() },
                                     onShowHistory = { showHistory = true }
@@ -213,9 +209,6 @@ fun CompactAssistantView(
     var pdfLoading by remember { mutableStateOf(false) }
     var pdfError by remember { mutableStateOf<String?>(null) }
 
-    val webSearchEnabled by service.webSearchEnabled.collectAsStateWithLifecycle()
-    val isLocalProvider = service.settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL
-
     val autoStartVoice = settingsManager.autoStartVoice
     LaunchedEffect(Unit) {
         if (autoStartVoice && state is AssistantState.Idle) {
@@ -223,14 +216,6 @@ fun CompactAssistantView(
         }
     }
 
-    val currentModel = if (isLocalProvider) service.settingsManager.localModelId else service.settingsManager.selectedModel
-    val currentModelInfo = if (isLocalProvider) null else {
-        SettingsManager.AVAILABLE_MODELS.find { it.id == currentModel }
-    }
-    val supportsVision = when {
-        isLocalProvider -> false
-        else -> service.isVisionCapable()
-    }
     val isGenerating = state is AssistantState.Processing ||
         state is AssistantState.Searching ||
         state is AssistantState.Responding ||
@@ -300,9 +285,7 @@ fun CompactAssistantView(
 
     val statusText = when (state) {
         is AssistantState.Listening -> if (transcription.isEmpty()) "Listening..." else ""
-        is AssistantState.Processing -> {
-            if (isLocalProvider && !service.isLocalModelReady()) "Loading model..." else "Thinking..."
-        }
+        is AssistantState.Processing -> "Thinking..."
         is AssistantState.Searching -> "Searching web..."
         is AssistantState.Responding -> ""
         is AssistantState.Speaking -> ""
@@ -529,18 +512,6 @@ fun CompactAssistantView(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (supportsVision) {
-                        IconButton(
-                            onClick = { imagePickerLauncher.launch("image/*") },
-                            enabled = !isGenerating,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(Icons.Default.Image, "Attach image",
-                                tint = if (selectedImageBase64 != null) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-
                     IconButton(
                         onClick = { pdfPickerLauncher.launch("application/pdf") },
                         enabled = !isGenerating,
@@ -549,20 +520,6 @@ fun CompactAssistantView(
                         Icon(Icons.Default.PictureAsPdf, "Attach PDF",
                             tint = if (pdfText != null) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-
-                    if (!isLocalProvider) {
-                        IconButton(
-                            onClick = { service.toggleWebSearch() },
-                            enabled = !isGenerating,
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                if (webSearchEnabled) Icons.Default.TravelExplore else Icons.Default.Public,
-                                "Toggle web search",
-                                tint = if (webSearchEnabled) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                        }
                     }
 
                     OutlinedTextField(
@@ -651,8 +608,6 @@ fun FullChatScreen(
     response: String,
     transcription: String,
     messages: List<app.lararium.llm.ChatSession.Message>,
-    webSearchEnabled: Boolean,
-    onToggleWebSearch: () -> Unit,
     onCollapse: () -> Unit,
     onDismiss: () -> Unit,
     onShowHistory: () -> Unit = {}
@@ -670,34 +625,6 @@ fun FullChatScreen(
     var pdfLoading by remember { mutableStateOf(false) }
     var pdfError by remember { mutableStateOf<String?>(null) }
 
-    var showModelDialog by remember { mutableStateOf(false) }
-    var currentModel by remember {
-        mutableStateOf(
-            when (service.settingsManager.apiProvider) {
-                SettingsManager.PROVIDER_LOCAL -> service.settingsManager.localModelId
-                SettingsManager.PROVIDER_HERMES -> service.settingsManager.hermesModel
-                else -> service.settingsManager.getEffectiveModel()
-            }
-        )
-    }
-    val isLocalProvider = service.settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL
-    val isSelfHostedProvider = service.settingsManager.apiProvider == SettingsManager.PROVIDER_HERMES
-    // Model discovery for self-hosted servers: populated when the picker opens.
-    var selfHostedModels by remember { mutableStateOf<List<String>?>(null) }
-    var selfHostedModelsLoading by remember { mutableStateOf(false) }
-    val currentModelInfo = if (isLocalProvider || isSelfHostedProvider) null else {
-        SettingsManager.AVAILABLE_MODELS.find { it.id == currentModel }
-    }
-    val currentModelDisplayName = if (isLocalProvider) {
-        LocalModelManager.AVAILABLE_MODELS.find { it.id == currentModel }?.name ?: currentModel
-    } else {
-        currentModelInfo?.name ?: currentModel
-    }
-    val supportsVision = when {
-        isLocalProvider -> false
-        isSelfHostedProvider -> false
-        else -> service.isVisionCapable()
-    }
     val isGenerating = state is AssistantState.Processing ||
         state is AssistantState.Searching ||
         state is AssistantState.Responding ||
@@ -757,330 +684,18 @@ fun FullChatScreen(
         transcription
     } else null
 
-    if (showModelDialog && isSelfHostedProvider && selfHostedModels == null && !selfHostedModelsLoading) {
-        selfHostedModelsLoading = true
-        val baseUrl = service.settingsManager.hermesBaseUrl
-        val apiKey = (context.applicationContext as AssistantApplication)
-            .secureKeyManager.getHermesApiKey()
-        scope.launch {
-            val models = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                SelfHostedModels.fetch(baseUrl, apiKey)
-            }
-            selfHostedModels = models
-            selfHostedModelsLoading = false
-        }
-    }
-
-    if (showModelDialog) {
-        if (isLocalProvider) {
-            val localModelManager = remember { LocalModelManager(context) }
-            AlertDialog(
-                onDismissRequest = { showModelDialog = false },
-                title = { Text("Select Local Model") },
-                text = {
-                    Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                        LocalModelManager.AVAILABLE_MODELS.forEach { model ->
-                            val isDownloaded = localModelManager.isModelDownloaded(model.id)
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable(enabled = isDownloaded) {
-                                        currentModel = model.id
-                                        service.settingsManager.localModelId = model.id
-                                        service.reloadSettings()
-                                        showModelDialog = false
-                                    }
-                                    .padding(vertical = 12.dp)
-                                    .alpha(if (isDownloaded) 1f else 0.5f),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = currentModel == model.id,
-                                    onClick = {
-                                        if (isDownloaded) {
-                                            currentModel = model.id
-                                            service.settingsManager.localModelId = model.id
-                                            service.reloadSettings()
-                                            showModelDialog = false
-                                        }
-                                    },
-                                    enabled = isDownloaded
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(model.name, style = MaterialTheme.typography.bodyLarge)
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Icon(
-                                            imageVector = if (isDownloaded) Icons.Default.CheckCircle
-                                                else Icons.Default.CloudDownload,
-                                            contentDescription = if (isDownloaded) "Downloaded" else "Not downloaded",
-                                            modifier = Modifier.size(16.dp),
-                                            tint = if (isDownloaded) MaterialTheme.colorScheme.primary
-                                                else MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                    Text(
-                                        if (isDownloaded) model.description else "${model.description} (Not downloaded)",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                        }
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = { showModelDialog = false }) { Text("Cancel") }
-                }
-            )
-        } else if (isSelfHostedProvider) {
-            var showCustomInput by remember { mutableStateOf(false) }
-            if (showCustomInput) {
-                var customModelText by remember { mutableStateOf(service.settingsManager.hermesModel) }
-                AlertDialog(
-                    onDismissRequest = { showCustomInput = false },
-                    title = { Text("Model ID") },
-                    text = {
-                        Column {
-                            Text("Enter a model ID served by your server",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = customModelText,
-                                onValueChange = { customModelText = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Model ID") },
-                                singleLine = true
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            val trimmed = customModelText.trim()
-                            if (trimmed.isNotBlank()) {
-                                currentModel = trimmed
-                                service.settingsManager.hermesModel = trimmed
-                                service.reloadSettings()
-                            }
-                            showCustomInput = false
-                            showModelDialog = false
-                        }) { Text("Save") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showCustomInput = false }) { Text("Cancel") }
-                    }
-                )
-            } else if (selfHostedModelsLoading) {
-                AlertDialog(
-                    onDismissRequest = { showModelDialog = false },
-                    title = { Text("Select Model") },
-                    text = { Text("Querying your server for models…",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant) },
-                    confirmButton = {
-                        TextButton(onClick = { showModelDialog = false }) { Text("Cancel") }
-                    }
-                )
-            } else {
-                val serverModels = selfHostedModels ?: emptyList()
-                AlertDialog(
-                    onDismissRequest = { showModelDialog = false },
-                    title = { Text("Select Model") },
-                    text = {
-                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                            if (serverModels.isEmpty()) {
-                                Text("No models returned by your server (it may not expose /models).\nYou can still type the model ID manually.",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else {
-                                serverModels.forEach { modelId ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                currentModel = modelId
-                                                service.settingsManager.hermesModel = modelId
-                                                service.reloadSettings()
-                                                showModelDialog = false
-                                            }
-                                            .padding(vertical = 12.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        RadioButton(
-                                            selected = currentModel == modelId,
-                                            onClick = {
-                                                currentModel = modelId
-                                                service.settingsManager.hermesModel = modelId
-                                                service.reloadSettings()
-                                                showModelDialog = false
-                                            }
-                                        )
-                                        Spacer(modifier = Modifier.width(12.dp))
-                                        Text(modelId, style = MaterialTheme.typography.bodyLarge)
-                                    }
-                                }
-                            }
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .clickable { showCustomInput = true }
-                                    .padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(Icons.Default.Edit, contentDescription = null)
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Text("Enter model ID manually…",
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.primary)
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            TextButton(onClick = {
-                                selfHostedModels = null  // force re-fetch on reopen
-                            }) { Text("Refresh") }
-                            TextButton(onClick = { showModelDialog = false }) { Text("Cancel") }
-                        }
-                    }
-                )
-            }
-        } else {
-            var showCustomInput by remember { mutableStateOf(false) }
-            val cloudModelList = SettingsManager.AVAILABLE_MODELS
-
-            if (showCustomInput) {
-                var customModelText by remember { mutableStateOf(service.settingsManager.customModelId) }
-                AlertDialog(
-                    onDismissRequest = { showCustomInput = false },
-                    title = { Text("Custom Model ID") },
-                    text = {
-                        Column {
-                            Text("Enter any OpenRouter model ID",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(modifier = Modifier.height(12.dp))
-                            OutlinedTextField(
-                                value = customModelText,
-                                onValueChange = { customModelText = it },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = { Text("Model ID") },
-                                placeholder = { Text("provider/model-name") },
-                                singleLine = true
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(onClick = {
-                            val trimmed = customModelText.trim()
-                            if (trimmed.isNotBlank()) {
-                                currentModel = trimmed
-                                service.settingsManager.customModelId = trimmed
-                                service.reloadSettings()
-                            }
-                            showCustomInput = false
-                            showModelDialog = false
-                        }) { Text("Save") }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { showCustomInput = false }) { Text("Cancel") }
-                    }
-                )
-            } else {
-                AlertDialog(
-                    onDismissRequest = { showModelDialog = false },
-                    title = { Text("Select Model") },
-                    text = {
-                        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                            cloudModelList.forEach { model ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            currentModel = model.id
-                                            service.settingsManager.selectedModel = model.id
-                                            service.settingsManager.customModelId = ""
-                                            service.reloadSettings()
-                                            showModelDialog = false
-                                        }
-                                        .padding(vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = currentModel == model.id,
-                                        onClick = {
-                                            currentModel = model.id
-                                            service.settingsManager.selectedModel = model.id
-                                            service.settingsManager.customModelId = ""
-                                            service.reloadSettings()
-                                            showModelDialog = false
-                                        }
-                                    )
-                                    Spacer(modifier = Modifier.width(12.dp))
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(model.name, style = MaterialTheme.typography.bodyLarge)
-                                            if (model.supportsVision) {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Icon(Icons.Default.Image, contentDescription = "Supports images",
-                                                    modifier = Modifier.size(16.dp),
-                                                    tint = MaterialTheme.colorScheme.primary)
-                                            }
-                                        }
-                                        Text(model.description,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                            Row(
-                                modifier = Modifier.fillMaxWidth()
-                                    .clickable { showCustomInput = true }
-                                    .padding(vertical = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                RadioButton(
-                                    selected = service.settingsManager.customModelId.isNotBlank(),
-                                    onClick = { showCustomInput = true }
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
-                                    Text("Custom model...",
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.primary)
-                                    Text(
-                                        if (service.settingsManager.customModelId.isNotBlank())
-                                            service.settingsManager.customModelId
-                                        else "Enter any OpenRouter model ID",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showModelDialog = false }) { Text("Cancel") }
-                    }
-                )
-            }
-        }
-    }
-
     Scaffold(
         topBar = {
+            val app = context.applicationContext as AssistantApplication
+            val endpoint = app.secureKeyManager.getHearthEndpoint()
+            val topBarTitle = DrawerLogic.formatTopBarTitle(endpoint, stringResource(R.string.app_name))
             TopAppBar(
                 title = {
-                    Column(modifier = Modifier.clickable { showModelDialog = true }) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(currentModelDisplayName,
-                                style = MaterialTheme.typography.titleMedium)
-                            Icon(Icons.Default.ArrowDropDown, "Change model",
-                                modifier = Modifier.size(20.dp))
-                        }
+                    Column {
+                        Text(
+                            topBarTitle,
+                            style = MaterialTheme.typography.titleMedium
+                        )
                         Text(
                             when (state) {
                                 AssistantState.Idle -> "Ready"
@@ -1093,7 +708,8 @@ fun FullChatScreen(
                                 is AssistantState.Error -> "Error"
                             },
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 navigationIcon = {
@@ -1202,17 +818,6 @@ fun FullChatScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        if (supportsVision) {
-                            IconButton(
-                                onClick = { imagePickerLauncher.launch("image/*") },
-                                enabled = !isGenerating
-                            ) {
-                                Icon(Icons.Default.Image, "Attach image",
-                                    tint = if (selectedImageBase64 != null) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant)
-                            }
-                        }
-
                         IconButton(
                             onClick = { pdfPickerLauncher.launch("application/pdf") },
                             enabled = !isGenerating
@@ -1220,19 +825,6 @@ fun FullChatScreen(
                             Icon(Icons.Default.PictureAsPdf, "Attach PDF",
                                 tint = if (pdfText != null) MaterialTheme.colorScheme.primary
                                 else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-
-                        if (!isLocalProvider) {
-                            IconButton(
-                                onClick = onToggleWebSearch,
-                                enabled = !isGenerating
-                            ) {
-                                Icon(
-                                    if (webSearchEnabled) Icons.Default.TravelExplore else Icons.Default.Public,
-                                    "Toggle web search",
-                                    tint = if (webSearchEnabled) MaterialTheme.colorScheme.primary
-                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
-                            }
                         }
 
                         OutlinedTextField(
