@@ -95,6 +95,7 @@ fun SettingsScreen(
     var secondaryLanguage by remember { mutableStateOf(settingsManager.secondaryVoiceLanguage) }
 
     var showPairHearthDialog by remember { mutableStateOf(false) }
+    var showAccessibilityDisclosureDialog by remember { mutableStateOf(false) }
     var hearthEndpoint by remember { mutableStateOf(app.secureKeyManager.getHearthEndpoint()) }
     val hasHearthEndpoint = hearthEndpoint != null
 
@@ -539,8 +540,38 @@ fun SettingsScreen(
                                 if (isAccessibilityEnabled) R.string.settings_accessibility_enabled
                                 else R.string.settings_accessibility_disabled
                             ),
-                            onClick = { onOpenAccessibilitySettings?.invoke() }
+                            onClick = { showAccessibilityDisclosureDialog = true }
                         )
+                        if (showAccessibilityDisclosureDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showAccessibilityDisclosureDialog = false },
+                                title = { Text(stringResource(R.string.accessibility_disclosure_title)) },
+                                text = {
+                                    Column(
+                                        modifier = Modifier
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        Text(
+                                            stringResource(R.string.accessibility_disclosure_body),
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showAccessibilityDisclosureDialog = false
+                                        onOpenAccessibilitySettings?.invoke()
+                                    }) {
+                                        Text(stringResource(R.string.accessibility_disclosure_confirm))
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showAccessibilityDisclosureDialog = false }) {
+                                        Text(stringResource(R.string.accessibility_disclosure_cancel))
+                                    }
+                                }
+                            )
+                        }
 
                         Text(
                             stringResource(R.string.settings_activation_title),
