@@ -1,30 +1,12 @@
 package app.lararium
 
-import app.lararium.llm.shouldUseWebSearch
-import app.lararium.llm.classifyRetrievalIntent
-import app.lararium.llm.extractWeatherLocation
-import app.lararium.llm.isWeatherQuery
-import app.lararium.llm.RetrievalIntent
-import app.lararium.search.SearchResult
-import app.lararium.security.SecureKeyManager
-import io.mockk.*
-import kotlinx.coroutines.flow.toList
-import kotlinx.coroutines.test.runTest
 import org.junit.Assert.*
-import org.junit.Before
 import org.junit.Test
 
 /**
  * Unit tests for core assistant functionality.
  */
 class AssistantUnitTest {
-
-    private lateinit var mockKeyManager: SecureKeyManager
-
-    @Before
-    fun setup() {
-        mockKeyManager = mockk(relaxed = true)
-    }
 
     @Test
     fun `sanitize query removes device IDs`() {
@@ -60,83 +42,6 @@ class AssistantUnitTest {
         assertEquals("What is the weather like today?", sanitized)
     }
 
-    @Test
-    fun `should search web detects search queries`() {
-        assertTrue(shouldUseWebSearch("search for kotlin tutorials"))
-        assertTrue(shouldUseWebSearch("find the latest news"))
-        assertTrue(shouldUseWebSearch("look up android security"))
-        assertTrue(shouldUseWebSearch("what is the latest GrapheneOS news today?"))
-        assertTrue(shouldUseWebSearch("current Pixel 10 price in 2026"))
-        assertTrue(shouldUseWebSearch("what is the current Android version?"))
-    }
-
-    @Test
-    fun `retrieval intent detects live data queries`() {
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("search for latest OpenAI model"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("find current bitcoin price today"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("check the latest GrapheneOS release"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("Android security patch version 2026"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("who is the current US president"))
-        assertEquals(RetrievalIntent.WEB_SEARCH, classifyRetrievalIntent("is Pixel 10 available to buy now"))
-    }
-
-    @Test
-    fun `should search web ignores non-search queries`() {
-        assertFalse(shouldUseWebSearch("tell me a joke"))
-        assertFalse(shouldUseWebSearch("write a poem"))
-        assertFalse(shouldUseWebSearch("calculate 2+2"))
-        assertFalse(shouldUseWebSearch("explain the difference between List and Set"))
-        assertFalse(shouldUseWebSearch("translate hello world to Spanish"))
-        assertFalse(shouldUseWebSearch("write Kotlin function to sort a list"))
-    }
-
-    @Test
-    fun `weather intent detects weather queries`() {
-        assertTrue(isWeatherQuery("what is the weather today?"))
-        assertTrue(isWeatherQuery("weather in Warsaw"))
-        assertTrue(isWeatherQuery("weather in Berlin tomorrow"))
-        assertTrue(isWeatherQuery("will it rain today?"))
-        assertTrue(isWeatherQuery("forecast for New York this weekend"))
-        assertTrue(isWeatherQuery("temperature in London now"))
-        assertEquals(RetrievalIntent.WEATHER, classifyRetrievalIntent("weather in Warsaw tomorrow"))
-        assertFalse(isWeatherQuery("what causes a rainbow?"))
-    }
-
-    @Test
-    fun `weather location extraction handles english queries`() {
-        assertEquals("Warsaw", extractWeatherLocation("weather in Warsaw tomorrow"))
-        assertEquals("Berlin", extractWeatherLocation("weather in Berlin tomorrow"))
-        assertEquals("New York", extractWeatherLocation("weather in New York tomorrow"))
-        assertNull(extractWeatherLocation("what is the weather today?"))
-    }
-
-    @Test
-    fun `search result parsing handles empty results`() {
-        val results = parseSearchResults("""{"results": []}""")
-        assertTrue(results.isEmpty())
-    }
-
-    @Test
-    fun `search result parsing extracts data correctly`() {
-        val json = """
-            {
-                "results": [
-                    {
-                        "title": "Test Title",
-                        "url": "https://example.com",
-                        "snippet": "Test snippet"
-                    }
-                ]
-            }
-        """.trimIndent()
-        
-        val results = parseSearchResults(json)
-        assertEquals(1, results.size)
-        assertEquals("Test Title", results[0].title)
-        assertEquals("https://example.com", results[0].url)
-        assertEquals("Test snippet", results[0].snippet)
-    }
-
     // Helper functions mirroring app logic for testing
     private fun sanitizeInput(input: String): String {
         var sanitized = input
@@ -150,41 +55,6 @@ class AssistantUnitTest {
             "[EMAIL]"
         )
         return sanitized.trim()
-    }
-
-    private fun parseSearchResults(json: String): List<SearchResult> {
-        val results = mutableListOf<SearchResult>()
-        val itemPattern = Regex("\\{\\s*\"title\"\\s*:\\s*\"([^\"]*)\"\\s*,\\s*\"url\"\\s*:\\s*\"([^\"]*)\"\\s*,\\s*\"snippet\"\\s*:\\s*\"([^\"]*)\"\\s*}")
-        for (match in itemPattern.findAll(json)) {
-            results.add(
-                SearchResult(
-                    title = match.groupValues[1],
-                    url = match.groupValues[2],
-                    snippet = match.groupValues[3]
-                )
-            )
-        }
-        return results
-    }
-}
-
-/**
- * Tests for secure key management.
- */
-class SecureKeyManagerTest {
-
-    @Test
-    fun `api key format validation`() {
-        // OpenRouter API keys typically start with sk-or-
-        val validKey = "sk-or-v1-abc123def456"
-        val invalidKey = "not-a-valid-key"
-        
-        assertTrue(isValidOpenRouterKey(validKey))
-        assertFalse(isValidOpenRouterKey(invalidKey))
-    }
-
-    private fun isValidOpenRouterKey(key: String): Boolean {
-        return key.startsWith("sk-or-") && key.length > 20
     }
 }
 

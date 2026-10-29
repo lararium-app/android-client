@@ -49,24 +49,6 @@ android {
             abiFilters += listOf("arm64-v8a")
         }
 
-        externalNativeBuild {
-            cmake {
-                cppFlags += listOf("-std=c++17", "-O3", "-ffast-math")
-                arguments += listOf(
-                    "-DANDROID_STL=c++_shared",
-                    "-DANDROID_PLATFORM=android-26",
-                    "-DANDROID_ARM_NEON=TRUE",
-                    "-DCMAKE_SHARED_LINKER_FLAGS=-Wl,-z,max-page-size=16384"
-                )
-            }
-        }
-    }
-
-    externalNativeBuild {
-        cmake {
-            path = file("src/main/cpp/llama/CMakeLists.txt")
-            version = "3.22.1"
-        }
     }
 
     signingConfigs {
@@ -130,13 +112,6 @@ android {
         }
         jniLibs {
             useLegacyPackaging = true
-            pickFirsts += setOf("**/libggml*.so", "**/libllama.so")
-        }
-    }
-
-    sourceSets {
-        getByName("main") {
-            jniLibs.srcDirs("src/main/cpp/llama/prebuilt")
         }
     }
 
@@ -184,36 +159,4 @@ dependencies {
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
-}
-
-tasks.register("checkLlamaPrebuilt") {
-    doLast {
-        val prebuiltDir = file("src/main/cpp/llama/prebuilt/arm64-v8a")
-        val required = listOf(
-            "libggml-base.so",
-            "libggml-cpu.so",
-            "libggml.so",
-            "libllama.so",
-            "include/llama.h"
-        )
-        val missing = required.filter {
-            !file("src/main/cpp/llama/prebuilt/arm64-v8a/$it").exists()
-        }
-
-        if (missing.isNotEmpty()) {
-            throw GradleException(
-                "Missing native llama.cpp backend: $missing. " +
-                    "Run ./scripts/build-llama-android.sh <path-to-android-ndk> before creating a release APK."
-            )
-        } else {
-            println("All required prebuilt llama libs present in ${prebuiltDir.absolutePath}")
-        }
-    }
-}
-
-// A release APK must never silently ship the stub bridge: it makes the Local
-// AI option appear available while every model fails with `Native library not
-// available`. Debug builds may still use the stub for UI-only development.
-tasks.matching { it.name == "preReleaseBuild" }.configureEach {
-    dependsOn("checkLlamaPrebuilt")
 }

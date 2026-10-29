@@ -326,7 +326,7 @@ class HearthChatClient(
     }
 
     /**
-     * Flow-based streaming completion matching OpenRouterClient/LlamaCppClient.
+     * Flow-based streaming completion.
      */
     fun streamCompletion(
         userQuery: String,

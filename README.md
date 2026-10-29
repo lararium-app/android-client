@@ -72,16 +72,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties
 gradle assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
 ```
 
-For **local AI**, native libraries are required:
-
-```bash
-./scripts/build-llama-android.sh --download-ndk
-gradle assembleDebug
-```
-
-See [docs/LOCAL_AI_SETUP.md](docs/LOCAL_AI_SETUP.md). CI builds debug APKs on
-every push to `main` (Actions → *Build APK*), with an optional
-`include_local_ai` step.
+CI builds debug APKs on every push to `main` (Actions → *Build APK*).
 
 ## Privacy
 
@@ -104,8 +95,6 @@ every push to `main` (Actions → *Build APK*), with an optional
 ## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md) — code structure and data flow
-- [Local AI Setup](docs/LOCAL_AI_SETUP.md) — models and native build
-- [Documentation Guide](docs/DOCUMENTATION.md) — navigation index
 
 ## Contributing
 

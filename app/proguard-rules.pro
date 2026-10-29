@@ -18,9 +18,6 @@
 -keep class org.vosk.** { *; }
 -dontwarn org.vosk.**
 
-# Keep Llama JNI bridge and related classes
--keep class app.lararium.llm.LlamaCppBridge { *; }
--keep class app.lararium.llm.LlamaCppBridge$* { *; }
 -dontwarn app.lararium.llm.**
 
 # Keep accessibility service
