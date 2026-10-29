@@ -1,8 +1,18 @@
-name: Play Internal
+name: Play Release
 
 on:
   workflow_dispatch:
     inputs:
+      track:
+        description: 'Play track (closed testing = alpha)'
+        required: true
+        type: choice
+        default: internal
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
       draft:
         description: 'Upload as draft release'
         required: false
@@ -13,11 +23,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: play-internal
+  # One pipeline at a time: concurrent uploads open concurrent Play
+  # edit sessions and the commits collide (see docs/PLAY-LANE.md).
+  group: play-release
   cancel-in-progress: false
 
 jobs:
-  play-internal:
+  play-release:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -26,6 +38,7 @@ jobs:
       LARARIUM_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
       LARARIUM_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+      TRACK: ${{ inputs.track }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout v4
         with:
@@ -77,13 +90,13 @@ jobs:
           set -euo pipefail
           VERSION_NAME=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
           echo "versionName=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          cp app/build/outputs/bundle/release/app-release.aab "lararium-$VERSION_NAME-internal.aab"
+          cp app/build/outputs/bundle/release/app-release.aab "lararium-$VERSION_NAME-$TRACK.aab"
 
       - name: Upload bundle artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact v4
         with:
-          name: lararium-${{ steps.stage.outputs.versionName }}-internal.aab
-          path: lararium-${{ steps.stage.outputs.versionName }}-internal.aab
+          name: lararium-${{ steps.stage.outputs.versionName }}-${{ inputs.track }}.aab
+          path: lararium-${{ steps.stage.outputs.versionName }}-${{ inputs.track }}.aab
           if-no-files-found: error
 
       # Note: `secrets` context is unreliable inside step-level `if`; the
@@ -92,13 +105,13 @@ jobs:
         if: ${{ env.PLAY_SERVICE_ACCOUNT_JSON == '' }}
         run: echo "PLAY_SERVICE_ACCOUNT_JSON secret is absent; skipping Google Play upload step gracefully."
 
-      - name: Upload to Google Play internal track
+      - name: Upload to Google Play (${{ inputs.track }} track)
         if: ${{ env.PLAY_SERVICE_ACCOUNT_JSON != '' }}
         uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5 # r0adkll/upload-google-play v1.1.5
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: app.lararium
           releaseFiles: app/build/outputs/bundle/release/app-release.aab
-          tracks: internal
+          tracks: ${{ inputs.track }}
           releaseName: ${{ steps.stage.outputs.versionName }}
           status: ${{ (inputs.draft == false || inputs.draft == 'false') && 'completed' || 'draft' }}
