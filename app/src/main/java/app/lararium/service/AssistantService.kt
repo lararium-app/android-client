@@ -3,7 +3,6 @@ package app.lararium.service
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
-import android.app.ActivityManager
 import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
@@ -21,43 +20,30 @@ import app.lararium.audio.AudioCaptureManager
 import app.lararium.audio.SpeechRecognizerManager
 import app.lararium.audio.VoiceActivityDetector
 import app.lararium.audio.VoskTranscriber
-import app.lararium.audio.WhisperTranscriber
+import app.lararium.hearth.ChatLane
 import app.lararium.hearth.ConnectionEvent
 import app.lararium.hearth.ConnectionMachine
 import app.lararium.hearth.ConnectionState
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.LarariumClient
-import app.lararium.hearth.OfflineReason
 import app.lararium.hearth.SendGate
-import app.lararium.ui.FailedSend
-import app.lararium.llm.*
-import app.lararium.search.BraveSearchClient
-import app.lararium.search.ExaSearchClient
-import app.lararium.search.LangSearchClient
-import app.lararium.search.SearchResult
-import app.lararium.llm.buildSearchResultsMessage
-import app.lararium.llm.containsDsmlToolCalls
-import app.lararium.llm.extractDsmlQuery
-import app.lararium.llm.parseDsmlToolCalls
+import app.lararium.hearth.chatLaneFor
+import app.lararium.llm.ChatSession
 import app.lararium.storage.ChatHistoryManager
 import app.lararium.tts.TTSManager
 import app.lararium.ui.CompactAssistantActivity
 import app.lararium.ui.DrawerLogic
+import app.lararium.ui.FailedSend
 import app.lararium.ui.SettingsManager
 import app.lararium.ui.ChatStateLogic
-import app.lararium.weather.OpenMeteoClient
+import app.lararium.util.LinkPolicy
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import org.json.JSONArray
-import org.json.JSONObject
-import app.lararium.util.LinkPolicy
 
 /**
  * Foreground service managing the Lararium service lifecycle.
- * Supports chat sessions with context, including local offline LLMs.
+ * Hearth is the sole model provider.
  */
 class AssistantService : Service() {
 
@@ -66,21 +52,10 @@ class AssistantService : Service() {
     
     private lateinit var audioCaptureManager: AudioCaptureManager
     private lateinit var voskTranscriber: VoskTranscriber
-    private lateinit var whisperTranscriber: WhisperTranscriber
     private lateinit var speechRecognizerManager: SpeechRecognizerManager
-    lateinit var openRouterClient: OpenRouterClient
-        private set
-    val isOpenRouterReady: Boolean get() = ::openRouterClient.isInitialized
-    private lateinit var llamaCppClient: LlamaCppClient
     lateinit var hearthChatClient: HearthChatClient
         private set
     val isHearthReady: Boolean get() = ::hearthChatClient.isInitialized
-    lateinit var localModelManager: LocalModelManager
-        private set
-    private lateinit var braveSearchClient: BraveSearchClient
-    private lateinit var exaSearchClient: ExaSearchClient
-    private lateinit var langSearchClient: LangSearchClient
-    private lateinit var openMeteoClient: OpenMeteoClient
     lateinit var ttsManager: TTSManager
         private set
     lateinit var settingsManager: SettingsManager
@@ -91,10 +66,8 @@ class AssistantService : Service() {
     private var audioCaptureJob: Job? = null
     private var activeResponseJob: Job? = null
 
-    private enum class VoiceCaptureMode { NONE, SYSTEM, VOSK, WHISPER }
+    private enum class VoiceCaptureMode { NONE, SYSTEM, VOSK }
     private var activeVoiceCaptureMode = VoiceCaptureMode.NONE
-    private val localModelMutex = Mutex()
-    private var localModelLoadJob: Deferred<Result<Unit>>? = null
 
     // State flow for UI binding
     private val _assistantState = MutableStateFlow<AssistantState>(AssistantState.Idle)
@@ -136,26 +109,7 @@ class AssistantService : Service() {
     
     // Currently loaded chat ID (null = new chat)
     private var _currentChatId: String? = null
-    
-    // Web search enabled for current query
-    private val _webSearchEnabled = MutableStateFlow(true)
-    val webSearchEnabled: StateFlow<Boolean> = _webSearchEnabled.asStateFlow()
-    
-    fun toggleWebSearch() {
-        _webSearchEnabled.value = !_webSearchEnabled.value
-    }
-    
-    /**
-     * Safely check if current model supports vision, even if OpenRouter client hasn't been initialized yet.
-     */
-    fun isVisionCapable(): Boolean {
-        if (settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL ||
-            settingsManager.apiProvider == SettingsManager.PROVIDER_LARARIUM) {
-            return false
-        }
-        return isOpenRouterReady && openRouterClient.isVisionCapable()
-    }
-    
+
     /**
      * Open URL in default browser.
      */
@@ -184,32 +138,6 @@ class AssistantService : Service() {
         _pendingUrls.value = emptyList()
     }
     
-    /**
-     * Detect all URLs in response that should be opened.
-     * Returns list of URLs for user to choose from.
-     */
-    private fun detectUrlsToOpen(response: String): List<String> {
-        val urls = mutableListOf<String>()
-        
-        // Look for patterns like "I'll open" or "opening" followed by URL
-        val openPatterns = listOf(
-            Regex("(?:open(?:ing)?|launch(?:ing)?|navigate to)\\s+(?:this )?(?:link|url|page)?:?\\s*(https?://[^\\s\\)\\]]+)", RegexOption.IGNORE_CASE),
-            Regex("\\[OPEN_URL:(https?://[^]]+)]"),
-            Regex("(?:открываю|открой)\\s+(?:ссылку)?:?\\s*(https?://[^\\s\\)\\]]+)", RegexOption.IGNORE_CASE)
-        )
-        
-        for (pattern in openPatterns) {
-            pattern.findAll(response).forEach { match ->
-                val url = match.groupValues[1].trimEnd('.', ',', '!', '?')
-                if (url !in urls) {
-                    urls.add(url)
-                }
-            }
-        }
-        
-        return urls
-    }
-
     companion object {
         private const val TAG = "AssistantService"
         private const val NOTIFICATION_ID = 1001
@@ -240,48 +168,6 @@ class AssistantService : Service() {
         speechRecognizerManager = SpeechRecognizerManager(this)
         settingsManager = SettingsManager(this)
         chatHistoryManager = ChatHistoryManager(this)
-        
-        // Initialize Whisper with API key provider
-        whisperTranscriber = WhisperTranscriber {
-            // Use OpenRouter API key for Groq or OpenAI key
-            when (settingsManager.whisperProvider) {
-                SettingsManager.WHISPER_OPENAI -> app.secureKeyManager.getOpenRouterApiKey()
-                else -> app.secureKeyManager.getGroqApiKey() ?: app.secureKeyManager.getOpenRouterApiKey()
-            }
-        }.apply {
-            provider = when (settingsManager.whisperProvider) {
-                SettingsManager.WHISPER_OPENAI -> WhisperTranscriber.Provider.OPENAI
-                else -> WhisperTranscriber.Provider.GROQ
-            }
-        }
-        
-        // Initialize OpenRouter client with proper configuration for Hermes
-        val openRouterBaseUrl = if (settingsManager.apiProvider == SettingsManager.PROVIDER_HERMES) {
-            settingsManager.hermesBaseUrl
-        } else {
-            null
-        }
-        
-        val openRouterApiKey = when (settingsManager.apiProvider) {
-            SettingsManager.PROVIDER_HERMES -> app.secureKeyManager.getHermesApiKey() ?: ""
-            else -> app.secureKeyManager.getOpenRouterApiKey()
-        }
-        
-        openRouterClient = OpenRouterClient(
-            app.secureKeyManager,
-            baseUrlOverride = openRouterBaseUrl,
-            apiKeyOverride = openRouterApiKey
-        ).apply {
-            setModel(if (settingsManager.apiProvider == SettingsManager.PROVIDER_HERMES)
-                settingsManager.hermesModel else settingsManager.getEffectiveModel())
-            setSystemPrompt(settingsManager.systemPrompt)
-        }
-        
-        // Initialize local LLM client
-        localModelManager = LocalModelManager(this)
-        llamaCppClient = LlamaCppClient().apply {
-            setSystemPrompt(settingsManager.systemPrompt)
-        }
 
         // Initialize hearth client
         hearthChatClient = HearthChatClient(this, app.secureKeyManager)
@@ -291,15 +177,6 @@ class AssistantService : Service() {
         // event log is the durable source of truth.
         maybeRestoreHearthChat()
 
-        // Do not load a local model merely because the app was opened or the
-        // settings screen bound this service. Large GGUF models allocate native
-        // memory and can make Android kill the whole process before the user
-        // has even asked a question. ensureLocalModelReady() loads on demand.
-        
-        braveSearchClient = BraveSearchClient(app.secureKeyManager)
-        exaSearchClient = ExaSearchClient(app.secureKeyManager)
-        langSearchClient = LangSearchClient(app.secureKeyManager)
-        openMeteoClient = OpenMeteoClient()
         ttsManager = TTSManager(this)
 
         // Apply saved TTS language preference
@@ -348,46 +225,41 @@ class AssistantService : Service() {
             ACTION_START_VOICE -> startVoiceCapture()
             ACTION_STOP_VOICE -> stopVoiceCapture()
             ACTION_QUERY_TEXT -> {
-                val query = intent.getStringExtra(EXTRA_QUERY) ?: return START_NOT_STICKY
-                processTextQuery(query)
+                val query = intent.getStringExtra(EXTRA_QUERY) ?: ""
+                if (query.isNotBlank()) {
+                    processTextQuery(query)
+                }
             }
             ACTION_STOP -> stopSelf()
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
 
-    override fun onUnbind(intent: Intent?): Boolean {
-        Log.i(TAG, "AssistantService unbound")
-        // Retain state and allow rebind so that in-flight turns survive UI detachment
-        return true
-    }
-
-    override fun onRebind(intent: Intent?) {
-        super.onRebind(intent)
-        Log.i(TAG, "AssistantService rebound")
-    }
-
     override fun onDestroy() {
         super.onDestroy()
+        Log.i(TAG, "AssistantService destroyed")
+        serviceScope.cancel()
+        ttsManager.shutdown()
+        voskTranscriber.release()
+        speechRecognizerManager.destroy()
         networkCallback?.let {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-            try {
-                cm?.unregisterNetworkCallback(it)
-            } catch (_: Exception) {}
-            networkCallback = null
+            try { cm?.unregisterNetworkCallback(it) } catch (_: Exception) {}
         }
-        probeJob?.cancel()
-        probeJob = null
-        serviceScope.cancel()
-        audioCaptureManager.release()
-        speechRecognizerManager.destroy()
-        ttsManager.shutdown()
-        Log.i(TAG, "AssistantService destroyed")
     }
 
-    private fun createNotification(text: String): Notification {
+    private fun launchOverlay() {
+        val overlayIntent = Intent(this, CompactAssistantActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        startActivity(overlayIntent)
+    }
+
+    private fun createNotification(status: String): Notification {
         val pendingIntent = PendingIntent.getActivity(
             this,
             0,
@@ -396,27 +268,27 @@ class AssistantService : Service() {
         )
 
         return NotificationCompat.Builder(this, AssistantApplication.CHANNEL_SERVICE)
-            .setContentTitle(getString(R.string.app_name))
-            .setContentText(text)
+            .setContentTitle("Lararium")
+            .setContentText(status)
             .setSmallIcon(R.drawable.ic_assistant)
             .setContentIntent(pendingIntent)
             .setOngoing(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
-    private fun launchOverlay() {
-        val overlayIntent = Intent(this, CompactAssistantActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
-        startActivity(overlayIntent)
-    }
-
     /**
-     * Start voice capture using Vosk, System speech, or Whisper cloud transcription.
+     * Start voice capture based on settings (Vosk or system speech recognizer).
      */
     fun startVoiceCapture() {
-        if (_assistantState.value == AssistantState.Listening) {
-            if (speechRecognizerManager.isCurrentlyListening() || audioCaptureManager.isCapturing()) {
+        // If already listening, check if recognizer is actually active
+        if (_assistantState.value is AssistantState.Listening) {
+            if (activeVoiceCaptureMode == VoiceCaptureMode.SYSTEM && speechRecognizerManager.isCurrentlyListening()) {
+                Log.d(TAG, "Voice capture already active and listening, ignoring request")
+                return
+            }
+            if (activeVoiceCaptureMode == VoiceCaptureMode.VOSK && audioCaptureManager.isCapturing()) {
+                Log.d(TAG, "Vosk voice capture already active, ignoring request")
                 return
             }
             Log.w(TAG, "Resetting stuck listening state")
@@ -430,33 +302,20 @@ class AssistantService : Service() {
         
         val voiceMethod = settingsManager.voiceInputMethod
         val preferVosk = voiceMethod == SettingsManager.VOICE_INPUT_VOSK
-        val preferWhisper = voiceMethod == SettingsManager.VOICE_INPUT_WHISPER
         // A downloaded model may still be initialising after the service starts.
         // Capture with Vosk in that case; transcribe() will wait for initialization
         // after the recording ends instead of falling back to an online recognizer.
         val voskInstalled = !voskTranscriber.needsModelDownload(settingsManager.voiceLanguage)
         val systemAvailable = speechRecognizerManager.isAvailable()
         
-        // Decision tree:
-        // 1. If user prefers Whisper -> start audio capture for Whisper
-        // 2. If user prefers Vosk and it's ready -> use Vosk
-        // 3. If user prefers System and it's available -> use System
-        // 4. If preferred method unavailable, try fallback
-        // 5. If nothing available -> show error
-        
         when {
-            // Whisper cloud transcription preferred
-            preferWhisper -> {
-                Log.i(TAG, "Using Whisper cloud transcription")
-                startWhisperCapture()
-            }
             // Vosk preferred and ready
             preferVosk && voskInstalled -> {
                 Log.i(TAG, "Using Vosk transcription (preferred)")
                 startVoskCapture()
             }
             // System preferred and available
-            !preferVosk && !preferWhisper && systemAvailable -> {
+            !preferVosk && systemAvailable -> {
                 Log.i(TAG, "Using system speech recognition (preferred)")
                 startSystemSpeechRecognition()
             }
@@ -469,7 +328,7 @@ class AssistantService : Service() {
             else -> {
                 val message = when {
                     preferVosk && !voskInstalled -> "Please download Vosk model in Settings for offline voice input."
-                    !preferVosk && !preferWhisper && !systemAvailable -> systemRecognitionUnavailableMessage()
+                    !preferVosk && !systemAvailable -> systemRecognitionUnavailableMessage()
                     else -> "Voice recognition unavailable. Please check Settings."
                 }
                 _transcription.value = ""
@@ -499,110 +358,101 @@ class AssistantService : Service() {
                 var shouldSwitchToVosk = false
                 
                 speechRecognizerManager.startListening()
+                    .catch { e ->
+                        Log.e(TAG, "System speech recognition error", e)
+                        _transcription.value = ""
+                        _response.value = "Voice recognition error: ${e.message}"
+                        _assistantState.value = AssistantState.Error(e.message ?: "Recognition failed")
+                    }
                     .collect { result ->
                         when (result) {
-                            is SpeechRecognizerManager.RecognitionResult.ReadyForSpeech -> {
+                            SpeechRecognizerManager.RecognitionResult.ReadyForSpeech -> {
                                 Log.d(TAG, "Ready for speech")
                             }
+                            SpeechRecognizerManager.RecognitionResult.EndOfSpeech -> {
+                                Log.d(TAG, "End of speech")
+                            }
                             is SpeechRecognizerManager.RecognitionResult.Partial -> {
-                                Log.d(TAG, "Partial: ${result.text}")
                                 partialResult.clear()
                                 partialResult.append(result.text)
                                 _transcription.value = result.text
                             }
                             is SpeechRecognizerManager.RecognitionResult.Final -> {
-                                Log.i(TAG, "Final: ${result.text}")
                                 _transcription.value = result.text
+                                activeVoiceCaptureMode = VoiceCaptureMode.NONE
                                 
                                 if (settingsManager.autoSendVoice && result.text.isNotBlank()) {
                                     _assistantState.value = AssistantState.Processing
-                                    processVoiceQuery(result.text)
-                                } else {
+                                    serviceScope.launch(Dispatchers.IO) {
+                                        processVoiceQuery(result.text)
+                                    }
+                                } else if (result.text.isBlank()) {
                                     _assistantState.value = AssistantState.Idle
                                 }
                             }
                             is SpeechRecognizerManager.RecognitionResult.Error -> {
-                                Log.e(TAG, "Speech recognition error (${result.code}): ${result.message}")
+                                Log.e(TAG, "System recognizer error: ${result.message} (code: ${result.code})")
                                 
-                                // ERROR_CLIENT commonly means that the selected Android
-                                // RecognitionService is missing or cannot start.
-                                if (result.code == 5) {
-                                    val usingSystemMethod = settingsManager.voiceInputMethod == SettingsManager.VOICE_INPUT_SYSTEM
-                                    val voskInstalled = !voskTranscriber.needsModelDownload(settingsManager.voiceLanguage)
-                                    speechRecognizerManager.stopListening()
-                                    if (usingSystemMethod || !voskInstalled) {
-                                        _response.value = if (usingSystemMethod) {
-                                            systemRecognitionUnavailableMessage()
-                                        } else {
-                                            "Android system speech recognition is unavailable, and the selected Vosk model is not downloaded. Download the Vosk language model in Settings."
-                                        }
-                                        _assistantState.value = AssistantState.Error("System speech recognition unavailable")
-                                    } else {
-                                        Log.w(TAG, "System recognition failed; falling back to installed Vosk")
-                                        shouldSwitchToVosk = true
-                                    }
-                                    return@collect
-                                }
+                                val usingSystemMethod = settingsManager.voiceInputMethod == SettingsManager.VOICE_INPUT_SYSTEM
+                                val voskInstalled = !voskTranscriber.needsModelDownload(settingsManager.voiceLanguage)
                                 
-                                // For permission errors, show helpful message
-                                val displayMessage = if (result.code == 6) {
-                                    "Microphone permission not granted. Please enable it in Settings."
-                                } else if (result.code == 12) {
-                                    "No speech detected. Please try again and speak clearly."
+                                if (usingSystemMethod && voskInstalled) {
+                                    Log.i(TAG, "System recognizer failed, switching to Vosk fallback")
+                                    shouldSwitchToVosk = true
                                 } else {
-                                    "Voice input error: ${result.message}"
+                                    _transcription.value = ""
+                                    val errorMessage = if (usingSystemMethod) {
+                                        systemRecognitionUnavailableMessage()
+                                    } else {
+                                        result.message
+                                    }
+                                    _response.value = errorMessage
+                                    _assistantState.value = AssistantState.Error(result.message)
                                 }
-                                
-                                _response.value = displayMessage
-                                _assistantState.value = AssistantState.Error(result.message)
-                            }
-                            is SpeechRecognizerManager.RecognitionResult.EndOfSpeech -> {
-                                Log.d(TAG, "End of speech")
                             }
                         }
                     }
                 
-                // After collect finishes, check if we need to switch to Vosk
                 if (shouldSwitchToVosk) {
-                    if (!voskTranscriber.needsModelDownload(settingsManager.voiceLanguage)) {
-                        Log.i(TAG, "Switching to Vosk for voice input")
-                        _assistantState.value = AssistantState.Listening
-                        startVoskCapture()
-                    } else {
-                        _response.value = "No voice recognition service available. Please download Vosk model in Settings."
-                        _assistantState.value = AssistantState.Error("No recognition service")
-                    }
+                    resetVoiceCapture()
+                    _assistantState.value = AssistantState.Listening
+                    _transcription.value = ""
+                    Log.i(TAG, "Falling back to Vosk after system recognizer failure")
+                    startVoskCapture()
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Speech recognition exception", e)
-                _response.value = "Voice error: ${e.message}"
-                _assistantState.value = AssistantState.Error(e.message ?: "Speech recognition failed")
+                Log.e(TAG, "System recognition job error", e)
+                val usingSystemMethod = settingsManager.voiceInputMethod == SettingsManager.VOICE_INPUT_SYSTEM
+                if (usingSystemMethod) {
+                    if (!voskTranscriber.needsModelDownload(settingsManager.voiceLanguage)) {
+                        Log.i(TAG, "System recognizer crashed, attempting Vosk fallback")
+                        resetVoiceCapture()
+                        _assistantState.value = AssistantState.Listening
+                        _transcription.value = ""
+                        startVoskCapture()
+                        return@launch
+                    }
+                }
+                _transcription.value = ""
+                _response.value = "Voice recognition failed: ${e.message}"
+                _assistantState.value = AssistantState.Error(e.message ?: "Recognition failed")
             }
         }
     }
 
     private fun systemRecognitionUnavailableMessage(): String {
-        return "Android system speech recognition is not available on this device. " +
-            "Install and select a compatible speech recognition service, " +
-            "or choose Vosk (Offline) and download its language model in Settings."
+        return "No system speech recognition service found.\n\n" +
+            "Some AOSP-based ROMs do not include a speech recognition service by default.\n\n" +
+            "To use voice input:\n" +
+            "1. Switch to Vosk (Offline) in Settings → Voice Input\n" +
+            "2. Download the language model for offline use\n" +
+            "3. Or install a speech recognition app"
     }
-    
+
     private fun startVoskCapture() {
         Log.i(TAG, "Starting Vosk voice capture")
         activeVoiceCaptureMode = VoiceCaptureMode.VOSK
         startAudioCaptureJob("Vosk")
-    }
-    
-    private fun startWhisperCapture() {
-        Log.i(TAG, "Starting Whisper cloud capture")
-        activeVoiceCaptureMode = VoiceCaptureMode.WHISPER
-
-        whisperTranscriber.provider = when (settingsManager.whisperProvider) {
-            SettingsManager.WHISPER_OPENAI -> WhisperTranscriber.Provider.OPENAI
-            else -> WhisperTranscriber.Provider.GROQ
-        }
-
-        startAudioCaptureJob("Whisper")
     }
 
     private fun startAudioCaptureJob(label: String) {
@@ -616,8 +466,6 @@ class AssistantService : Service() {
                         if (!autoStopRequested && voiceActivityDetector?.addPcmChunk(chunk) == true) {
                             autoStopRequested = true
                             Log.i(TAG, "$label detected end of speech; sending automatically")
-                            // Do not cancel this coroutine from inside collect. Schedule the
-                            // normal stop path, which finalizes the WAV file and transcribes it.
                             serviceScope.launch(Dispatchers.Main) {
                                 stopVoiceCapture()
                             }
@@ -663,7 +511,7 @@ class AssistantService : Service() {
             return
         }
 
-        if (captureMode != VoiceCaptureMode.VOSK && captureMode != VoiceCaptureMode.WHISPER) {
+        if (captureMode != VoiceCaptureMode.VOSK) {
             audioCaptureJob?.cancel()
             audioCaptureJob = null
             audioCaptureManager.cancelCapture()
@@ -672,7 +520,6 @@ class AssistantService : Service() {
             return
         }
 
-        val useWhisper = captureMode == VoiceCaptureMode.WHISPER
         _assistantState.value = AssistantState.Processing
 
         audioCaptureJob?.cancel()
@@ -690,29 +537,6 @@ class AssistantService : Service() {
                 }
                 activeVoiceCaptureMode = VoiceCaptureMode.NONE
                 
-                if (useWhisper) {
-                    // Use Whisper cloud transcription
-                    Log.i(TAG, "Transcribing with Whisper (${whisperTranscriber.provider})")
-                    val language = settingsManager.voiceLanguage.split("-").firstOrNull()
-                    
-                    whisperTranscriber.transcribe(audioFile, language).fold(
-                        onSuccess = { text ->
-                            _transcription.value = text
-                            processVoiceQuery(text)
-                        },
-                        onFailure = { error ->
-                            Log.e(TAG, "Whisper transcription error", error)
-                            _transcription.value = ""
-                            _response.value = "Voice input error: ${error.message}"
-                            _assistantState.value = AssistantState.Error(error.message ?: "Transcription failed")
-                        }
-                    )
-                    return@launch
-                }
-                
-                // transcribe() initializes an installed Vosk model on demand.
-                // This avoids the startup race where the model is downloaded
-                // but the background initialization has not completed yet.
                 val transcribedText = voskTranscriber.transcribe(audioFile)
                 
                 // Don't send error messages to LLM
@@ -724,8 +548,6 @@ class AssistantService : Service() {
                 }
                 
                 _transcription.value = transcribedText
-                
-                // Process the transcription
                 processVoiceQuery(transcribedText)
             } catch (e: Exception) {
                 Log.e(TAG, "Transcription error", e)
@@ -740,10 +562,8 @@ class AssistantService : Service() {
      * Immediately adds user message to chat before AI starts responding.
      */
     fun processTextQuery(query: String, imageBase64: String? = null) {
-        // Ensure query is never empty
         val effectiveQuery = query.ifBlank { 
             if (imageBase64 != null) "Describe this image" else {
-                // Nothing to process — reset state and bail
                 _assistantState.value = AssistantState.Idle
                 return
             }
@@ -752,7 +572,7 @@ class AssistantService : Service() {
         stopResponse()
         _assistantState.value = AssistantState.Processing
         
-        Log.i(TAG, "Processing query: '$effectiveQuery', hasImage=${imageBase64 != null}, imageLength=${imageBase64?.length}")
+        Log.i(TAG, "Processing query: '$effectiveQuery'")
         
         // Immediately add user message to chat UI
         sendGate.record(effectiveQuery)
@@ -767,30 +587,12 @@ class AssistantService : Service() {
      * Helper to add user message to chat and update UI immediately.
      */
     private fun addUserMessageToChat(query: String, imageBase64: String? = null) {
-        val provider = settingsManager.apiProvider
-        when (provider) {
-            SettingsManager.PROVIDER_LOCAL -> {
-                llamaCppClient.chatSession.addUserMessage(query, imageBase64)
-                _chatMessages.value = llamaCppClient.chatSession.getAllMessages()
-                Log.d(TAG, "Added to Local LLM session: '$query'")
-            }
-            SettingsManager.PROVIDER_LARARIUM -> {
-                // Retry-after-failure re-submits the same query while it is still the
-                // session tail (the failed attempt never got an assistant reply);
-                // adding it again would duplicate the bubble.
-                val existing = hearthChatClient.chatSession.getAllMessages().lastOrNull()
-                if (existing?.role != "user" || existing.content != query || imageBase64 != null) {
-                    hearthChatClient.chatSession.addUserMessage(query, imageBase64)
-                }
-                _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
-                Log.d(TAG, "Added to Hearth session: '$query'")
-            }
-            else -> {
-                openRouterClient.chatSession.addUserMessage(query, imageBase64)
-                _chatMessages.value = openRouterClient.chatSession.getAllMessages()
-                Log.d(TAG, "Added to OpenRouter session: '$query', imageLength=${imageBase64?.length}")
-            }
+        val existing = hearthChatClient.chatSession.getAllMessages().lastOrNull()
+        if (existing?.role != "user" || existing.content != query || imageBase64 != null) {
+            hearthChatClient.chatSession.addUserMessage(query, imageBase64)
         }
+        _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
+        Log.d(TAG, "Added to Hearth session: '$query'")
     }
     
     /**
@@ -799,58 +601,31 @@ class AssistantService : Service() {
      */
     private suspend fun processVoiceQuery(query: String) {
         stopResponse()
-        // Add user message to chat (on main thread for UI update)
         withContext(Dispatchers.Main) {
             addUserMessageToChat(query, null)
         }
-        // Process the query
         processQueryInternal(query, null)
     }
 
     /**
-     * Main query processing pipeline using OpenAI-compatible function calling:
-     * 1. Sends streaming request with web_search tool defined
-     * 2. If the model calls web_search → executes search → streams follow-up with results
-     * 3. If no tool call → streams response directly
+     * Main query processing pipeline through the paired hearth.
      */
     private suspend fun processQueryInternal(query: String, imageBase64: String? = null) {
         try {
             val sanitizedQuery = sanitizeQuery(query)
-            val provider = settingsManager.apiProvider
+            val app = application as AssistantApplication
+            val endpoint = app.secureKeyManager.getHearthEndpoint()
 
-            if (provider == SettingsManager.PROVIDER_LARARIUM) {
-                val app = application as AssistantApplication
-                val endpoint = app.secureKeyManager.getHearthEndpoint()
-                if (endpoint == null) {
+            when (chatLaneFor(endpoint != null)) {
+                ChatLane.NotPaired -> {
                     val notPairedError = "Not paired with your hearth yet — use Pair hearth in Settings"
                     _response.value = notPairedError
                     _assistantState.value = AssistantState.Error(notPairedError)
                     return
                 }
-                streamHearth(sanitizedQuery)
-                return
-            }
-
-            val isLocal = provider == SettingsManager.PROVIDER_LOCAL
-
-            if (_webSearchEnabled.value && imageBase64 == null && !isLocal) {
-                when (classifyRetrievalIntent(sanitizedQuery)) {
-                    RetrievalIntent.WEATHER -> processWithWeather(sanitizedQuery)
-                    RetrievalIntent.WEB_SEARCH -> {
-                        if (isSearchConfigured()) {
-                            processWithDirectSearch(sanitizedQuery)
-                        } else {
-                            showSearchNotConfigured()
-                        }
-                    }
-                    RetrievalIntent.NONE -> if (isSearchConfigured()) {
-                        processWithFunctionCalling(imageBase64)
-                    } else {
-                        streamDirect(sanitizedQuery, imageBase64)
-                    }
+                ChatLane.Ready -> {
+                    streamHearth(sanitizedQuery)
                 }
-            } else {
-                streamDirect(sanitizedQuery, imageBase64)
             }
         } catch (e: CancellationException) {
             Log.i(TAG, "Query processing cancelled")
@@ -864,283 +639,8 @@ class AssistantService : Service() {
         }
     }
 
-    private fun isSearchConfigured(): Boolean = when (settingsManager.searchEngine) {
-        SettingsManager.SEARCH_EXA -> exaSearchClient.isConfigured()
-        SettingsManager.SEARCH_LANGSEARCH -> langSearchClient.isConfigured()
-        else -> braveSearchClient.isConfigured()
-    }
-
-    private fun showSearchNotConfigured() {
-        val providerName = when (settingsManager.searchEngine) {
-            SettingsManager.SEARCH_EXA -> "Exa"
-            SettingsManager.SEARCH_LANGSEARCH -> "LangSearch"
-            else -> "Brave Search"
-        }
-        _response.value = "Web search is enabled, but $providerName is not configured. Add its API key in Settings → Web Search, or switch to a configured search engine."
-        _assistantState.value = AssistantState.Error("Web search is not configured")
-    }
-
-    private fun shouldFallbackToSearch(response: String): Boolean {
-        val lower = response.lowercase()
-        val noAccessPhrases = listOf(
-            "don't have access to the internet",
-            "do not have access to the internet",
-            "don't have web access",
-            "do not have web access",
-            "can't browse the web",
-            "cannot browse the web",
-            "не имею доступа к интернету",
-            "нет доступа к интернету",
-            "не могу искать в интернете",
-            "не могу просматривать интернет",
-            "нет доступа к веб"
-        )
-        return noAccessPhrases.any { lower.contains(it) }
-    }
-
-    /**
-     * Function calling flow: model decides via web_search tool whether to search.
-     */
-    private suspend fun processWithWeather(query: String) {
-        _assistantState.value = AssistantState.Searching
-        _response.value = ""
-
-        val location = extractWeatherLocation(query)
-        val weatherReport = openMeteoClient.getWeather(location)
-        if (weatherReport == null) {
-            _response.value = "I couldn't resolve the weather location. Please ask with a city name, for example: \"погода в Варшаве\"."
-            _assistantState.value = AssistantState.Error("Weather location not found")
-            return
-        }
-
-        val fullResponse = StringBuilder()
-        val enhancedQuery = buildWeatherEnhancedQuery(query, weatherReport.toPromptContext())
-
-        _assistantState.value = AssistantState.Responding
-        openRouterClient.streamCompletionWithSearch(enhancedQuery, null)
-            .catch { e ->
-                Log.e(TAG, "Weather response streaming error", e)
-                _response.value = "Error: ${e.message}"
-                _assistantState.value = AssistantState.Error(e.message ?: "LLM error")
-            }
-            .collect { chunk ->
-                fullResponse.append(chunk)
-                _response.value = fullResponse.toString()
-            }
-
-        finalizeResponse(fullResponse.toString(), listOf("https://open-meteo.com/"))
-    }
-
-    private suspend fun processWithDirectSearch(query: String) {
-        _assistantState.value = AssistantState.Searching
-        _response.value = ""
-
-        val searchResults = executeSearch(query)
-        val contextSources = searchResults.map { it.url }
-        val enhancedQuery = buildSearchEnhancedQuery(query, searchResults)
-        val fullResponse = StringBuilder()
-
-        _assistantState.value = AssistantState.Responding
-
-        openRouterClient.streamCompletionWithSearch(enhancedQuery, null)
-            .catch { e ->
-                Log.e(TAG, "Direct search streaming error", e)
-                _response.value = "Error: ${e.message}"
-                _assistantState.value = AssistantState.Error(e.message ?: "LLM error")
-            }
-            .collect { chunk ->
-                fullResponse.append(chunk)
-                _response.value = fullResponse.toString()
-            }
-
-        finalizeResponse(fullResponse.toString(), contextSources)
-    }
-
-    private suspend fun processWithFunctionCalling(imageBase64: String? = null) {
-        _assistantState.value = AssistantState.Responding
-        _response.value = ""
-
-        val fullResponse = StringBuilder()
-        val tools = WebSearchTool.buildToolsArray()
-        var contextSources: List<String> = emptyList()
-        var detectedCalls: List<ToolCall>? = null
-        var assistantToolMsg: JSONObject? = null
-
-        // Phase 1: Stream with web_search tool — model decides if search is needed
-        openRouterClient.streamCompletionWithToolSupport(tools, imageBase64)
-            .catch { e ->
-                Log.e(TAG, "Tool streaming error", e)
-                _response.value = "Error: ${e.message}"
-                _assistantState.value = AssistantState.Error(e.message ?: "LLM error")
-            }
-            .collect { event ->
-                when (event) {
-                    is StreamEvent.Content -> {
-                        fullResponse.append(event.text)
-                        _response.value = fullResponse.toString()
-                    }
-                    is StreamEvent.ToolCallsDetected -> {
-                        detectedCalls = event.calls
-                        assistantToolMsg = event.assistantMessage
-                    }
-                }
-            }
-
-        // Phase 2: Tool was called — execute search and stream follow-up
-        if (detectedCalls != null && assistantToolMsg != null) {
-            _assistantState.value = AssistantState.Searching
-            Log.i(TAG, "Tool call detected: ${detectedCalls!!.size} call(s)")
-
-            val searchResults = executeSearchFromToolCalls(detectedCalls!!)
-            if (searchResults.isNotEmpty()) {
-                contextSources = searchResults.map { it.url }
-            }
-
-            val followUpMessages = buildToolFollowUpMessages(
-                assistantToolMsg!!,
-                detectedCalls!!,
-                searchResults
-            )
-
-            _assistantState.value = AssistantState.Responding
-
-            openRouterClient.streamWithMessages(followUpMessages, null)
-                .catch { e ->
-                    Log.e(TAG, "Follow-up streaming error", e)
-                    _response.value = "Error: ${e.message}"
-                }
-                .collect { chunk ->
-                    fullResponse.append(chunk)
-                    _response.value = fullResponse.toString()
-                }
-
-            if (fullResponse.isNotEmpty()) {
-                openRouterClient.chatSession.addAssistantMessage(fullResponse.toString())
-            }
-        }
-
-        // Phase 2b: DSML-style tool calls detected in content — parse and execute
-        if (detectedCalls == null && containsDsmlToolCalls(fullResponse.toString())) {
-            val rawText = fullResponse.toString()
-            Log.d(TAG, "DSML detected, raw='${rawText.take(300)}'")
-            val (dsmlCalls, cleanedText) = parseDsmlToolCalls(rawText)
-            Log.d(TAG, "DSML parsed: ${dsmlCalls.size} call(s), cleaned='${cleanedText.take(200)}'")
-            if (dsmlCalls.isNotEmpty()) {
-                fullResponse.clear()
-                fullResponse.append(cleanedText)
-                _response.value = cleanedText
-
-                _assistantState.value = AssistantState.Searching
-                Log.i(TAG, "DSML tool call detected: ${dsmlCalls.size} call(s)")
-
-                val searchResults = executeSearchFromToolCalls(dsmlCalls)
-                if (searchResults.isNotEmpty()) {
-                    contextSources = searchResults.map { it.url }
-                }
-
-                val resultsText = buildSearchResultsMessage(searchResults)
-                val followUpMessages = openRouterClient.chatSession.getMessagesForApi(
-                    settingsManager.systemPrompt, false
-                )
-                // Add previous assistant response (with DSML stripped) and search results
-                val userMsg = JSONObject().apply {
-                    put("role", "user")
-                    put("content", if (cleanedText.isNotBlank()) {
-                        "$cleanedText\n\nSearch results:\n$resultsText"
-                    } else {
-                        "Web search results:\n$resultsText"
-                    })
-                }
-                followUpMessages.put(userMsg)
-
-                _assistantState.value = AssistantState.Responding
-                openRouterClient.streamWithMessages(followUpMessages, null)
-                    .catch { e ->
-                        Log.e(TAG, "DSML follow-up streaming error", e)
-                        _response.value = "Error: ${e.message}"
-                    }
-                    .collect { chunk ->
-                        fullResponse.append(chunk)
-                        _response.value = fullResponse.toString()
-                    }
-
-                if (fullResponse.isNotEmpty()) {
-                    openRouterClient.chatSession.addAssistantMessage(fullResponse.toString())
-                }
-            }
-        }
-
-        if (detectedCalls == null && contextSources.isEmpty() && shouldFallbackToSearch(fullResponse.toString())) {
-            val originalQuery = openRouterClient.chatSession.getAllMessages()
-                .lastOrNull { it.role == "user" }
-                ?.content
-                .orEmpty()
-            if (originalQuery.isNotBlank()) {
-                Log.i(TAG, "Model claimed no web access; falling back to direct search")
-                processWithDirectSearch(originalQuery)
-                return
-            }
-        }
-
-        // Phase 3: Finalize — sources, URL detection, TTS
-        finalizeResponse(fullResponse.toString(), contextSources)
-    }
-
-    private suspend fun executeSearchFromToolCalls(toolCalls: List<ToolCall>): List<SearchResult> {
-        val results = mutableListOf<SearchResult>()
-        for (tc in toolCalls) {
-            if (tc.function.name == "web_search") {
-                val searchQuery = parseSearchQuery(tc.function.arguments)
-                if (searchQuery.isNotBlank()) {
-                    Log.i(TAG, "Executing web search: '$searchQuery'")
-                    val searchResults = executeSearch(searchQuery)
-                    Log.i(TAG, "Search returned ${searchResults.size} results")
-                    results.addAll(searchResults)
-                }
-            }
-        }
-        return results
-    }
-
-    private suspend fun executeSearch(query: String): List<SearchResult> = when (settingsManager.searchEngine) {
-        SettingsManager.SEARCH_EXA -> exaSearchClient.search(query)
-        SettingsManager.SEARCH_LANGSEARCH -> langSearchClient.search(query)
-        else -> braveSearchClient.search(query)
-    }
-
-    private fun buildToolFollowUpMessages(
-        assistantMsg: JSONObject,
-        toolCalls: List<ToolCall>,
-        searchResults: List<SearchResult>
-    ): JSONArray {
-        val history = openRouterClient.chatSession.getMessagesForApi(
-            settingsManager.systemPrompt, false
-        )
-
-        val messages = JSONArray()
-        for (i in 0 until history.length()) {
-            messages.put(history.getJSONObject(i))
-        }
-
-        messages.put(assistantMsg)
-
-        for (tc in toolCalls) {
-            val content = if (tc.function.name == "web_search" && searchResults.isNotEmpty()) {
-                searchResults.joinToString("\n\n") {
-                    "Title: ${it.title}\nURL: ${it.url}\n${it.snippet}"
-                }
-            } else {
-                "No results found."
-            }
-            messages.put(buildToolResultMessage(tc.id, content))
-        }
-
-        return messages
-    }
-
     /**
      * Direct streaming turn through the paired hearth.
-     * Tool injection and web search are bypassed — hearth runs its own guarded loop.
      */
     private suspend fun streamHearth(query: String) {
         _response.value = ""
@@ -1234,120 +734,28 @@ class AssistantService : Service() {
     }
 
     /**
-     * Direct streaming without function calling (local models or search disabled).
-     */
-    private suspend fun streamDirect(query: String, imageBase64: String? = null) {
-        _response.value = ""
-
-        val fullResponse = StringBuilder()
-        val useLocal = settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL
-
-        try {
-            if (useLocal) {
-                val loadResult = ensureLocalModelReady()
-                loadResult.onFailure { error ->
-                    val message = error.message ?: "Failed to load local model"
-                    _response.value = message
-                    _assistantState.value = AssistantState.Error(message)
-                    return
-                }
-            }
-
-            _assistantState.value = AssistantState.Responding
-
-            val effectiveImageBase64 = if (useLocal) null else imageBase64
-
-            val responseFlow = when {
-                useLocal -> llamaCppClient.streamCompletion(query, null)
-                else -> openRouterClient.streamCompletion(query, effectiveImageBase64)
-            }
-
-            responseFlow
-                .catch { e ->
-                    Log.e(TAG, "LLM streaming error", e)
-                    _response.value = "Error: ${e.message}"
-                    _assistantState.value = AssistantState.Error(e.message ?: "LLM error")
-                }
-                .collect { chunk ->
-                    fullResponse.append(chunk)
-                    _response.value = fullResponse.toString()
-                }
-
-            finalizeResponse(fullResponse.toString(), emptyList())
-        } catch (e: CancellationException) {
-            Log.i(TAG, "Direct streaming cancelled")
-            if (_assistantState.value !is AssistantState.Complete) {
-                _assistantState.value = AssistantState.Idle
-            }
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in streamDirect", e)
-            _response.value = "Error: ${e.message}"
-            _assistantState.value = AssistantState.Error(e.message ?: "Unknown error")
-        }
-    }
-
-    /**
-     * Common post-processing after any response: sources, URL detection, TTS, UI update.
+     * Common post-processing after any response: UI update and TTS.
      */
     private suspend fun finalizeResponse(
         responseText: String,
-        sources: List<String>,
-        isDsmlRetry: Boolean = false
+        sources: List<String> = emptyList()
     ) {
-        // If response contains DSML-style tool call tags and we haven't retried yet, handle
-        val hasDsml = !isDsmlRetry && responseText.contains("<|") && responseText.contains("DSML", ignoreCase = true)
-        if (hasDsml) {
-            Log.d(TAG, "DSML detected in response, handling search follow-up")
-            handleDsmlResponse(responseText)
-            return
-        }
-
-        // Strip any remaining DSML/XML-like tags
         val cleaned = responseText.replace(Regex("<\\|[^>]*>"), "").trim()
 
         if (cleaned.isEmpty()) {
-            _response.value = "No response from LLM. Check your OpenRouter API key and internet connection."
+            _response.value = "No response from hearth."
             _assistantState.value = AssistantState.Error("Empty response")
             return
         }
 
-        val useLocal = settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL
-        val isHearth = settingsManager.apiProvider == SettingsManager.PROVIDER_LARARIUM
         _response.value = cleaned
+        hearthChatClient.chatSession.addAssistantMessage(cleaned, seq = hearthChatClient.lastTurnSeq)
 
-        // Append sources if web search was used
-        if (sources.isNotEmpty() && !useLocal && !isHearth) {
-            val sourcesText = "\n\n📚 Sources:\n" + sources.take(3).mapIndexed { i, url ->
-                "${i + 1}. $url"
-            }.joinToString("\n")
-            _response.value = cleaned + sourcesText
-        }
-
-        if (isHearth) {
-            hearthChatClient.chatSession.addAssistantMessage(cleaned, seq = hearthChatClient.lastTurnSeq)
-        }
-
-        // Update chat messages for UI
         withContext(Dispatchers.Main) {
-            _chatMessages.value = when {
-                useLocal -> llamaCppClient.chatSession.getAllMessages()
-                isHearth -> hearthChatClient.chatSession.getAllMessages()
-                else -> openRouterClient.chatSession.getAllMessages()
-            }
+            _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
             _response.value = ""
         }
 
-        // URL detection
-        if (!useLocal && !isHearth) {
-            val urlsToOpen = detectUrlsToOpen(cleaned)
-            if (urlsToOpen.isNotEmpty()) {
-                _pendingUrls.value = urlsToOpen
-                Log.i(TAG, "Detected ${urlsToOpen.size} URLs for user approval")
-            }
-        }
-
-        // TTS
         if (settingsManager.ttsEnabled) {
             _assistantState.value = AssistantState.Speaking
             ttsManager.speakAndWait(cleaned)
@@ -1357,103 +765,23 @@ class AssistantService : Service() {
     }
 
     /**
-     * Handle a response that contains DSML-style tool call tags.
-     * Extracts the search query, executes the search, and streams a follow-up.
-     */
-    private suspend fun handleDsmlResponse(rawText: String) {
-        Log.d(TAG, "Handling DSML response: '${rawText.take(200)}'")
-
-        // Extract query using simple string search
-        val query = extractDsmlQuery(rawText)
-
-        // Extract function name — look for name="web_search" after "invoke"
-        val invokeIdx = rawText.indexOf("invoke", ignoreCase = true)
-        val funcName = if (invokeIdx >= 0) {
-            val afterInvoke = rawText.substring(invokeIdx)
-            val nameIdx = afterInvoke.indexOf("name=\"", ignoreCase = true)
-            if (nameIdx >= 0) {
-                val start = nameIdx + 6
-                val end = afterInvoke.indexOf("\"", start)
-                if (end >= 0) afterInvoke.substring(start, end) else ""
-            } else ""
-        } else ""
-
-        if (query.isNotEmpty() && (funcName.isEmpty() || funcName == "web_search")) {
-            Log.i(TAG, "DSML search query: '$query'")
-
-            _assistantState.value = AssistantState.Searching
-
-            val toolCalls = listOf(ToolCall(
-                id = "dsml_0",
-                type = "function",
-                function = ToolFunctionCall("web_search", JSONObject().apply {
-                    put("query", query)
-                }.toString())
-            ))
-
-            val searchResults = executeSearchFromToolCalls(toolCalls)
-            val contextSources = searchResults.map { it.url }
-
-            val resultsText = buildSearchResultsMessage(searchResults)
-            val followUpMessages = openRouterClient.chatSession.getMessagesForApi(
-                settingsManager.systemPrompt, false
-            )
-            followUpMessages.put(JSONObject().apply {
-                put("role", "user")
-                put("content", "Web search results for '$query':\n$resultsText")
-            })
-
-            _assistantState.value = AssistantState.Responding
-            val responseBuilder = StringBuilder()
-
-            openRouterClient.streamWithMessages(followUpMessages, null)
-                .catch { e ->
-                    Log.e(TAG, "DSML follow-up error", e)
-                    _response.value = "Error: ${e.message}"
-                }
-                .collect { chunk ->
-                    responseBuilder.append(chunk)
-                    _response.value = responseBuilder.toString()
-                }
-
-            val finalText = responseBuilder.toString()
-            if (finalText.isNotEmpty()) {
-                openRouterClient.chatSession.addAssistantMessage(finalText)
-            }
-
-            // Finalize with sources (pass retry guard to prevent infinite loop)
-            finalizeResponse(finalText, contextSources, isDsmlRetry = true)
-        } else {
-            // Can't parse DSML or not a search call — just show empty state
-            _response.value = ""
-            _assistantState.value = AssistantState.Idle
-        }
-    }
-
-    /**
      * Clear chat session and start fresh.
      * Saves current chat to history if it has messages.
      */
     fun clearSession(saveToHistory: Boolean = true) {
-        // Save current chat to history before clearing
         if (saveToHistory) {
             val messages = _chatMessages.value
             if (messages.size >= 2) { // At least one exchange
                 if (_currentChatId != null) {
-                    // Update existing chat instead of creating new one
                     chatHistoryManager.updateChat(_currentChatId!!, messages)
                 } else {
-                    // Save as new chat
                     chatHistoryManager.saveChat(messages)
                 }
             }
         }
         
-        // Reset current chat ID for new session
         _currentChatId = null
         
-        openRouterClient.clearSession()
-        llamaCppClient.clearSession()
         if (::hearthChatClient.isInitialized) {
             hearthChatClient.clearSession()
         }
@@ -1471,20 +799,10 @@ class AssistantService : Service() {
     fun loadChatFromHistory(chatId: String) {
         val messages = chatHistoryManager.loadChat(chatId) ?: return
         
-        // Clear current session without saving
         clearSession(saveToHistory = false)
-        
-        // Track that we're continuing an existing chat
         _currentChatId = chatId
         
-        // Load messages into active session
-        val provider = settingsManager.apiProvider
-        val session = when (provider) {
-            SettingsManager.PROVIDER_LOCAL -> llamaCppClient.chatSession
-            SettingsManager.PROVIDER_LARARIUM -> hearthChatClient.chatSession
-            else -> openRouterClient.chatSession
-        }
-        
+        val session = hearthChatClient.chatSession
         messages.forEach { msg ->
             when (msg.role) {
                 "user" -> session.addUserMessage(msg.content, msg.imageBase64)
@@ -1542,128 +860,12 @@ class AssistantService : Service() {
             }
         }
     }
-    
-    private suspend fun loadLocalModelInternal(
-        modelId: String,
-        updateSelectedId: Boolean = false
-    ): Result<Unit> = withContext(Dispatchers.IO) {
-        val modelPath = localModelManager.getModelPath(modelId)
-        if (modelPath == null) {
-            Log.w(TAG, "No local model downloaded for: $modelId")
-            return@withContext Result.failure(
-                Exception("No local model downloaded. Please download a model in Settings.")
-            )
-        }
 
-        val modelInfo = localModelManager.getModelInfo(modelId)
-        val modelName = modelInfo?.name ?: "Local Model"
-
-        val modelFile = java.io.File(modelPath)
-        if (!hasEnoughFreeMemoryForLocalModel(modelFile.length(), modelInfo?.contextSize ?: 2048)) {
-            return@withContext Result.failure(
-                Exception("Not enough free memory to load $modelName safely. Close other apps or select a smaller local model.")
-            )
-        }
-
-        Log.i(TAG, "Loading local model: $modelName at $modelPath")
-
-        llamaCppClient.initialize()
-        llamaCppClient.unloadModel()
-        llamaCppClient.contextSize = modelInfo?.contextSize ?: 2048
-        val result = llamaCppClient.loadModel(
-            modelPath,
-            modelName,
-            modelInfo?.promptFormat ?: "chatml"
-        )
-
-        result.onSuccess {
-            if (updateSelectedId) {
-                settingsManager.localModelId = modelId
-            }
-            Log.i(TAG, "Local model loaded successfully: $modelName")
-        }.onFailure { error ->
-            Log.e(TAG, "Failed to load local model: ${error.message}")
-        }
-
-        result
-    }
-
-    /**
-     * Local model weights live in native memory, which is not constrained by the
-     * app heap.  Refuse a load that the OS is very likely to kill instead of
-     * taking down the assistant and its accessibility service with it.
-     */
-    private fun hasEnoughFreeMemoryForLocalModel(modelBytes: Long, contextSize: Int): Boolean {
-        val memoryInfo = ActivityManager.MemoryInfo()
-        val activityManager = getSystemService(ActivityManager::class.java)
-        activityManager.getMemoryInfo(memoryInfo)
-
-        // GGUF weights are memory-mapped, but inference also needs KV cache and
-        // working buffers.  Reserve 128 MiB per 1K context plus a 512 MiB margin.
-        val contextBytes = (contextSize.toLong() / 1024L) * 128L * 1024L * 1024L
-        val requiredBytes = modelBytes + contextBytes + 512L * 1024L * 1024L
-        val hasEnoughMemory = memoryInfo.availMem >= requiredBytes
-        Log.i(TAG, "Local model memory check: available=${memoryInfo.availMem}, required=$requiredBytes, sufficient=$hasEnoughMemory")
-        return hasEnoughMemory
-    }
-
-    private suspend fun ensureLocalModelReady(): Result<Unit> {
-        if (llamaCppClient.isModelLoaded()) return Result.success(Unit)
-
-        val job = localModelMutex.withLock {
-            if (llamaCppClient.isModelLoaded()) return@withLock null
-
-            val activeJob = localModelLoadJob
-            if (activeJob != null && activeJob.isActive) {
-                return@withLock activeJob
-            }
-
-            serviceScope.async(Dispatchers.IO) {
-                loadLocalModelInternal(settingsManager.localModelId)
-            }.also { localModelLoadJob = it }
-        }
-
-        if (job == null) return Result.success(Unit)
-        return job.await()
-    }
-    
-    /**
-     * Load a specific local model
-     */
-    fun loadLocalModel(modelId: String) {
-        serviceScope.launch {
-            val job = localModelMutex.withLock {
-                localModelLoadJob?.takeIf { it.isActive }?.cancel()
-                serviceScope.async(Dispatchers.IO) {
-                    loadLocalModelInternal(modelId, updateSelectedId = true)
-                }.also { localModelLoadJob = it }
-            }
-            job.await()
-        }
-    }
-    
-    /**
-     * Check if local LLM is ready
-     */
-    fun isLocalModelReady(): Boolean = llamaCppClient.isModelLoaded()
-    
     /**
      * Reload settings - call this when settings are changed.
      */
     fun reloadSettings() {
         Log.i(TAG, "Reloading settings...")
-        
-        // Reload model settings
-        val effectiveModel = settingsManager.getEffectiveModel()
-        openRouterClient.setModel(effectiveModel)
-        openRouterClient.setSystemPrompt(settingsManager.systemPrompt)
-        
-        // Update local model system prompt
-        llamaCppClient.setSystemPrompt(settingsManager.systemPrompt)
-        
-        // Local models load on the first query, not while Settings is open.
-        
-        Log.i(TAG, "Model set to: $effectiveModel")
         
         // Reload voice language
         serviceScope.launch(Dispatchers.IO) {
@@ -1696,44 +898,22 @@ class AssistantService : Service() {
             Log.i(TAG, "Switching TTS language to: $savedTtsLang")
             ttsManager.setLanguage(savedTtsLang)
         }
-        
-        // Reload OpenRouter client with updated settings
-        val secureKeys = (application as AssistantApplication).secureKeyManager
-        val openRouterBaseUrl = if (settingsManager.apiProvider == SettingsManager.PROVIDER_HERMES) {
-            settingsManager.hermesBaseUrl
-        } else {
-            null
-        }
-        
-        val openRouterApiKey = when (settingsManager.apiProvider) {
-            SettingsManager.PROVIDER_HERMES -> secureKeys.getHermesApiKey() ?: ""
-            else -> secureKeys.getOpenRouterApiKey()
-        }
-        
-        openRouterClient = OpenRouterClient(
-            secureKeys,
-            baseUrlOverride = openRouterBaseUrl,
-            apiKeyOverride = openRouterApiKey
-        ).apply {
-            setModel(if (settingsManager.apiProvider == SettingsManager.PROVIDER_HERMES)
-                settingsManager.hermesModel else settingsManager.getEffectiveModel())
-            setSystemPrompt(settingsManager.systemPrompt)
-        }
 
         // Reload hearth client with updated settings
+        val secureKeys = (application as AssistantApplication).secureKeyManager
         hearthChatClient = HearthChatClient(this, secureKeys)
+
+        if (isMonitoringEligible()) {
+            retryConnectionNow()
+        } else {
+            _connectionState.value = ConnectionState.Unknown
+        }
     }
 
     /**
-     * Remove device identifiers and PII from query before sending to cloud.
-     * Note: For local models, sanitization is optional but we keep it for consistency
+     * Remove device identifiers and PII from query before sending.
      */
     private fun sanitizeQuery(query: String): String {
-        // Skip sanitization for local models (they run offline anyway)
-        if (settingsManager.apiProvider == SettingsManager.PROVIDER_LOCAL) {
-            return query.trim()
-        }
-        
         var sanitized = query
         sanitized = sanitized.replace(
             Regex("(?i)(device\\s*id|android\\s*id|id\\s*is)\\s*[:=]?\\s*\\b[a-f0-9]{16}\\b"),
@@ -1751,8 +931,6 @@ class AssistantService : Service() {
         stopResponse()
         resetVoiceCapture()
         ttsManager.stop()
-        // Also stop local generation if running
-        llamaCppClient.stopGeneration()
         if (::hearthChatClient.isInitialized) {
             hearthChatClient.cancel()
         }
@@ -1770,7 +948,6 @@ class AssistantService : Service() {
         activeResponseJob?.cancel()
         activeResponseJob = null
         ttsManager.stop()
-        llamaCppClient.stopGeneration()
         if (::hearthChatClient.isInitialized) {
             hearthChatClient.cancel()
         }
@@ -1784,21 +961,9 @@ class AssistantService : Service() {
         val hadPartialResponse = wasActive && _response.value.isNotBlank()
         if (hadPartialResponse) {
             val partial = _response.value.trim() + "\n\n[Stopped]"
-            when (settingsManager.apiProvider) {
-                SettingsManager.PROVIDER_LOCAL -> {
-                    llamaCppClient.chatSession.addAssistantMessage(partial)
-                    _chatMessages.value = llamaCppClient.chatSession.getAllMessages()
-                }
-                SettingsManager.PROVIDER_LARARIUM -> {
-                    if (::hearthChatClient.isInitialized) {
-                        hearthChatClient.chatSession.addAssistantMessage(partial)
-                        _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
-                    }
-                }
-                else -> {
-                    openRouterClient.chatSession.addAssistantMessage(partial)
-                    _chatMessages.value = openRouterClient.chatSession.getAllMessages()
-                }
+            if (::hearthChatClient.isInitialized) {
+                hearthChatClient.chatSession.addAssistantMessage(partial)
+                _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
             }
             _response.value = ""
         }
@@ -1811,7 +976,7 @@ class AssistantService : Service() {
     private fun isMonitoringEligible(): Boolean {
         val app = application as? AssistantApplication ?: return false
         val endpoint = app.secureKeyManager.getHearthEndpoint()
-        return endpoint != null && settingsManager.apiProvider == SettingsManager.PROVIDER_LARARIUM
+        return endpoint != null
     }
 
     fun retryConnectionNow() {

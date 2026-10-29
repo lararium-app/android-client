@@ -166,7 +166,7 @@ class MainActivity : ComponentActivity() {
      * Grep-documented list of covered screens in this single-Activity Compose host:
      * - Main chat (ChatHomeScreen): may display bearer tokens, approval cards, credentials, sensitive tool payloads
      * - Pairing / QR screen (PairingDialog / SettingsScreen): displays hearth pairing tokens, QR codes, endpoints
-     * - Settings / keys screens (SettingsScreen): displays API keys (OpenAI, Anthropic, OpenRouter), local token secrets
+     * - Settings / keys screens (SettingsScreen): displays hearth pairing tokens and local secrets
      * - Sessions screen (SessionsScreen): lists past chat sessions and titles
      * - Custody approvals (ApprovalsScreen): displays approval requests with sensitive tool parameters and destinations
      */
