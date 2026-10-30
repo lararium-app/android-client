@@ -188,4 +188,36 @@ class ChatTimeTest {
         assertEquals(expected, label)
         assertTrue(label.contains("2025"))
     }
+
+    @Test
+    fun formatTimestampLabel_is24HourTrue_usesHHmm() {
+        val saved = Locale.getDefault()
+        Locale.setDefault(Locale.US)
+        try {
+            val cal = Calendar.getInstance().apply {
+                set(2026, Calendar.OCTOBER, 15, 14, 5, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val label = formatTimestampLabel(cal.timeInMillis, cal.timeInMillis, "Yesterday", true)
+            assertEquals("14:05", label)
+        } finally {
+            Locale.setDefault(saved)
+        }
+    }
+
+    @Test
+    fun formatTimestampLabel_is24HourFalse_usesTwelveHourWithAmPm() {
+        val saved = Locale.getDefault()
+        Locale.setDefault(Locale.US)
+        try {
+            val cal = Calendar.getInstance().apply {
+                set(2026, Calendar.OCTOBER, 15, 14, 5, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val label = formatTimestampLabel(cal.timeInMillis, cal.timeInMillis, "Yesterday", false)
+            assertEquals("2:05 PM", label)
+        } finally {
+            Locale.setDefault(saved)
+        }
+    }
 }

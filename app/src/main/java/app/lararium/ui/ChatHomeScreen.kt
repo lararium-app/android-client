@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -331,7 +332,8 @@ fun ChatHomeScreen(
                                     text = formatTimestampLabel(
                                         message.timestamp,
                                         System.currentTimeMillis(),
-                                        stringResource(R.string.chat_time_yesterday)
+                                        stringResource(R.string.chat_time_yesterday),
+                                        android.text.format.DateFormat.is24HourFormat(LocalContext.current)
                                     ),
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,

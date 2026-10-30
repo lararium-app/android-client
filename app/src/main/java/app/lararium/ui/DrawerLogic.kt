@@ -90,6 +90,28 @@ object DrawerLogic {
     }
 
     /**
+     * Parses the event "ts" field (RFC3339 / RFC3339Nano UTC string) to epoch millis.
+     * Returns 0L when absent or unparseable.
+     */
+    private fun parseEventTimestampMillis(obj: JSONObject): Long {
+        if (!obj.has("ts") || obj.isNull("ts")) return 0L
+        val raw = obj.optString("ts", "").trim()
+        if (raw.isEmpty()) return 0L
+        return try {
+            // Normalize: "Z" -> "+00:00", and truncate fractional seconds to millis.
+            var s = if (raw.endsWith("Z") || raw.endsWith("z")) raw.dropLast(1) + "+00:00" else raw
+            val m = Regex("^(.*?:\\d{2})(\\.\\d+)?([+-]\\d{2}:\\d{2})$").find(s) ?: return 0L
+            val frac = m.groupValues[2].drop(1).padEnd(3, '0').take(3)
+            s = m.groupValues[1] + "." + frac + m.groupValues[3]
+            val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSXXX", java.util.Locale.US)
+            fmt.isLenient = false
+            fmt.parse(s)?.time ?: 0L
+        } catch (_: Exception) {
+            0L
+        }
+    }
+
+    /**
      * Parses past messages from a session events JSON payload (POST/GET /v1/sessions/{id}/events).
      */
     fun parseSessionMessages(eventsJson: String?): List<ChatSession.Message> {
@@ -106,7 +128,7 @@ object DrawerLogic {
                     val text = obj.optString("text", "")
                     val seq = if (obj.has("seq") && !obj.isNull("seq")) obj.optInt("seq") else null
                     if (text.isNotEmpty() && (role == "user" || role == "assistant")) {
-                        messages.add(ChatSession.Message(role = role, content = text, seq = seq))
+                        messages.add(ChatSession.Message(role = role, content = text, seq = seq, timestamp = parseEventTimestampMillis(obj)))
                     }
                 }
             }
