@@ -54,7 +54,8 @@ fun ChatHomeScreen(
     onNewChat: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ChatViewModel? = null,
-    onRepair: (() -> Unit)? = null
+    onRepair: (() -> Unit)? = null,
+    showMenuButton: Boolean = true
 ) {
     var textInput by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -161,11 +162,13 @@ fun ChatHomeScreen(
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onOpenDrawer) {
-                        Icon(
-                            Icons.Default.Menu,
-                            contentDescription = stringResource(R.string.open_drawer)
-                        )
+                    if (showMenuButton) {
+                        IconButton(onClick = onOpenDrawer) {
+                            Icon(
+                                Icons.Default.Menu,
+                                contentDescription = stringResource(R.string.open_drawer)
+                            )
+                        }
                     }
                 },
                 actions = {

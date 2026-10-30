@@ -65,6 +65,8 @@ import app.lararium.ui.approvals.ApprovalsScreen
 import app.lararium.ui.ChatHomeScreen
 import app.lararium.ui.ChatViewModel
 import app.lararium.ui.DrawerLogic
+import app.lararium.ui.LayoutLogic
+import app.lararium.ui.LarariumNavigationRail
 import app.lararium.ui.LarariumDrawerContent
 import app.lararium.ui.SessionsScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -314,11 +316,17 @@ class MainActivity : ComponentActivity() {
                     hearthEndpoint = app.secureKeyManager.getHearthEndpoint()
                 }
 
+                BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+                val chatLayout = LayoutLogic.chatLayoutForWidth(maxWidth.value)
+                val isTablet = chatLayout.useNavigationRail
+                LaunchedEffect(isTablet) {
+                    if (isTablet) drawerState.close()
+                }
                 ModalNavigationDrawer(
                     drawerState = drawerState,
-                    gesturesEnabled = currentRoute == "main",
+                    gesturesEnabled = currentRoute == "main" && !isTablet,
                     drawerContent = {
-                        LarariumDrawerContent(
+                        if (!isTablet) LarariumDrawerContent(
                             hearthEndpoint = hearthEndpoint,
                             pendingApprovals = pendingApprovals,
                             onNavigateToChats = {
@@ -336,13 +344,33 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 ) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                    if (isTablet) {
+                        LarariumNavigationRail(
+                            pendingApprovals = pendingApprovals,
+                            onNavigateToChats = { navController.navigate("sessions") },
+                            onNavigateToApprovals = { navController.navigate("approvals") },
+                            onNavigateToSettings = { navController.navigate("settings") },
+                            modifier = Modifier.width(chatLayout.railWidthDp.dp)
+                        )
+                    }
                     Scaffold(
+                        modifier = Modifier.weight(1f),
                         contentWindowInsets = WindowInsets(0, 0, 0, 0),
                         snackbarHost = { SnackbarHost(snackbarHostState) }
                     ) { innerPadding ->
                         Box(modifier = Modifier.padding(innerPadding)) {
                             NavHost(navController = navController, startDestination = "main") {
                                 composable("main") {
+                                    Box(
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentAlignment = Alignment.TopCenter
+                                    ) {
+                                    Box(
+                                        modifier = if (chatLayout.capContentWidth)
+                                            Modifier.widthIn(max = chatLayout.contentMaxWidthDp.dp).fillMaxSize()
+                                        else Modifier.fillMaxSize()
+                                    ) {
                                     ChatHomeScreen(
                                         assistantService = boundService,
                                         hearthEndpoint = hearthEndpoint,
@@ -351,8 +379,11 @@ class MainActivity : ComponentActivity() {
                                         onOpenApprovals = { navController.navigate("approvals") },
                                         onNewChat = { chatViewModel.clearSession() },
                                         viewModel = chatViewModel,
-                                        onRepair = { navController.navigate("settings") }
+                                        onRepair = { navController.navigate("settings") },
+                                        showMenuButton = !isTablet
                                     )
+                                    }
+                                    }
                                 }
                                 composable("sessions") {
                                     SessionsScreen(
@@ -384,6 +415,8 @@ class MainActivity : ComponentActivity() {
                             }
                         }
                     }
+                    }
+                }
                 }
             }
         }
