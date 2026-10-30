@@ -3,6 +3,7 @@ package app.lararium.hearth
 import android.content.SharedPreferences
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
+import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
@@ -658,5 +659,500 @@ class HearthChatClientTest {
         )
         assertEquals(2, createCount)
         assertEquals("sess-2", prefs.getString("hearth_session_id", null))
+    }
+
+    // -----------------------------------------------------------------------
+    // Dropped turn recovery & createSession retry tests (RC1 / RC2)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun recoverDroppedTurn_streamCleanEof_recoversAssistantReply() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("hearth_session_id", "s-eof-recover").apply()
+
+        var eventsCalled = 0
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                // Returns cleanly with NO terminal event
+            }
+
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                eventsCalled++
+                return JSONObject().apply {
+                    put("in_flight", false)
+                    put("events", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "user")
+                            put("text", "hello hearth")
+                            put("seq", 1)
+                        })
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "assistant")
+                            put("text", "recovered reply")
+                            put("seq", 2)
+                        })
+                    })
+                }
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneCount = 0
+        var doneText = ""
+        var errorCount = 0
+
+        chatClient.streamChat(
+            message = "hello hearth",
+            onDelta = {},
+            onDone = {
+                doneCount++
+                doneText = it
+            },
+            onError = { errorCount++ }
+        )
+
+        assertEquals(1, eventsCalled)
+        assertEquals(1, doneCount)
+        assertEquals("recovered reply", doneText)
+        assertEquals(0, errorCount)
+        assertEquals(2, chatClient.lastTurnSeq)
+    }
+
+    @Test
+    fun recoverDroppedTurn_streamCleanEof_inFlightTrue_emitsStillAnsweringHint() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("hearth_session_id", "s-eof-inflight").apply()
+
+        var eventsCalled = 0
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                // Returns cleanly with NO terminal event
+            }
+
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                eventsCalled++
+                return JSONObject().apply {
+                    put("in_flight", true)
+                    put("events", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "user")
+                            put("text", "hello hearth")
+                            put("seq", 1)
+                        })
+                    })
+                }
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneCount = 0
+        var errorCount = 0
+        var errorText = ""
+
+        chatClient.streamChat(
+            message = "hello hearth",
+            onDelta = {},
+            onDone = { doneCount++ },
+            onError = {
+                errorCount++
+                errorText = it
+            }
+        )
+
+        assertEquals(1, eventsCalled)
+        assertEquals(0, doneCount)
+        assertEquals(1, errorCount)
+        assertEquals(HearthChatClient.STILL_ANSWERING_HINT, errorText)
+    }
+
+    @Test
+    fun recoverDroppedTurn_streamCleanEof_inFlightFalse_emitsReplyLostHint() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("hearth_session_id", "s-eof-lost").apply()
+
+        var eventsCalled = 0
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                // Returns cleanly with NO terminal event
+            }
+
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                eventsCalled++
+                return JSONObject().apply {
+                    put("in_flight", false)
+                    put("events", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "user")
+                            put("text", "hello hearth")
+                            put("seq", 1)
+                        })
+                    })
+                }
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneCount = 0
+        var errorCount = 0
+        var errorText = ""
+
+        chatClient.streamChat(
+            message = "hello hearth",
+            onDelta = {},
+            onDone = { doneCount++ },
+            onError = {
+                errorCount++
+                errorText = it
+            }
+        )
+
+        assertEquals(1, eventsCalled)
+        assertEquals(0, doneCount)
+        assertEquals(1, errorCount)
+        assertEquals(HearthChatClient.REPLY_LOST_HINT, errorText)
+    }
+
+    @Test
+    fun recoverDroppedTurn_streamIoException_recoversAssistantReply() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("hearth_session_id", "s-ioe-recover").apply()
+
+        var eventsCalled = 0
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                throw IOException("unexpected end of stream")
+            }
+
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                eventsCalled++
+                return JSONObject().apply {
+                    put("in_flight", false)
+                    put("events", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "user")
+                            put("text", "test query")
+                            put("seq", 1)
+                        })
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "assistant")
+                            put("text", "qa recovered reply")
+                            put("seq", 2)
+                        })
+                    })
+                }
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneCount = 0
+        var doneText = ""
+        var errorCount = 0
+
+        chatClient.streamChat(
+            message = "test query",
+            onDelta = {},
+            onDone = {
+                doneCount++
+                doneText = it
+            },
+            onError = {
+                errorCount++
+                fail("Expected onDone recovery but got onError: $it")
+            }
+        )
+
+        assertEquals(1, eventsCalled)
+        assertEquals(1, doneCount)
+        assertEquals("qa recovered reply", doneText)
+        assertEquals(0, errorCount)
+        assertEquals(2, chatClient.lastTurnSeq)
+    }
+
+    @Test
+    fun recoverDroppedTurn_recoveryGetThrows_preservesFriendlyErrorMessage() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("hearth_session_id", "s-get-fails").apply()
+
+        var eventsCalled = 0
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                throw IOException("unexpected end of stream")
+            }
+
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                eventsCalled++
+                throw IOException("events request failed")
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneCount = 0
+        var errorCount = 0
+        var errorText = ""
+
+        chatClient.streamChat(
+            message = "test query",
+            onDelta = {},
+            onDone = { doneCount++ },
+            onError = {
+                errorCount++
+                errorText = it
+            }
+        )
+
+        assertEquals(1, eventsCalled)
+        assertEquals(0, doneCount)
+        assertEquals(1, errorCount)
+        assertEquals(HearthChatClient.friendlyErrorMessage("unexpected end of stream"), errorText)
+    }
+
+    @Test
+    fun createNewSession_retriesOnceOnIOException_thenSucceeds() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        var createAttempts = 0
+
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun createSession(title: String?): JSONObject {
+                createAttempts++
+                if (createAttempts == 1) {
+                    throw IOException("intermittent connection reset")
+                }
+                return JSONObject().put("id", "sess-after-retry")
+            }
+
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                onEvent(HearthEvent.Delta("success on $id", 1))
+                onEvent(HearthEvent.TurnDone(2, JSONObject()))
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneText = ""
+        chatClient.streamChat(
+            message = "hello",
+            onDelta = {},
+            onDone = { doneText = it },
+            onError = { fail("Unexpected error: $it") }
+        )
+
+        assertEquals(2, createAttempts)
+        assertEquals("success on sess-after-retry", doneText)
+        assertEquals("sess-after-retry", prefs.getString("hearth_session_id", null))
+    }
+
+    @Test
+    fun createNewSession_failsTwiceOnIOException_propagatesToOnError() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        var createAttempts = 0
+
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun createSession(title: String?): JSONObject {
+                createAttempts++
+                throw IOException("connection reset attempt $createAttempts")
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneCount = 0
+        var errorCount = 0
+        var errorText = ""
+
+        chatClient.streamChat(
+            message = "hello",
+            onDelta = {},
+            onDone = { doneCount++ },
+            onError = {
+                errorCount++
+                errorText = it
+            }
+        )
+
+        assertEquals(2, createAttempts)
+        assertEquals(0, doneCount)
+        assertEquals(1, errorCount)
+        assertTrue(errorText.isNotEmpty())
+    }
+
+    @Test
+    fun happyPath_turnDoneTerminal_provesEventsNeverCalled() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("hearth_session_id", "s-happy").apply()
+
+        var eventsCalled = 0
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                onEvent(HearthEvent.Delta("Happy answer", 1))
+                onEvent(HearthEvent.TurnDone(2, JSONObject()))
+            }
+
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                eventsCalled++
+                return JSONObject().put("events", JSONArray())
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneCount = 0
+        var doneText = ""
+
+        chatClient.streamChat(
+            message = "happy message",
+            onDelta = {},
+            onDone = {
+                doneCount++
+                doneText = it
+            },
+            onError = { fail("Unexpected error: $it") }
+        )
+
+        assertEquals(0, eventsCalled)
+        assertEquals(1, doneCount)
+        assertEquals("Happy answer", doneText)
+    }
+
+    @Test
+    fun recoverDroppedTurn_emptyAssistantText_treatedAsNoReply() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("hearth_session_id", "s-empty-assistant").apply()
+
+        var eventsCalled = 0
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                // stream ends with no terminal event
+            }
+
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                eventsCalled++
+                return JSONObject().apply {
+                    put("in_flight", false)
+                    put("events", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "user")
+                            put("text", "hello")
+                            put("seq", 1)
+                        })
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "assistant")
+                            put("text", "") // empty assistant text
+                            put("error", "server error")
+                            put("seq", 2)
+                        })
+                    })
+                }
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient }
+        )
+
+        var doneCount = 0
+        var errorCount = 0
+        var errorText = ""
+
+        chatClient.streamChat(
+            message = "hello",
+            onDelta = {},
+            onDone = { doneCount++ },
+            onError = {
+                errorCount++
+                errorText = it
+            }
+        )
+
+        assertEquals(1, eventsCalled)
+        assertEquals(0, doneCount)
+        assertEquals(1, errorCount)
+        assertEquals(HearthChatClient.REPLY_LOST_HINT, errorText)
     }
 }

@@ -32,6 +32,13 @@ class HearthChatClient(
         const val PREFS_NAME = "assistant_settings"
         const val KEY_SESSION_ID = "hearth_session_id"
         const val APPROVAL_NOTICE = "Your hearth is asking for approval on another device"
+        const val STILL_ANSWERING_MARKER = "still-answering"
+
+        // These two strings go to onError FINAL, they are already user-facing
+        const val STILL_ANSWERING_HINT =
+            "Hearth received your message and is still answering. Reopen this chat in a moment — do not resend it."
+        const val REPLY_LOST_HINT =
+            "Connection dropped before your reply finished. Tap retry — hearth did not complete the reply."
 
         fun clearStoredSessionId(context: Context) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -158,11 +165,67 @@ class HearthChatClient(
     }
 
     private suspend fun createNewSession(client: LarariumClient): String {
-        val resp = client.createSession()
+        // create is safe to retry; a lost response only orphans an empty session file
+        // (cosmetic, deleted with the session); this retry fixes the intermittent
+        // first-message failure at session-create.
+        val resp = try {
+            client.createSession()
+        } catch (_: IOException) {
+            client.createSession()
+        }
         val id = resp.optString("id").ifEmpty { resp.optString("session_id") }
         if (id.isBlank()) throw IOException("Invalid session response from hearth")
         setStoredSessionId(id)
         return id
+    }
+
+    private data class RecoveredMsg(
+        val role: String,
+        val text: String,
+        val seq: Int?
+    )
+
+    private suspend fun recoverDroppedTurn(
+        client: LarariumClient,
+        sessionId: String,
+        sentText: String,
+    ): Pair<String?, Boolean> {
+        return try {
+            val root = client.events(sessionId, afterSeq = 0)
+            val inFlight = root.optBoolean("in_flight", false)
+            val array = root.optJSONArray("events") ?: return null to inFlight
+
+            val messages = mutableListOf<RecoveredMsg>()
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val t = obj.optString("t", "")
+                if (t == "msg") {
+                    val role = obj.optString("role", "")
+                    val text = obj.optString("text", "")
+                    val seq = if (obj.has("seq") && !obj.isNull("seq")) obj.optInt("seq") else null
+                    if (text.isNotBlank() && (role == "user" || role == "assistant")) {
+                        messages.add(RecoveredMsg(role, text, seq))
+                    }
+                }
+            }
+
+            val lastUserIndex = messages.indexOfLast { it.role == "user" && it.text.trim() == sentText.trim() }
+            if (lastUserIndex == -1) {
+                return null to inFlight
+            }
+
+            val assistantEntry = messages.subList(lastUserIndex + 1, messages.size).firstOrNull { it.role == "assistant" }
+            if (assistantEntry != null) {
+                if (assistantEntry.seq != null) {
+                    lastTurnSeq = assistantEntry.seq
+                }
+                assistantEntry.text to inFlight
+            } else {
+                null to inFlight
+            }
+        } catch (_: Exception) {
+            null to false
+        }
     }
 
     /**
@@ -273,7 +336,14 @@ class HearthChatClient(
 
                 if (!terminalDelivered && !shouldRetry) {
                     terminalDelivered = true
-                    onDone(accumulated.toString())
+                    val (recovered, inFlight) = recoverDroppedTurn(client, sessionId, message)
+                    if (recovered != null) {
+                        onDone(recovered)
+                    } else if (inFlight) {
+                        onError(STILL_ANSWERING_HINT)
+                    } else {
+                        onError(REPLY_LOST_HINT)
+                    }
                 }
             } catch (e: CancellationException) {
                 try {
@@ -286,7 +356,14 @@ class HearthChatClient(
                     shouldRetry = true
                 } else {
                     terminalDelivered = true
-                    onError(friendlyErrorMessage(errorMsg))
+                    val (recovered, inFlight) = recoverDroppedTurn(client, sessionId, message)
+                    if (recovered != null) {
+                        onDone(recovered)
+                    } else if (inFlight) {
+                        onError(STILL_ANSWERING_HINT)
+                    } else {
+                        onError(friendlyErrorMessage(errorMsg))
+                    }
                 }
             } finally {
                 activeSessionId = null

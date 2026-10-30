@@ -102,6 +102,9 @@ class AssistantService : Service() {
     fun clearFailedSend() {
         sendGate.succeed()
         _failedSend.value = null
+        if (_assistantState.value is AssistantState.Error) {
+            _assistantState.value = AssistantState.Idle
+        }
     }
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
@@ -672,6 +675,11 @@ class AssistantService : Service() {
                         Log.w(TAG, "Ignoring late onDone on stale epoch")
                         return@streamChat
                     }
+                    if (accumulated.isNotEmpty() && accumulated != fullResponse.toString()) {
+                        fullResponse.setLength(0)
+                        fullResponse.append(accumulated)
+                        receivedAnyToken = true
+                    }
                     sendGate.succeed()
                     _failedSend.value = null
                 },
@@ -684,7 +692,7 @@ class AssistantService : Service() {
                     if (!receivedAnyToken) {
                         _failedSend.value = sendGate.fail(query)
                         _response.value = ""
-                        _assistantState.value = AssistantState.Idle
+                        _assistantState.value = AssistantState.Error(friendlyError)
                     } else {
                         _response.value = friendlyError
                         _assistantState.value = AssistantState.Error(friendlyError)

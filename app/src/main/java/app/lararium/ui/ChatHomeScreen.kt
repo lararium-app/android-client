@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lararium.R
 import app.lararium.hearth.ConnectionState
+import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.badge.BadgeLogic
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
@@ -366,8 +367,12 @@ fun ChatHomeScreen(
                                 },
                                 onRetry = {
                                     val queryToRetry = failedSend.query
+                                    val err = (state as? AssistantState.Error)?.message
+                                    val isStillAnswering = err == HearthChatClient.STILL_ANSWERING_HINT || err == HearthChatClient.STILL_ANSWERING_MARKER
                                     viewModel?.clearFailedSend() ?: assistantService?.clearFailedSend()
-                                    viewModel?.processTextQuery(queryToRetry) ?: assistantService?.processTextQuery(queryToRetry)
+                                    if (!isStillAnswering) {
+                                        viewModel?.processTextQuery(queryToRetry) ?: assistantService?.processTextQuery(queryToRetry)
+                                    }
                                 }
                             )
                         }
