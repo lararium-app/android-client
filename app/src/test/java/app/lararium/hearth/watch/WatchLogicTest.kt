@@ -590,4 +590,23 @@ class WatchLogicTest {
         assertFalse(shouldWarnBlind(singleCharCard))
         assertFalse(WatchLogic.shouldWarnBlind(singleCharCard))
     }
+
+    @Test
+    fun advanceCursor_firstObservation_startsAtSeen() {
+        assertEquals(7, WatchLogic.advanceCursor(null, 7))
+    }
+
+    @Test
+    fun advanceCursor_movesForwardPastReadReply() {
+        // Watcher had only seen seq 3; the user then read a reply at seq 9
+        // live in-app — the cursor must land on 9 so the watcher's next
+        // scan (seq > cursor) skips the already-read msg event.
+        assertEquals(9, WatchLogic.advanceCursor(3, 9))
+    }
+
+    @Test
+    fun advanceCursor_neverRewinds() {
+        assertEquals(9, WatchLogic.advanceCursor(9, 4))
+        assertEquals(9, WatchLogic.advanceCursor(9, 9))
+    }
 }

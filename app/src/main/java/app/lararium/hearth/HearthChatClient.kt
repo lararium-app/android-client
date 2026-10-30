@@ -257,6 +257,9 @@ class HearthChatClient(
         }
     }
 
+    /** Session id used by the most recent (or in-flight) turn, if any. */
+    fun lastActiveSessionId(): String? = activeSessionId ?: getStoredSessionId()
+
     /**
      * Streams a chat turn to the paired hearth.
      * Maps: Delta -> onDelta(text); TurnDone -> onDone(accumulated); Error -> onError(friendly message).

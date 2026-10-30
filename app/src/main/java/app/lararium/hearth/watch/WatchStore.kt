@@ -38,6 +38,15 @@ class WatchStore(private val prefs: SharedPreferences) {
     }
 
     /**
+     * Records that the user has seen events up through [seq] in this
+     * session (live in-app delivery), so the watcher never re-notifies
+     * a reply that was already read. Monotonic; never rewinds a cursor.
+     */
+    fun markSeen(sessionId: String, seq: Int) {
+        setCursor(sessionId, WatchLogic.advanceCursor(getCursor(sessionId), seq))
+    }
+
+    /**
      * Returns the set of custody card IDs that have already been notified.
      */
     fun getNotifiedCards(): Set<String> {
