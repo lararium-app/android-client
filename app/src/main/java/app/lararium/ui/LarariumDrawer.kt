@@ -173,3 +173,59 @@ fun LarariumDrawerContent(
         )
     }
 }
+
+/**
+ * Tablet navigation rail hosting the same destinations as [LarariumDrawerContent]
+ * (Chats, Approvals, Settings), reusing the same strings for labels/accessibility.
+ */
+@Composable
+fun LarariumNavigationRail(
+    pendingApprovals: Int,
+    onNavigateToChats: () -> Unit,
+    onNavigateToApprovals: () -> Unit,
+    onNavigateToSettings: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val chats = stringResource(R.string.drawer_nav_chats)
+    val approvals = stringResource(R.string.drawer_nav_approvals)
+    val settings = stringResource(R.string.drawer_nav_settings)
+    NavigationRail(
+        modifier = modifier.statusBarsPadding(),
+        containerColor = MaterialTheme.colorScheme.surfaceContainerLow
+    ) {
+        Spacer(modifier = Modifier.height(8.dp))
+        NavigationRailItem(
+            selected = false,
+            onClick = onNavigateToChats,
+            icon = { Icon(Icons.Default.ChatBubbleOutline, contentDescription = chats) },
+            label = { Text(chats, style = MaterialTheme.typography.labelMedium) }
+        )
+        NavigationRailItem(
+            selected = false,
+            onClick = onNavigateToApprovals,
+            icon = {
+                BadgedBox(
+                    badge = {
+                        if (pendingApprovals > 0) {
+                            Badge(
+                                containerColor = MaterialTheme.colorScheme.error,
+                                contentColor = MaterialTheme.colorScheme.onError
+                            ) {
+                                Text(pendingApprovals.toString())
+                            }
+                        }
+                    }
+                ) {
+                    Icon(Icons.Default.VerifiedUser, contentDescription = approvals)
+                }
+            },
+            label = { Text(approvals, style = MaterialTheme.typography.labelMedium) }
+        )
+        NavigationRailItem(
+            selected = false,
+            onClick = onNavigateToSettings,
+            icon = { Icon(Icons.Default.Settings, contentDescription = settings) },
+            label = { Text(settings, style = MaterialTheme.typography.labelMedium) }
+        )
+    }
+}
