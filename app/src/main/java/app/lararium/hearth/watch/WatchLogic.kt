@@ -151,6 +151,13 @@ object WatchLogic {
     }
 
     /**
+     * Monotonic cursor advance: the seen sequence never moves backwards and
+     * a first observation (null cursor) starts at [seen]. Pure so it is
+     * JVM-testable without framework stubs.
+     */
+    fun advanceCursor(current: Int?, seen: Int): Int = maxOf(current ?: 0, seen)
+
+    /**
      * Collapses newlines and tabs to single spaces, trims, and cuts to [max] chars
      * appending '…' only when it actually cut.
      */

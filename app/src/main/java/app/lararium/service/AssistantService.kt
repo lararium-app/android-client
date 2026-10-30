@@ -30,6 +30,7 @@ import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.SendGate
 import app.lararium.hearth.chatLaneFor
+import app.lararium.hearth.watch.WatchStore
 import app.lararium.llm.ChatSession
 import app.lararium.security.SecureKeyManager
 import app.lararium.storage.ChatHistoryManager
@@ -703,6 +704,15 @@ class AssistantService : Service() {
                     }
                     sendGate.succeed()
                     _failedSend.value = null
+                    // The user just watched this reply arrive live in the
+                    // app: advance the watcher's cursor past the committed
+                    // msg event (turn_done carries its seq) so the periodic
+                    // watcher does not re-notify a reply already read.
+                    val seenSession = hearthChatClient.lastActiveSessionId()
+                    val seenSeq = hearthChatClient.lastTurnSeq
+                    if (seenSession != null && seenSeq != null) {
+                        WatchStore(applicationContext).markSeen(seenSession, seenSeq)
+                    }
                 },
                 onError = { friendlyError ->
                     if (connectionMachine.isStale(epochAtSend)) {
