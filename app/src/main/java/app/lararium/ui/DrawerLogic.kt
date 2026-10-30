@@ -22,6 +22,11 @@ object DrawerLogic {
         val updatedAt: Long? = null
     )
 
+    data class SessionReplay(
+        val messages: List<ChatSession.Message>,
+        val inFlight: Boolean
+    )
+
     /**
      * Determines whether the app is currently paired with a hearth and formats the connection state.
      */
@@ -135,6 +140,22 @@ object DrawerLogic {
             messages
         } catch (_: Exception) {
             emptyList()
+        }
+    }
+
+    /**
+     * Parses a session events JSON payload into restored messages plus the in_flight flag.
+     * Absent or false in_flight means not in flight.
+     */
+    fun parseSessionReplay(eventsJson: String?): SessionReplay {
+        if (eventsJson.isNullOrBlank()) return SessionReplay(emptyList(), false)
+        return try {
+            val root = JSONObject(eventsJson)
+            val inFlight = root.optBoolean("in_flight", false)
+            val messages = parseSessionMessages(eventsJson)
+            SessionReplay(messages = messages, inFlight = inFlight)
+        } catch (_: Exception) {
+            SessionReplay(emptyList(), false)
         }
     }
 

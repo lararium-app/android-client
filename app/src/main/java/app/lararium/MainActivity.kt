@@ -15,6 +15,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.hearth.watch.HearthWatchScheduler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -83,6 +84,9 @@ class MainActivity : ComponentActivity() {
     /** Deep-link target route to navigate to once the compose navigation graph is ready. */
     private val openRoute = MutableStateFlow<String?>(null)
 
+    /** Target session id from a reply notification tap. */
+    private val openSessionId = MutableStateFlow<String?>(null)
+
     /** Transient status shown to the user after a pairing attempt. */
     private val pairingStatus = mutableStateOf<String?>(null)
 
@@ -96,6 +100,8 @@ class MainActivity : ComponentActivity() {
         handlePairingIntent(intent)
         openRoute.value = intent.getStringExtra("lararium_open")
         intent.removeExtra("lararium_open")
+        openSessionId.value = intent.getStringExtra(HearthNotifier.EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() }
+        intent.removeExtra(HearthNotifier.EXTRA_SESSION_ID)
     }
 
     override fun onDestroy() {
@@ -212,6 +218,8 @@ class MainActivity : ComponentActivity() {
         handlePairingIntent(intent)
         openRoute.value = intent?.getStringExtra("lararium_open")
         intent?.removeExtra("lararium_open")
+        openSessionId.value = intent?.getStringExtra(HearthNotifier.EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() }
+        intent?.removeExtra(HearthNotifier.EXTRA_SESSION_ID)
 
         setContent {
             AiintegratedintoandroidTheme {
@@ -252,11 +260,34 @@ class MainActivity : ComponentActivity() {
                 val snackbarHostState = remember { SnackbarHostState() }
                 val status by pairingStatus
                 val targetRoute by openRoute.collectAsStateWithLifecycle()
+                val targetSessionId by openSessionId.collectAsStateWithLifecycle()
                 val pendingApprovals by HearthBadgeState.pending.collectAsStateWithLifecycle()
 
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()
                 var hearthEndpoint by remember { mutableStateOf(app.secureKeyManager.getHearthEndpoint()) }
+
+                val openHearthSession: (String) -> Unit = { sessionId ->
+                    scope.launch(Dispatchers.IO) {
+                        val epTriple = app.secureKeyManager.getHearthEndpoint()
+                        val messages = if (epTriple != null) {
+                            try {
+                                val ep = Endpoint(epTriple.first, epTriple.second, epTriple.third)
+                                val eventsJson = LarariumClient(ep).events(sessionId, afterSeq = 0)
+                                DrawerLogic.parseSessionMessages(eventsJson.toString())
+                            } catch (_: Exception) {
+                                emptyList()
+                            }
+                        } else emptyList()
+
+                        withContext(Dispatchers.Main) {
+                            chatViewModel.loadHearthSession(sessionId, messages)
+                            navController.navigate("main") {
+                                popUpTo("main") { inclusive = true }
+                            }
+                        }
+                    }
+                }
 
                 LaunchedEffect(currentRoute) {
                     hearthEndpoint = app.secureKeyManager.getHearthEndpoint()
@@ -267,6 +298,12 @@ class MainActivity : ComponentActivity() {
                         navController.navigate("approvals")
                         openRoute.value = null
                     }
+                }
+
+                LaunchedEffect(targetSessionId) {
+                    val sid = targetSessionId ?: return@LaunchedEffect
+                    openHearthSession(sid)
+                    openSessionId.value = null
                 }
 
                 // Show pairing status once as a snackbar, then clear.
@@ -320,27 +357,7 @@ class MainActivity : ComponentActivity() {
                                 composable("sessions") {
                                     SessionsScreen(
                                         onBack = { navController.popBackStack() },
-                                        onSessionSelected = { sessionId ->
-                                            scope.launch(Dispatchers.IO) {
-                                                val epTriple = app.secureKeyManager.getHearthEndpoint()
-                                                val messages = if (epTriple != null) {
-                                                    try {
-                                                        val ep = Endpoint(epTriple.first, epTriple.second, epTriple.third)
-                                                        val eventsJson = LarariumClient(ep).events(sessionId, afterSeq = 0)
-                                                        DrawerLogic.parseSessionMessages(eventsJson.toString())
-                                                    } catch (_: Exception) {
-                                                        emptyList()
-                                                    }
-                                                } else emptyList()
-
-                                                withContext(Dispatchers.Main) {
-                                                    chatViewModel.loadHearthSession(sessionId, messages)
-                                                    navController.navigate("main") {
-                                                        popUpTo("main") { inclusive = true }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        onSessionSelected = openHearthSession
                                     )
                                 }
                                 composable("settings") {

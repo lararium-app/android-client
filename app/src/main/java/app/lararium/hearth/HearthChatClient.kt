@@ -35,6 +35,7 @@ class HearthChatClient(
         const val KEY_SESSION_ID = "hearth_session_id"
         const val APPROVAL_NOTICE = "Your hearth is asking for approval on another device"
         const val STILL_ANSWERING_MARKER = "still-answering"
+        const val WATCHDOG_CANCEL_MESSAGE = "lararium_watchdog_timeout"
 
         // These two strings go to onError FINAL, they are already user-facing
         const val STILL_ANSWERING_HINT =
@@ -137,6 +138,10 @@ class HearthChatClient(
         private set
 
     @Volatile
+    var lastInFlight: Boolean = false
+        private set
+
+    @Volatile
     private var activeSessionId: String? = null
 
     private var explicitEndpoint: Endpoint? = null
@@ -198,7 +203,7 @@ class HearthChatClient(
     private suspend fun recoverDroppedTurn(
         client: LarariumClient,
         sessionId: String,
-        sentText: String,
+        sentText: String? = null,
     ): Pair<String?, Boolean> {
         return try {
             val root = client.events(sessionId, afterSeq = 0)
@@ -219,7 +224,11 @@ class HearthChatClient(
                 }
             }
 
-            val lastUserIndex = messages.indexOfLast { it.role == "user" && it.text.trim() == sentText.trim() }
+            val lastUserIndex = if (sentText != null) {
+                messages.indexOfLast { it.role == "user" && it.text.trim() == sentText.trim() }
+            } else {
+                messages.indexOfLast { it.role == "user" }
+            }
             if (lastUserIndex == -1) {
                 return null to inFlight
             }
@@ -239,6 +248,72 @@ class HearthChatClient(
     }
 
     /**
+     * Polls the session endpoint until the turn commits an assistant reply, the
+     * turn is no longer in flight, or [deadlineMs] elapses. Returns the committed
+     * assistant text or null.
+     *
+     * Shared between the dropped-stream path (#57), cold-start in-flight restore (#63),
+     * and send retry when the user message is already in the event log (#45).
+     */
+    suspend fun waitForTurnCommit(
+        client: LarariumClient,
+        sessionId: String,
+        deadlineMs: Long = recoveryBackoffMs.sum(),
+        sentText: String? = null,
+    ): String? {
+        var inFlight = false
+        var elapsed = 0L
+
+        val (initialRecovered, initialFlight) = recoverDroppedTurn(client, sessionId, sentText)
+        lastInFlight = initialFlight
+        if (initialRecovered != null) return initialRecovered
+        inFlight = initialFlight
+        if (!inFlight) return null
+
+        for (waitMs in recoveryBackoffMs) {
+            if (waitMs > 0L) {
+                if (elapsed >= deadlineMs) break
+                val step = waitMs.coerceAtMost(deadlineMs - elapsed)
+                delay(step)
+                elapsed += step
+            }
+            val (recovered, flight) = recoverDroppedTurn(client, sessionId, sentText)
+            lastInFlight = flight
+            if (recovered != null) return recovered
+            inFlight = flight
+            if (!flight) return null
+        }
+
+        val tailStepMs = recoveryBackoffMs.lastOrNull()?.takeIf { it > 0L }
+        while (inFlight && tailStepMs != null && elapsed < deadlineMs) {
+            val step = tailStepMs.coerceAtMost(deadlineMs - elapsed)
+            if (step <= 0L) break
+            delay(step)
+            elapsed += step
+            val (recovered, flight) = recoverDroppedTurn(client, sessionId, sentText)
+            lastInFlight = flight
+            if (recovered != null) return recovered
+            inFlight = flight
+            if (!flight) return null
+        }
+
+        return null
+    }
+
+    /**
+     * Convenience overload that builds a [LarariumClient] from the active endpoint
+     * and delegates to [waitForTurnCommit].
+     */
+    suspend fun waitForTurnCommit(
+        sessionId: String,
+        deadlineMs: Long = 150_000L,
+        sentText: String? = null,
+    ): String? {
+        val ep = currentEndpoint() ?: return null
+        return waitForTurnCommit(clientFactory(ep), sessionId, deadlineMs, sentText)
+    }
+
+    /**
      * Probes the session log for a dropped turn's committed answer, and if
      * the turn is still in flight, re-probes with bounded backoff instead of
      * giving up at first glance — the hearth commits turns even when the
@@ -251,15 +326,8 @@ class HearthChatClient(
         sessionId: String,
         sentText: String,
     ): Pair<String?, Boolean> {
-        var inFlight = false
-        for (waitMs in longArrayOf(0L) + recoveryBackoffMs) {
-            if (waitMs > 0L) delay(waitMs)
-            val (recovered, flight) = recoverDroppedTurn(client, sessionId, sentText)
-            if (recovered != null) return recovered to flight
-            inFlight = flight
-            if (!flight) break
-        }
-        return null to inFlight
+        val recovered = waitForTurnCommit(client, sessionId, recoveryBackoffMs.sum(), sentText)
+        return recovered to lastInFlight
     }
 
     /**
@@ -383,9 +451,11 @@ class HearthChatClient(
                     }
                 }
             } catch (e: CancellationException) {
-                try {
-                    client.cancel(sessionId)
-                } catch (_: Exception) {}
+                if (e.message != WATCHDOG_CANCEL_MESSAGE) {
+                    try {
+                        client.cancel(sessionId)
+                    } catch (_: Exception) {}
+                }
                 throw e
             } catch (e: Exception) {
                 val errorMsg = e.message ?: ""

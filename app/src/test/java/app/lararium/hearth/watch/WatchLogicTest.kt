@@ -609,4 +609,23 @@ class WatchLogicTest {
         assertEquals(9, WatchLogic.advanceCursor(9, 4))
         assertEquals(9, WatchLogic.advanceCursor(9, 9))
     }
+
+    @Test
+    fun shouldWriteThrough_matchesActiveSessionWithRepliesOnly() {
+        val replies = listOf(ReplyPreview(seq = 3, text = "committed answer"))
+
+        // Active session matches and replies non-empty -> write through
+        assertTrue(WatchLogic.shouldWriteThrough("sess-1", "sess-1", replies))
+        assertTrue(shouldWriteThrough("sess-1", "sess-1", replies))
+
+        // Service not running (null/blank activeSessionId) -> do nothing
+        assertFalse(WatchLogic.shouldWriteThrough("sess-1", null, replies))
+        assertFalse(WatchLogic.shouldWriteThrough("sess-1", "", replies))
+
+        // Different session -> do not write through to open chat
+        assertFalse(WatchLogic.shouldWriteThrough("sess-2", "sess-1", replies))
+
+        // Empty replies -> nothing to write through
+        assertFalse(WatchLogic.shouldWriteThrough("sess-1", "sess-1", emptyList()))
+    }
 }

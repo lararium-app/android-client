@@ -241,6 +241,22 @@ object WatchLogic {
      */
     fun shouldWarnBlind(card: CardInfo): Boolean = card.review.isBlank()
 
+    /**
+     * Determines whether scanned watcher replies for [sessionId] should be written
+     * through to the live chat state bound to [activeSessionId].
+     * Returns false when the service is not running ([activeSessionId] is null/blank),
+     * when the session ids do not match, or when [replies] is empty.
+     */
+    fun shouldWriteThrough(
+        sessionId: String,
+        activeSessionId: String?,
+        replies: List<ReplyPreview>,
+    ): Boolean {
+        if (activeSessionId.isNullOrBlank() || sessionId.isBlank()) return false
+        if (sessionId != activeSessionId) return false
+        return replies.isNotEmpty()
+    }
+
 }
 
 /** Top-level shortcut delegating to [WatchLogic.parseCards]. */
@@ -286,4 +302,12 @@ fun notificationText(card: CardInfo, max: Int = 120): String =
 /** Top-level shortcut delegating to [WatchLogic.shouldWarnBlind]. */
 fun shouldWarnBlind(card: CardInfo): Boolean =
     WatchLogic.shouldWarnBlind(card)
+
+/** Top-level shortcut delegating to [WatchLogic.shouldWriteThrough]. */
+fun shouldWriteThrough(
+    sessionId: String,
+    activeSessionId: String?,
+    replies: List<ReplyPreview>,
+): Boolean = WatchLogic.shouldWriteThrough(sessionId, activeSessionId, replies)
+
 

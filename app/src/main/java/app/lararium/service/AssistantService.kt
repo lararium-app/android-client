@@ -29,7 +29,10 @@ import app.lararium.hearth.Endpoint
 import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.SendGate
+import app.lararium.hearth.TurnRetryPolicy
 import app.lararium.hearth.chatLaneFor
+import app.lararium.hearth.watch.ReplyPreview
+import app.lararium.hearth.watch.WatchLogic
 import app.lararium.hearth.watch.WatchStore
 import app.lararium.llm.ChatSession
 import app.lararium.security.SecureKeyManager
@@ -148,6 +151,7 @@ class AssistantService : Service() {
     companion object {
         private const val TAG = "AssistantService"
         private const val NOTIFICATION_ID = 1001
+        const val RESTORE_COMMIT_BUDGET_MS = 150_000L
         
         const val ACTION_ACTIVATE = "app.lararium.ACTIVATE"
         const val ACTION_START_VOICE = "app.lararium.START_VOICE"
@@ -158,6 +162,18 @@ class AssistantService : Service() {
         const val EXTRA_TRIGGER = "trigger"
         const val EXTRA_QUERY = "query"
         const val EXTRA_LAUNCH_OVERLAY = "launch_overlay"
+
+        @Volatile
+        var activeSessionId: String? = null
+
+        @Volatile
+        private var runningInstance: AssistantService? = null
+
+        fun writeThroughReplies(sessionId: String, replies: List<ReplyPreview>) {
+            val svc = runningInstance ?: return
+            if (!WatchLogic.shouldWriteThrough(sessionId, activeSessionId, replies)) return
+            svc.mergeWatchedReplies(sessionId, replies)
+        }
     }
 
     inner class AssistantBinder : Binder() {
@@ -178,6 +194,8 @@ class AssistantService : Service() {
 
         // Initialize hearth client
         hearthChatClient = HearthChatClient(this, app.secureKeyManager)
+        runningInstance = this
+        activeSessionId = hearthChatClient.getStoredSessionId()
 
         // Restore the chat after process death (e.g. Android reclaiming the app
         // while backgrounded): the message list lives in memory, the hearth's
@@ -260,6 +278,10 @@ class AssistantService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.i(TAG, "AssistantService destroyed")
+        if (runningInstance === this) {
+            runningInstance = null
+            activeSessionId = null
+        }
         serviceScope.cancel()
         ttsManager.shutdown()
         voskTranscriber.release()
@@ -666,109 +688,206 @@ class AssistantService : Service() {
 
     /**
      * Direct streaming turn through the paired hearth.
+     * Wraps the send path with [TurnRetryPolicy]: retries once on transient failure
+     * (after checking the session event log first so a delivered user message waits for
+     * commit instead of resending) and enforces a 45 s first-token watchdog.
      */
     private suspend fun streamHearth(query: String) {
         _response.value = ""
         _assistantState.value = AssistantState.Responding
+        activeSessionId = hearthChatClient.lastActiveSessionId()
 
-        val fullResponse = StringBuilder()
-        val epochAtSend = connectionMachine.epoch
-        var receivedAnyToken = false
+        val policy = TurnRetryPolicy()
+        var lastErrorMsg: String? = null
 
-        try {
-            hearthChatClient.streamChat(
-                message = query,
-                onTurnEvent = {
-                    if (!connectionMachine.isStale(epochAtSend)) {
-                        dispatchConnectionEvent(ConnectionEvent.TurnEvent)
+        while (true) {
+            policy.onSendStart()
+            val fullResponse = StringBuilder()
+            val epochAtSend = connectionMachine.epoch
+            var receivedAnyToken = false
+            var doneText: String? = null
+            var attemptError: String? = null
+            var watchdogFired = false
+
+            try {
+                coroutineScope {
+                    val streamJob = launch {
+                        hearthChatClient.streamChat(
+                            message = query,
+                            onTurnEvent = {
+                                activeSessionId = hearthChatClient.lastActiveSessionId()
+                                if (!connectionMachine.isStale(epochAtSend)) {
+                                    dispatchConnectionEvent(ConnectionEvent.TurnEvent)
+                                }
+                            },
+                            onDelta = { chunk ->
+                                if (connectionMachine.isStale(epochAtSend)) {
+                                    Log.w(TAG, "Ignoring late delta on stale epoch")
+                                    return@streamChat
+                                }
+                                receivedAnyToken = true
+                                policy.onFirstToken()
+                                fullResponse.append(chunk)
+                                _response.value = fullResponse.toString()
+                            },
+                            onDone = { accumulated ->
+                                if (connectionMachine.isStale(epochAtSend)) {
+                                    Log.w(TAG, "Ignoring late onDone on stale epoch")
+                                    return@streamChat
+                                }
+                                if (accumulated.isNotEmpty() && accumulated != fullResponse.toString()) {
+                                    fullResponse.setLength(0)
+                                    fullResponse.append(accumulated)
+                                    receivedAnyToken = true
+                                    policy.onFirstToken()
+                                }
+                                doneText = fullResponse.toString()
+                                // The user just watched this reply arrive live in the
+                                // app: advance the watcher's cursor past the committed
+                                // msg event (turn_done carries its seq) so the periodic
+                                // watcher does not re-notify a reply already read.
+                                val seenSession = hearthChatClient.lastActiveSessionId()
+                                val seenSeq = hearthChatClient.lastTurnSeq
+                                if (seenSession != null && seenSeq != null) {
+                                    WatchStore(applicationContext).markSeen(seenSession, seenSeq)
+                                }
+                            },
+                            onError = { friendlyError ->
+                                if (connectionMachine.isStale(epochAtSend)) {
+                                    Log.w(TAG, "Ignoring late onError on stale epoch")
+                                    return@streamChat
+                                }
+                                Log.e(TAG, "Hearth streaming error: $friendlyError")
+                                attemptError = friendlyError
+                                val code = if (friendlyError.contains("authentication", ignoreCase = true) ||
+                                    friendlyError.contains("unauthorized", ignoreCase = true) ||
+                                    friendlyError.contains("401") || friendlyError.contains("403")) 401 else null
+                                dispatchConnectionEvent(ConnectionEvent.ProbeFailure(code))
+                            }
+                        )
                     }
-                },
-                onDelta = { chunk ->
-                    if (connectionMachine.isStale(epochAtSend)) {
-                        Log.w(TAG, "Ignoring late delta on stale epoch")
-                        return@streamChat
+
+                    val watchdogJob = launch {
+                        delay(policy.watchdogTimeoutMs)
+                        if (!receivedAnyToken && doneText == null) {
+                            watchdogFired = true
+                            streamJob.cancel(CancellationException(HearthChatClient.WATCHDOG_CANCEL_MESSAGE))
+                        }
                     }
-                    receivedAnyToken = true
-                    fullResponse.append(chunk)
-                    _response.value = fullResponse.toString()
-                },
-                onDone = { accumulated ->
-                    if (connectionMachine.isStale(epochAtSend)) {
-                        Log.w(TAG, "Ignoring late onDone on stale epoch")
-                        return@streamChat
+
+                    try {
+                        streamJob.join()
+                    } finally {
+                        watchdogJob.cancel()
                     }
-                    if (accumulated.isNotEmpty() && accumulated != fullResponse.toString()) {
-                        fullResponse.setLength(0)
-                        fullResponse.append(accumulated)
-                        receivedAnyToken = true
+                }
+            } catch (e: CancellationException) {
+                if (!watchdogFired && e.message != HearthChatClient.WATCHDOG_CANCEL_MESSAGE) {
+                    Log.i(TAG, "Hearth streaming cancelled")
+                    hearthChatClient.cancel()
+                    if (_assistantState.value !is AssistantState.Complete) {
+                        _assistantState.value = AssistantState.Idle
                     }
+                    throw e
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error in streamHearth", e)
+                val code = extractStatusCode(e)
+                dispatchConnectionEvent(ConnectionEvent.ProbeFailure(code))
+                attemptError = HearthChatClient.friendlyErrorMessage(e.message ?: "")
+            }
+
+            activeSessionId = hearthChatClient.lastActiveSessionId()
+            val isStaleEpoch = connectionMachine.isStale(epochAtSend)
+
+            val stepAction: TurnRetryPolicy.Action = when {
+                watchdogFired -> {
+                    val rawEvents = hearthChatClient.replayStoredSession()
+                    policy.onWatchdogTick(policy.watchdogTimeoutMs, rawEvents, query)
+                }
+                isStaleEpoch -> {
+                    policy.onFailure(attemptError)
+                }
+                attemptError != null -> {
+                    lastErrorMsg = attemptError
+                    policy.onFailure(attemptError)
+                }
+                doneText != null && fullResponse.isNotEmpty() -> {
+                    policy.onTurnDone(fullResponse.toString())
+                }
+                !receivedAnyToken -> {
+                    dispatchConnectionEvent(ConnectionEvent.ProbeFailure(null))
+                    policy.onZeroTokenClose()
+                }
+                else -> {
+                    policy.onTurnDone(fullResponse.toString())
+                }
+            }
+
+            when (val resolved = resolveRetryStep(policy, stepAction, query, lastErrorMsg)) {
+                is TurnRetryPolicy.Action.Complete -> {
+                    finalizeResponse(resolved.responseText, emptyList())
                     sendGate.succeed()
                     _failedSend.value = null
-                    // The user just watched this reply arrive live in the
-                    // app: advance the watcher's cursor past the committed
-                    // msg event (turn_done carries its seq) so the periodic
-                    // watcher does not re-notify a reply already read.
-                    val seenSession = hearthChatClient.lastActiveSessionId()
-                    val seenSeq = hearthChatClient.lastTurnSeq
-                    if (seenSession != null && seenSeq != null) {
-                        WatchStore(applicationContext).markSeen(seenSession, seenSeq)
-                    }
-                },
-                onError = { friendlyError ->
-                    if (connectionMachine.isStale(epochAtSend)) {
-                        Log.w(TAG, "Ignoring late onError on stale epoch")
-                        return@streamChat
-                    }
-                    Log.e(TAG, "Hearth streaming error: $friendlyError")
-                    if (!receivedAnyToken) {
+                    return
+                }
+                is TurnRetryPolicy.Action.Resend -> {
+                    _response.value = ""
+                    _assistantState.value = AssistantState.Responding
+                    continue
+                }
+                is TurnRetryPolicy.Action.Fail -> {
+                    if (!receivedAnyToken || isStaleEpoch) {
                         _failedSend.value = sendGate.fail(query)
                         _response.value = ""
-                        _assistantState.value = AssistantState.Error(friendlyError)
+                        val err = resolved.reason ?: lastErrorMsg
+                        _assistantState.value = if (err != null && !isStaleEpoch && attemptError != null) {
+                            AssistantState.Error(err)
+                        } else {
+                            AssistantState.Idle
+                        }
                     } else {
-                        _response.value = friendlyError
-                        _assistantState.value = AssistantState.Error(friendlyError)
+                        val err = resolved.reason ?: lastErrorMsg ?: HearthChatClient.friendlyErrorMessage("")
+                        _response.value = err
+                        _assistantState.value = AssistantState.Error(err)
                     }
-                    val code = if (friendlyError.contains("authentication", ignoreCase = true) ||
-                        friendlyError.contains("unauthorized", ignoreCase = true) ||
-                        friendlyError.contains("401") || friendlyError.contains("403")) 401 else null
-                    dispatchConnectionEvent(ConnectionEvent.ProbeFailure(code))
+                    return
                 }
-            )
+                else -> return
+            }
+        }
+    }
 
-            if (connectionMachine.isStale(epochAtSend)) {
-                _failedSend.value = sendGate.fail(query)
-                _response.value = ""
-                _assistantState.value = AssistantState.Idle
-            } else if (!receivedAnyToken && _failedSend.value == null && _assistantState.value !is AssistantState.Error) {
-                _failedSend.value = sendGate.fail(query)
-                _response.value = ""
-                _assistantState.value = AssistantState.Idle
-                dispatchConnectionEvent(ConnectionEvent.ProbeFailure(null))
-            } else if (_assistantState.value !is AssistantState.Error && _failedSend.value == null) {
-                finalizeResponse(fullResponse.toString(), emptyList())
-                sendGate.succeed()
-                _failedSend.value = null
+    private suspend fun resolveRetryStep(
+        policy: TurnRetryPolicy,
+        action: TurnRetryPolicy.Action,
+        query: String,
+        lastErrorMsg: String?,
+    ): TurnRetryPolicy.Action {
+        return when (action) {
+            is TurnRetryPolicy.Action.CheckEventLogBeforeRetry -> {
+                if (action.delayMs > 0L) {
+                    delay(action.delayMs)
+                }
+                val rawEvents = hearthChatClient.replayStoredSession()
+                when (val next = policy.onEventLogFetched(rawEvents, query)) {
+                    is TurnRetryPolicy.Action.WaitForCommit -> {
+                        val sid = hearthChatClient.lastActiveSessionId()
+                        val committed = if (sid != null) {
+                            hearthChatClient.waitForTurnCommit(sid, next.deadlineMs, query)
+                        } else null
+                        if (sid != null && committed != null) {
+                            val seenSeq = hearthChatClient.lastTurnSeq
+                            if (seenSeq != null) {
+                                WatchStore(applicationContext).markSeen(sid, seenSeq)
+                            }
+                        }
+                        policy.onCommitWaitResult(committed, lastErrorMsg)
+                    }
+                    else -> next
+                }
             }
-        } catch (e: CancellationException) {
-            Log.i(TAG, "Hearth streaming cancelled")
-            hearthChatClient.cancel()
-            if (_assistantState.value !is AssistantState.Complete) {
-                _assistantState.value = AssistantState.Idle
-            }
-            throw e
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in streamHearth", e)
-            val code = extractStatusCode(e)
-            dispatchConnectionEvent(ConnectionEvent.ProbeFailure(code))
-            if (!receivedAnyToken || connectionMachine.isStale(epochAtSend)) {
-                _failedSend.value = sendGate.fail(query)
-                _response.value = ""
-                _assistantState.value = AssistantState.Idle
-            } else {
-                val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
-                _response.value = friendly
-                _assistantState.value = AssistantState.Error(friendly)
-            }
+            else -> action
         }
     }
 
@@ -820,6 +939,7 @@ class AssistantService : Service() {
         }
         
         _currentChatId = null
+        activeSessionId = null
         
         if (::hearthChatClient.isInitialized) {
             hearthChatClient.clearSession()
@@ -858,6 +978,7 @@ class AssistantService : Service() {
      */
     fun loadHearthSession(sessionId: String, messages: List<ChatSession.Message>) {
         _currentChatId = null
+        activeSessionId = sessionId
         if (::hearthChatClient.isInitialized) {
             val isSameSession = hearthChatClient.getStoredSessionId() == sessionId
             if (isSameSession) {
@@ -870,6 +991,9 @@ class AssistantService : Service() {
                 hearthChatClient.chatSession.setMessages(messages)
             }
             _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
+            if (!isSameSession || _chatMessages.value.lastOrNull()?.role == "assistant") {
+                clearFailedSend()
+            }
         } else {
             getSharedPreferences("assistant_settings", MODE_PRIVATE)
                 .edit()
@@ -881,21 +1005,100 @@ class AssistantService : Service() {
         Log.i(TAG, "Loaded hearth session $sessionId with ${messages.size} messages")
     }
 
+    internal fun mergeWatchedReplies(sessionId: String, replies: List<ReplyPreview>) {
+        if (!::hearthChatClient.isInitialized) return
+        if (activeSessionId != sessionId) return
+        val incoming = replies
+            .filter { it.text.isNotBlank() }
+            .map { ChatSession.Message(role = "assistant", content = it.text, seq = it.seq) }
+        if (incoming.isEmpty()) return
+
+        serviceScope.launch(Dispatchers.Main.immediate) {
+            if (activeSessionId != sessionId) return@launch
+            val current = hearthChatClient.chatSession.getAllMessages()
+            val merged = DrawerLogic.mergeMessages(current, incoming)
+            hearthChatClient.chatSession.setMessages(merged)
+            _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
+            _response.value = ""
+            clearFailedSend()
+            if (ChatStateLogic.isInFlight(_assistantState.value, _response.value)) {
+                _assistantState.value = AssistantState.Complete
+            }
+        }
+    }
+
     /**
      * Cold-start restore: after the process was killed (e.g. Android reclaiming
      * the app while backgrounded), rehydrate the active chat from the stored
      * session's event log. No-op when unpaired, without a stored session, or
      * when messages have already arrived.
+     *
+     * When the replay indicates `in_flight = true`, keeps the pending/typing UI
+     * state, suppresses `failedSend`, awaits turn commit with ~150 s budget via
+     * `waitForTurnCommit`, and merges the committed reply via [DrawerLogic.mergeMessages].
      */
     private fun maybeRestoreHearthChat() {
         serviceScope.launch(Dispatchers.IO) {
             val sid = HearthChatClient.getStoredSessionId(this@AssistantService) ?: return@launch
             if (!ChatStateLogic.shouldRehydrate(_chatMessages.value, _assistantState.value, _response.value)) return@launch
             val raw = hearthChatClient.replayStoredSession() ?: return@launch
-            val restored = DrawerLogic.parseSessionMessages(raw)
-            if (restored.isNotEmpty() && ChatStateLogic.shouldRehydrate(_chatMessages.value, _assistantState.value, _response.value)) {
+            val replay = DrawerLogic.parseSessionReplay(raw)
+            val restored = replay.messages
+            if ((restored.isNotEmpty() || replay.inFlight) &&
+                ChatStateLogic.shouldRehydrate(_chatMessages.value, _assistantState.value, _response.value)
+            ) {
                 loadHearthSession(sid, restored)
-                Log.i(TAG, "Restored ${restored.size} messages from hearth event log")
+                Log.i(TAG, "Restored ${restored.size} messages from hearth event log (inFlight=${replay.inFlight})")
+                if (replay.inFlight) {
+                    clearFailedSend()
+                    _response.value = ""
+                    _assistantState.value = AssistantState.Processing
+                    activeResponseJob?.cancel()
+                    activeResponseJob = serviceScope.launch(Dispatchers.IO) {
+                        val lastUserText = restored.lastOrNull { it.role == "user" }?.content
+                        val committed = hearthChatClient.waitForTurnCommit(
+                            sessionId = sid,
+                            deadlineMs = RESTORE_COMMIT_BUDGET_MS,
+                            sentText = lastUserText
+                        )
+                        if (committed != null) {
+                            val seq = hearthChatClient.lastTurnSeq
+                            val incoming = listOf(
+                                ChatSession.Message(role = "assistant", content = committed, seq = seq)
+                            )
+                            val merged = DrawerLogic.mergeMessages(
+                                hearthChatClient.chatSession.getAllMessages(),
+                                incoming
+                            )
+                            hearthChatClient.chatSession.setMessages(merged)
+                            if (seq != null) {
+                                WatchStore(applicationContext).markSeen(sid, seq)
+                            }
+                            withContext(Dispatchers.Main) {
+                                _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
+                                _response.value = ""
+                                sendGate.succeed()
+                                _failedSend.value = null
+                                _assistantState.value = AssistantState.Complete
+                            }
+                        } else {
+                            val alreadyMerged = hearthChatClient.chatSession
+                                .getAllMessages()
+                                .lastOrNull()?.role == "assistant"
+                            withContext(Dispatchers.Main) {
+                                _response.value = ""
+                                if (alreadyMerged) {
+                                    sendGate.succeed()
+                                    _failedSend.value = null
+                                    _assistantState.value = AssistantState.Complete
+                                } else {
+                                    _failedSend.value = sendGate.fail(lastUserText ?: "")
+                                    _assistantState.value = AssistantState.Error(HearthChatClient.STILL_ANSWERING_HINT)
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -941,6 +1144,7 @@ class AssistantService : Service() {
         // Reload hearth client with updated settings
         val secureKeys = (application as AssistantApplication).secureKeyManager
         hearthChatClient = HearthChatClient(this, secureKeys)
+        activeSessionId = hearthChatClient.getStoredSessionId()
 
         if (isMonitoringEligible()) {
             retryConnectionNow()
