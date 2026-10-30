@@ -731,6 +731,74 @@ class HearthChatClientTest {
     }
 
     @Test
+    fun recoverDroppedTurn_inFlightThenCommitted_deliversRecoveredAnswer() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        prefs.edit().putString("hearth_session_id", "s-eof-recover").apply()
+
+        var eventsCalled = 0
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun streamTurn(
+                id: String,
+                text: String,
+                approval: JSONObject?,
+                onEvent: (HearthEvent) -> Unit
+            ) {
+                // Stream dies cleanly with no terminal event, mid-turn.
+            }
+
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                eventsCalled++
+                return JSONObject().apply {
+                    // First probe: still in flight (reply not committed yet).
+                    // Second probe: committed — the hearth finished despite
+                    // the dead wire.
+                    put("in_flight", eventsCalled < 2)
+                    put("events", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "user")
+                            put("text", "tell me about this repo")
+                            put("seq", 1)
+                        })
+                        if (eventsCalled >= 2) {
+                            put(JSONObject().apply {
+                                put("t", "msg")
+                                put("role", "assistant")
+                                put("text", "Full committed answer.")
+                                put("seq", 2)
+                            })
+                        }
+                    })
+                }
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient },
+            recoveryBackoffMs = longArrayOf(0, 0, 0, 0)
+        )
+
+        var recovered: String? = null
+        var errorText = ""
+
+        chatClient.streamChat(
+            message = "tell me about this repo",
+            onDelta = {},
+            onDone = { recovered = it },
+            onError = { errorText = it }
+        )
+
+        assertEquals(2, eventsCalled)
+        assertEquals("Full committed answer.", recovered)
+        assertEquals("", errorText)
+        // The watch cursor hook relies on this: recovery must record the
+        // committed msg's seq, not the delta it never got.
+        assertEquals(2, chatClient.lastTurnSeq)
+    }
+
+    @Test
     fun recoverDroppedTurn_streamCleanEof_inFlightTrue_emitsStillAnsweringHint() = runBlocking {
         val prefs = FakeSharedPreferences()
         prefs.edit().putString("hearth_session_id", "s-eof-inflight").apply()
@@ -765,7 +833,8 @@ class HearthChatClientTest {
         val chatClient = HearthChatClient(
             endpointProvider = { endpoint },
             prefs = prefs,
-            clientFactory = { fakeClient }
+            clientFactory = { fakeClient },
+            recoveryBackoffMs = longArrayOf(0, 0, 0, 0)
         )
 
         var doneCount = 0
@@ -782,7 +851,9 @@ class HearthChatClientTest {
             }
         )
 
-        assertEquals(1, eventsCalled)
+        // Turn stayed in flight across the whole bounded schedule:
+        // 1 initial probe + 4 zero-delay retries, then degrade to the hint.
+        assertEquals(5, eventsCalled)
         assertEquals(0, doneCount)
         assertEquals(1, errorCount)
         assertEquals(HearthChatClient.STILL_ANSWERING_HINT, errorText)
