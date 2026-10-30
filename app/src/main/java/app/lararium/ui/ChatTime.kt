@@ -40,7 +40,7 @@ fun shouldShowTimestamp(
  * Formats an epoch timestamp in milliseconds into a discreet chat time or date label relative to [now].
  *
  * Formatting rules:
- * - Same calendar day: "HH:mm" short time format.
+ * - Same calendar day: "HH:mm" (or "h:mm a" when [is24Hour] is false) short time format.
  * - Yesterday: [yesterdayWord] followed by a space and "HH:mm" (e.g. "Yesterday 14:30").
  * - Within the last 6 days (excluding today and yesterday): 3-letter weekday short name ("EEE", e.g. "Mon").
  * - Older within the same calendar year: "MMM d" (e.g. "Oct 24").
@@ -49,13 +49,16 @@ fun shouldShowTimestamp(
  * @param epochMillis The wall-clock epoch timestamp in milliseconds of the message.
  * @param now The reference timestamp in milliseconds representing the current time.
  * @param yesterdayWord The localized word for "Yesterday" (defaults to "Yesterday").
+ * @param is24Hour True for "HH:mm" time pattern, false for "h:mm a" (resolved by the UI call site).
  * @return Formatted timestamp label string.
  */
 fun formatTimestampLabel(
     epochMillis: Long,
     now: Long,
-    yesterdayWord: String = "Yesterday"
+    yesterdayWord: String = "Yesterday",
+    is24Hour: Boolean = true
 ): String {
+    val timePattern = if (is24Hour) "HH:mm" else "h:mm a"
     val msgCal = Calendar.getInstance().apply { timeInMillis = epochMillis }
     val nowCal = Calendar.getInstance().apply { timeInMillis = now }
 
@@ -64,7 +67,7 @@ fun formatTimestampLabel(
         msgCal.get(Calendar.DAY_OF_YEAR) == nowCal.get(Calendar.DAY_OF_YEAR)
 
     if (isSameDay) {
-        return SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(epochMillis))
+        return SimpleDateFormat(timePattern, Locale.getDefault()).format(Date(epochMillis))
     }
 
     val yesterdayCal = (nowCal.clone() as Calendar).apply {
@@ -75,7 +78,7 @@ fun formatTimestampLabel(
         msgCal.get(Calendar.DAY_OF_YEAR) == yesterdayCal.get(Calendar.DAY_OF_YEAR)
 
     if (isYesterday) {
-        val timeStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(epochMillis))
+        val timeStr = SimpleDateFormat(timePattern, Locale.getDefault()).format(Date(epochMillis))
         return "$yesterdayWord $timeStr"
     }
 

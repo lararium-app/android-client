@@ -204,4 +204,27 @@ class DrawerLogicTest {
         assertTrue(DrawerLogic.parseSessionMessages("bad json").isEmpty())
         assertTrue(DrawerLogic.parseSessionMessages("{}").isEmpty())
     }
+
+    @Test
+    fun parseSessionMessages_withTs_setsEpochMillisTimestamp() {
+        val json = """{"events":[
+            {"seq":1,"t":"msg","role":"user","text":"hi","ts":"2026-10-15T14:05:00Z"},
+            {"seq":2,"t":"msg","role":"assistant","text":"yo","ts":"2026-10-15T14:05:01.123456789Z"}
+        ]}"""
+        val msgs = DrawerLogic.parseSessionMessages(json)
+        assertEquals(1_792_073_100_000L, msgs[0].timestamp)
+        assertEquals(1_792_073_101_123L, msgs[1].timestamp)
+    }
+
+    @Test
+    fun parseSessionMessages_absentOrMalformedTs_yieldsZero() {
+        val json = """{"events":[
+            {"seq":1,"t":"msg","role":"user","text":"a"},
+            {"seq":2,"t":"msg","role":"user","text":"b","ts":"not-a-date"},
+            {"seq":3,"t":"msg","role":"user","text":"c","ts":""}
+        ]}"""
+        val msgs = DrawerLogic.parseSessionMessages(json)
+        assertEquals(3, msgs.size)
+        msgs.forEach { assertEquals(0L, it.timestamp) }
+    }
 }
