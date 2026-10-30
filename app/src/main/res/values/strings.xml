@@ -53,6 +53,7 @@
     <string name="chat_composer_send">Send message</string>
     <string name="chat_composer_voice">Voice input</string>
     <string name="chat_composer_stop">Stop response</string>
+    <string name="chat_time_yesterday">Yesterday</string>
     <string name="conversations_title">Chats</string>
     <string name="refresh_conversations">Refresh conversations</string>
     <string name="delete_session_title">Delete chat</string>
