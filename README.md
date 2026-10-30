@@ -49,8 +49,17 @@ your pocket. All agent logic, memory, and policy live on hardware you own.
 
 ## Quick start
 
-1. **Install** the APK from [Releases](../../releases) (each release lists its
-   APK SHA-256) or build locally.
+1. **Install** — two lanes, pick one per device:
+   - **Google Play closed beta**: open
+     [play.google.com/apps/testing/app.lararium](https://play.google.com/apps/testing/app.lararium)
+     on the phone, tap **Join tests**, then **Install**. No email list —
+     anyone with the link can opt in, and leaving is one tap.
+   - **Sideload**: install the APK from [Releases](../../releases) (each
+     release lists its APK SHA-256) or build locally.
+
+   Play and sideload sign with different keys, so a Play install updates
+   from the Play Store and a sideloaded APK from GitHub releases — they
+   never update each other.
 2. **Pair** with your hearth: run `hearthd pair` on the server and open the
    emitted `lararium://pair?…` link on the phone, or set the server URL and API
    key manually in Settings.
