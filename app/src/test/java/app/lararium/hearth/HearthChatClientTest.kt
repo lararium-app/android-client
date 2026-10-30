@@ -1226,4 +1226,47 @@ class HearthChatClientTest {
         assertEquals(1, errorCount)
         assertEquals(HearthChatClient.REPLY_LOST_HINT, errorText)
     }
+
+    @Test
+    fun waitForTurnCommit_pollsUntilCommittedAndReturnsReply() = runBlocking {
+        val prefs = FakeSharedPreferences()
+        var polls = 0
+
+        val fakeClient = object : LarariumClient(endpoint) {
+            override suspend fun events(id: String, afterSeq: Int): JSONObject {
+                polls++
+                return JSONObject().apply {
+                    put("in_flight", polls < 3)
+                    put("events", JSONArray().apply {
+                        put(JSONObject().apply {
+                            put("t", "msg")
+                            put("role", "user")
+                            put("text", "cold start question")
+                            put("seq", 1)
+                        })
+                        if (polls >= 3) {
+                            put(JSONObject().apply {
+                                put("t", "msg")
+                                put("role", "assistant")
+                                put("text", "committed after cold start")
+                                put("seq", 2)
+                            })
+                        }
+                    })
+                }
+            }
+        }
+
+        val chatClient = HearthChatClient(
+            endpointProvider = { endpoint },
+            prefs = prefs,
+            clientFactory = { fakeClient },
+            recoveryBackoffMs = longArrayOf(0, 0, 0, 0)
+        )
+
+        val committed = chatClient.waitForTurnCommit(fakeClient, "sess-cold", 150_000L)
+        assertEquals("committed after cold start", committed)
+        assertEquals(3, polls)
+        assertEquals(2, chatClient.lastTurnSeq)
+    }
 }

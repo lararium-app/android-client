@@ -6,6 +6,7 @@ import androidx.work.WorkerParameters
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.LarariumClient
 import app.lararium.security.SecureKeyManager
+import app.lararium.service.AssistantService
 import java.io.IOException
 
 /**
@@ -61,6 +62,9 @@ class HearthWatchWorker(
                 store.setCursor(sessionId, scanResult.newCursor)
 
                 if (scanResult.replies.isNotEmpty()) {
+                    if (WatchLogic.shouldWriteThrough(sessionId, AssistantService.activeSessionId, scanResult.replies)) {
+                        AssistantService.writeThroughReplies(sessionId, scanResult.replies)
+                    }
                     val lastReply = scanResult.replies.last()
                     HearthNotifier.notifyReply(applicationContext, sessionId, sessionTitle, lastReply)
                 }

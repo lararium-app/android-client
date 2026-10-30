@@ -3,6 +3,7 @@ package app.lararium.ui
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -226,5 +227,44 @@ class DrawerLogicTest {
         val msgs = DrawerLogic.parseSessionMessages(json)
         assertEquals(3, msgs.size)
         msgs.forEach { assertEquals(0L, it.timestamp) }
+    }
+
+    @Test
+    fun parseSessionReplay_inFlightTrueAndAbsentFlag() {
+        val inFlightJson = JSONObject().apply {
+            put("in_flight", true)
+            put("events", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("t", "msg"); put("role", "user"); put("text", "Still running?"); put("seq", 1)
+                })
+            })
+        }.toString()
+
+        val inFlightReplay = DrawerLogic.parseSessionReplay(inFlightJson)
+        assertTrue(inFlightReplay.inFlight)
+        assertEquals(1, inFlightReplay.messages.size)
+        assertEquals("user", inFlightReplay.messages[0].role)
+        assertEquals("Still running?", inFlightReplay.messages[0].content)
+        assertEquals(1, inFlightReplay.messages[0].seq)
+
+        val absentFlagJson = JSONObject().apply {
+            put("events", JSONArray().apply {
+                put(JSONObject().apply {
+                    put("t", "msg"); put("role", "user"); put("text", "Hello"); put("seq", 1)
+                })
+                put(JSONObject().apply {
+                    put("t", "msg"); put("role", "assistant"); put("text", "Hi!"); put("seq", 2)
+                })
+            })
+        }.toString()
+
+        val absentFlagReplay = DrawerLogic.parseSessionReplay(absentFlagJson)
+        assertFalse(absentFlagReplay.inFlight)
+        assertEquals(2, absentFlagReplay.messages.size)
+        assertEquals("Hi!", absentFlagReplay.messages[1].content)
+
+        val emptyReplay = DrawerLogic.parseSessionReplay(null)
+        assertFalse(emptyReplay.inFlight)
+        assertTrue(emptyReplay.messages.isEmpty())
     }
 }
