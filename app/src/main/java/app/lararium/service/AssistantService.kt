@@ -5,6 +5,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
@@ -30,6 +31,7 @@ import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.SendGate
 import app.lararium.hearth.chatLaneFor
 import app.lararium.llm.ChatSession
+import app.lararium.security.SecureKeyManager
 import app.lararium.storage.ChatHistoryManager
 import app.lararium.tts.TTSManager
 import app.lararium.ui.CompactAssistantActivity
@@ -109,6 +111,7 @@ class AssistantService : Service() {
 
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var probeJob: Job? = null
+    private var endpointPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
     
     // Currently loaded chat ID (null = new chat)
     private var _currentChatId: String? = null
@@ -213,6 +216,19 @@ class AssistantService : Service() {
         }
 
         initConnectionMonitoring()
+
+        // Pairing writes the endpoint from the UI process; the fresh
+        // connection state machine in here would otherwise stay Unknown
+        // (gray dot) until a turn, a network flip, or a restart. React
+        // to the write directly: strong field ref (prefs listeners are
+        // held weakly) so the listener is never GC'd out from under us.
+        endpointPrefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == SecureKeyManager.PREF_HEARTH_ENDPOINT) {
+                retryConnectionNow()
+            }
+        }
+        (application as? AssistantApplication)?.secureKeyManager
+            ?.addEndpointChangeListener(endpointPrefListener!!)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -251,6 +267,11 @@ class AssistantService : Service() {
             val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
             try { cm?.unregisterNetworkCallback(it) } catch (_: Exception) {}
         }
+        endpointPrefListener?.let {
+            (application as? AssistantApplication)?.secureKeyManager
+                ?.removeEndpointChangeListener(it)
+        }
+        endpointPrefListener = null
     }
 
     private fun launchOverlay() {
