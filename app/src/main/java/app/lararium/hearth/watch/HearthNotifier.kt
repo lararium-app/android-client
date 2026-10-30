@@ -22,6 +22,7 @@ object HearthNotifier {
 
     const val GROUP_CARDS = "app.lararium.cards"
     const val GROUP_REPLIES = "app.lararium.replies"
+    const val EXTRA_SESSION_ID = "lararium_session_id"
 
     /**
      * Lock-screen visibility for custody card notifications (issue #8).
@@ -255,6 +256,7 @@ object HearthNotifier {
         val notifId = (sessionId + reply.seq).hashCode()
         val intent = Intent(context, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+            putExtra(EXTRA_SESSION_ID, sessionId)
         }
         val pendingIntent = PendingIntent.getActivity(
             context,

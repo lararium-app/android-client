@@ -47,6 +47,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private var serviceCollectorsJob: Job? = null
     private var isBound = false
+    private var pendingSessionLoad: Pair<String, List<ChatSession.Message>>? = null
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -83,6 +84,10 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun attachToService(svc: AssistantService) {
         serviceCollectorsJob?.cancel()
+        pendingSessionLoad?.let { (sid, msgs) ->
+            pendingSessionLoad = null
+            svc.loadHearthSession(sid, msgs)
+        }
         // Immediately sync current service values so state is instantly available upon attach
         _chatMessages.value = svc.chatMessages.value
         _assistantState.value = svc.assistantState.value
@@ -143,7 +148,13 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun loadHearthSession(sessionId: String, messages: List<ChatSession.Message>) {
-        _assistantService.value?.loadHearthSession(sessionId, messages)
+        val svc = _assistantService.value
+        if (svc != null) {
+            svc.loadHearthSession(sessionId, messages)
+        } else {
+            pendingSessionLoad = sessionId to messages
+            _chatMessages.value = messages
+        }
     }
 
     fun retryConnectionNow() {
