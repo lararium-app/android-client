@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -39,7 +40,7 @@ import app.lararium.service.AssistantState
 
 /**
  * Full-height chat screen occupying the primary content area under a minimal top bar.
- * Assistant messages are plain text directly on background; user messages in primaryContainer bubbles.
+ * Both user (primaryContainer) and assistant (surfaceVariant) messages render inside symmetric bubbles with timestamp captions.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -315,41 +316,66 @@ fun ChatHomeScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    items(
+                    itemsIndexed(
                         items = messages,
-                        key = { msg ->
+                        key = { _, msg ->
                             if (msg.seq != null) "seq_${msg.seq}"
                             else "${msg.role}_${msg.timestamp}_${msg.content.hashCode()}"
                         }
-                    ) { message ->
-                        if (message.role == "user") {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.End
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(20.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                    modifier = Modifier.widthIn(max = 320.dp)
-                                ) {
-                                    Text(
-                                        text = message.content,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
-                                    )
-                                }
+                    ) { index, message ->
+                        Column(
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            if (shouldShowTimestamp(messages, index)) {
+                                Text(
+                                    text = formatTimestampLabel(
+                                        message.timestamp,
+                                        System.currentTimeMillis(),
+                                        stringResource(R.string.chat_time_yesterday)
+                                    ),
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .align(Alignment.CenterHorizontally)
+                                        .alpha(0.7f)
+                                        .padding(bottom = 8.dp)
+                                )
                             }
-                        } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Start
-                            ) {
-                                SelectionContainer {
-                                    MarkdownText(
-                                        markdown = message.content,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                            if (message.role == "user") {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        modifier = Modifier.widthIn(max = 320.dp)
+                                    ) {
+                                        Text(
+                                            text = message.content,
+                                            style = MaterialTheme.typography.bodyLarge,
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                        )
+                                    }
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.Start
+                                ) {
+                                    Surface(
+                                        shape = RoundedCornerShape(20.dp),
+                                        color = MaterialTheme.colorScheme.surfaceVariant,
+                                        modifier = Modifier.widthIn(max = 320.dp)
+                                    ) {
+                                        SelectionContainer {
+                                            MarkdownText(
+                                                markdown = message.content,
+                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -384,11 +410,17 @@ fun ChatHomeScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.Start
                             ) {
-                                SelectionContainer {
-                                    MarkdownText(
-                                        markdown = streamingResponse,
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
+                                Surface(
+                                    shape = RoundedCornerShape(20.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    modifier = Modifier.widthIn(max = 320.dp)
+                                ) {
+                                    SelectionContainer {
+                                        MarkdownText(
+                                            markdown = streamingResponse,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
