@@ -8,6 +8,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOn
@@ -25,7 +26,8 @@ import java.io.IOException
 class HearthChatClient(
     private val endpointProvider: () -> Endpoint?,
     private val prefs: SharedPreferences,
-    private val clientFactory: (Endpoint) -> LarariumClient = { LarariumClient(it) }
+    private val clientFactory: (Endpoint) -> LarariumClient = { LarariumClient(it) },
+    private val recoveryBackoffMs: LongArray = RECOVERY_BACKOFF_MS
 ) {
 
     companion object {
@@ -39,6 +41,14 @@ class HearthChatClient(
             "Hearth received your message and is still answering. Reopen this chat in a moment — do not resend it."
         const val REPLY_LOST_HINT =
             "Connection dropped before your reply finished. Tap retry — hearth did not complete the reply."
+
+        /**
+         * Wait schedule for re-probing the session log when a dropped
+         * stream finds the turn still in flight: a tool-heavy turn often
+         * commits seconds after the wire dies, so we give it a bounded
+         * chance (~35s) before falling back to the still-answering hint.
+         */
+        val RECOVERY_BACKOFF_MS = longArrayOf(3000, 7000, 12000, 13000)
 
         fun clearStoredSessionId(context: Context) {
             context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -229,6 +239,30 @@ class HearthChatClient(
     }
 
     /**
+     * Probes the session log for a dropped turn's committed answer, and if
+     * the turn is still in flight, re-probes with bounded backoff instead of
+     * giving up at first glance — the hearth commits turns even when the
+     * SSE wire to this phone dies mid-stream. Cancellation (user cancel,
+     * process death) aborts the wait; a turn that never commits within the
+     * schedule degrades to the still-answering hint as before.
+     */
+    private suspend fun recoverDroppedTurnAwait(
+        client: LarariumClient,
+        sessionId: String,
+        sentText: String,
+    ): Pair<String?, Boolean> {
+        var inFlight = false
+        for (waitMs in longArrayOf(0L) + recoveryBackoffMs) {
+            if (waitMs > 0L) delay(waitMs)
+            val (recovered, flight) = recoverDroppedTurn(client, sessionId, sentText)
+            if (recovered != null) return recovered to flight
+            inFlight = flight
+            if (!flight) break
+        }
+        return null to inFlight
+    }
+
+    /**
      * Replays the stored session's event log for cold-start restore.
      * Returns the raw JSON object string (with an "events" array) or null when
      * unpaired, no stored session, or the replay fails.
@@ -339,7 +373,7 @@ class HearthChatClient(
 
                 if (!terminalDelivered && !shouldRetry) {
                     terminalDelivered = true
-                    val (recovered, inFlight) = recoverDroppedTurn(client, sessionId, message)
+                    val (recovered, inFlight) = recoverDroppedTurnAwait(client, sessionId, message)
                     if (recovered != null) {
                         onDone(recovered)
                     } else if (inFlight) {
@@ -359,7 +393,7 @@ class HearthChatClient(
                     shouldRetry = true
                 } else {
                     terminalDelivered = true
-                    val (recovered, inFlight) = recoverDroppedTurn(client, sessionId, message)
+                    val (recovered, inFlight) = recoverDroppedTurnAwait(client, sessionId, message)
                     if (recovered != null) {
                         onDone(recovered)
                     } else if (inFlight) {
