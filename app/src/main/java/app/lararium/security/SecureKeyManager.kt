@@ -27,7 +27,11 @@ class SecureKeyManager(private val context: Context) {
         
         private const val PREFS_NAME = "assistant_secure_prefs"
         private const val PREF_TOKEN_REFRESH_TIME = "token_refresh_time"
-        private const val PREF_HEARTH_ENDPOINT = "hearth_endpoint"
+
+        /** Pref key holding the paired hearth endpoint (public: the
+         *  service listens for changes to it to refresh the connection
+         *  dot immediately after pairing, wherever pairing happened). */
+        const val PREF_HEARTH_ENDPOINT = "hearth_endpoint"
         private const val PREF_PAIRING_CODE = "pairing_code"
         private const val PLAIN_PREFS_NAME = "local_token"
         private const val PLAIN_PAIRING_CODE_KEY = "pairingCode"
@@ -128,6 +132,20 @@ class SecureKeyManager(private val context: Context) {
         val encrypted = encrypt(json)
         prefs.edit().putString(PREF_HEARTH_ENDPOINT, encrypted).apply()
         Log.i(TAG, "Hearth endpoint stored securely")
+    }
+
+    /**
+     * Observe writes to the secure store (pair/unpair re-probes the
+     * connection the moment an endpoint lands, instead of waiting for
+     * the next network event or activity restart). Register-once; the
+     * callback fires on an arbitrary thread.
+     */
+    fun addEndpointChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.registerOnSharedPreferenceChangeListener(listener)
+    }
+
+    fun removeEndpointChangeListener(listener: android.content.SharedPreferences.OnSharedPreferenceChangeListener) {
+        prefs.unregisterOnSharedPreferenceChangeListener(listener)
     }
 
     /**
