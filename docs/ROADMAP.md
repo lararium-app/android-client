@@ -58,6 +58,16 @@ with PGP export/import later.
 zero occurrences of the secret in session events, logs, or model context
 (verified by redaction tests).
 
+**Complete (2026-10-31).** CREDHANDLE-SPEC v1 implemented in the daemon
+(PR #208–#211): handle store, rail resolve, loop redaction hook,
+per-handle rate limits, write-only phone admin endpoints, and the V-T1
+end-to-end suite — six proofs green, covering zero secret occurrences in
+events, daemon logs, model payloads or audit (raw and base64), denial
+semantics, and V10 blind-CONNECT regression. No web-login connector type
+exists yet, so the suite authenticates against an HTTPS login fixture;
+the proofs re-run unchanged when the first real web-login connector
+ships.
+
 ## T2 — Connector lifecycle
 
 Today the catalog is inventory-only (`GET /v1/mcp/connectors`). Add
