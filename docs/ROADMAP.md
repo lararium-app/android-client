@@ -83,6 +83,18 @@ last-used time, and duplicate-aware add (existing connector offers Edit).
 the phone, and every state change appears in the app within seconds
 without polling.
 
+**Complete (2026-11-01).** CONNECTOR-LIFE-SPEC v1 implemented across
+three PRs: daemon lifecycle verbs with probe-gated custody cards
+(PR #214), the surface plane — add/edit/delete/toggle endpoints, review
+cards, and the no-polling SSE status rail (PR #215), and the V-T2 exit
+suite (PR #216): nine end-to-end proofs on real daemons, doors, vaults
+and stdio children — approve/deny paths with OS-level child reaping,
+duplicate 409s, tool-scope edits, tombstoned deletes, secret-needle
+sweep (raw, base64, alignment), toggle round-trips, re-auth via T1
+handles, and old-client wire compatibility. The suite also closed the
+audit gap: `mcp_add_denied` now lands in the vault audit with the
+denying actor. `vt2` runs as its own CI job.
+
 ## T3 — Device rails (reverse channel)
 
 The phone exposes itself to the hearth as an MCP server (`/v1/devices`,
