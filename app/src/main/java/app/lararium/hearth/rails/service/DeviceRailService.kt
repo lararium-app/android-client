@@ -50,6 +50,9 @@ class DeviceRailService : Service() {
         const val CHANNEL_ID = "lararium_device_rails"
         const val CHANNEL_NAME = "Lararium device rails"
 
+        val receiptQueue = ReceiptQueue()
+        val streamState = kotlinx.coroutines.flow.MutableStateFlow<DeviceStreamState>(DeviceStreamState.Idle)
+
         @Volatile
         var isRunning: Boolean = false
             private set
@@ -74,7 +77,7 @@ class DeviceRailService : Service() {
 
     val stateMachine = DeviceStreamStateMachine()
     val seqTracker = SeqTracker()
-    val receiptQueue = ReceiptQueue()
+    val receiptQueue get() = DeviceRailService.receiptQueue
     val actionSheetLogic = ActionSheetLogic()
 
     private lateinit var pairingStore: DevicePairingStore
@@ -250,30 +253,11 @@ class DeviceRailService : Service() {
         val streamEvent = RailsWire.parseStreamEvent(event, data)
         when (streamEvent) {
             is StreamEvent.ActionDispatch -> {
-                val action = streamEvent.action
-                actionSheetLogic.present(action)
-
-                val executor = toolExecutors.firstOrNull { it.canHandle(action.tool) }
-                serviceScope.launch {
-                    val (ok, resultOrError) = if (executor != null) {
-                        executor.execute(action)
-                    } else {
-                        Pair(false, "unsupported_tool")
-                    }
-
-                    if (ok) {
-                        actionSheetLogic.approve(action.actionId)
-                    } else {
-                        actionSheetLogic.deny(action.actionId, resultOrError)
-                    }
-
-                    val receiptBody = actionSheetLogic.receiptBody(action.actionId)
-                    receiptQueue.enqueue(action.actionId, receiptBody)
-                    receiptDrain.drainOnce()
-                }
+                app.lararium.hearth.rails.ui.InFlightActions.put(streamEvent.action, this)
             }
             is StreamEvent.PairRequired -> {
                 stateMachine.onFailure(OfflineCause.PairRequired)
+                streamState.value = DeviceStreamState.RepairRequired
                 updateNotification(stateMachine.state)
             }
             StreamEvent.Unknown -> {}
@@ -334,6 +318,7 @@ class DeviceRailService : Service() {
     }
 
     private fun updateNotification(state: DeviceStreamState) {
+        streamState.value = state
         val nm = getSystemService(NotificationManager::class.java)
         nm?.notify(NOTIFICATION_ID, buildNotification(stateText(state)))
     }
