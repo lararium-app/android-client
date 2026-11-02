@@ -58,6 +58,7 @@ import app.lararium.audio.VoskTranscriber
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.PairingLink
+import app.lararium.hearth.rails.service.DevicePairingController
 import app.lararium.hearth.badge.BadgeLogic
 import app.lararium.hearth.badge.HearthBadgeState
 import app.lararium.security.SecureKeyManager
@@ -157,6 +158,11 @@ class MainActivity : ComponentActivity() {
                 HearthWatchScheduler.ensurePeriodic(app)
                 HearthWatchScheduler.refreshNow(app)
                 pairingStatus.value = "Paired with ${ep.name} ✓"
+                try {
+                    DevicePairingController.autoRegister(app)
+                } catch (e: Exception) {
+                    android.util.Log.w("MainActivity", "Device rails auto-registration deferred: ${e.message}")
+                }
             } catch (e: Exception) {
                 pairingStatus.value = "Pairing failed: ${e.message}"
             }
