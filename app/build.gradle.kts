@@ -34,8 +34,8 @@ android {
         applicationId = "app.lararium"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "0.10.0-alpha"
+        versionCode = 25
+        versionName = "0.11.0-alpha"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
