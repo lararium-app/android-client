@@ -2,6 +2,8 @@ package app.lararium.hearth.rails.service
 
 import android.content.Context
 import android.os.Build
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import app.lararium.hearth.EndpointPolicy
 import app.lararium.hearth.HttpResponse
 import app.lararium.hearth.Net
@@ -48,6 +50,20 @@ object DevicePairingController {
         }
     }
 
+    /**
+     * Every raw-socket call is dispatched off the caller's thread. The
+     * pairing screen launches on the UI scope (Main) and Android throws
+     * NetworkOnMainThreadException — with a null message — for plain
+     * sockets opened there, which surfaced as "Hearth unreachable" with
+     * zero packets on the wire.
+     */
+    private suspend fun postOffMain(
+        httpPoster: suspend (String, String, Map<String, String>) -> HttpResponse,
+        url: String,
+        body: String,
+        headers: Map<String, String>
+    ): HttpResponse = withContext(Dispatchers.IO) { httpPoster(url, body, headers) }
+
     suspend fun autoRegister(
         context: Context,
         httpPoster: suspend (url: String, body: String, headers: Map<String, String>) -> HttpResponse = { u, b, h -> Net.post(u, b, h) },
@@ -91,7 +107,8 @@ object DevicePairingController {
 
         val registerUrl = "$cleanBase/v1/devices/register"
         val registerResponse = try {
-            httpPoster(
+            postOffMain(
+                httpPoster,
                 registerUrl,
                 registerBody.toString(),
                 mapOf(
@@ -160,7 +177,8 @@ object DevicePairingController {
                 .put("device_name", Build.MODEL ?: "android")
                 .toString()
             val pairResponse = try {
-                httpPoster(
+                postOffMain(
+                    httpPoster,
                     pairUrl,
                     pairBody,
                     mapOf("Content-Type" to "application/json")
@@ -213,7 +231,8 @@ object DevicePairingController {
 
         val registerUrl = "$effectiveBase/v1/devices/register"
         val registerResponse = try {
-            httpPoster(
+            postOffMain(
+                httpPoster,
                 registerUrl,
                 registerBody.toString(),
                 mapOf(
