@@ -91,7 +91,7 @@ jobs:
         # CodeQL requires a real compile for Java/Kotlin (no no-build mode
         # for this language pair at the pinned toolchain). Same recipe the
         # app-build workflow proves green on these runners.
-        run: ./gradlew assembleDebug --no-daemon -x lint
+        run: ./gradlew assembleGithubDebug --no-daemon -x lint
       - uses: github/codeql-action/analyze@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3.28.11
         with:
           category: /language:java-kotlin

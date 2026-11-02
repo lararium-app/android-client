@@ -118,7 +118,9 @@ class DeviceRailService : Service() {
         )
 
         toolExecutors.add(DialerToolExecutor(this))
-        toolExecutors.add(SmsToolExecutor(this))
+        if (app.lararium.BuildConfig.DIST_CHANNEL == "github") {
+            toolExecutors.add(SmsToolExecutor(this))
+        }
 
         setupDataSources()
         registerNetworkCallback()
@@ -200,11 +202,10 @@ class DeviceRailService : Service() {
     private fun setupDataSources() {
         val calendarSource = CalendarDataSource(this)
         val contactsSource = ContactsDataSource(this)
-        val callLogSource = CallLogDataSource(this)
         val notificationsSource = NotificationsDataSource(this)
         val healthSource = HealthDataSource(this)
 
-        dataSources.addAll(listOf(calendarSource, contactsSource, callLogSource, notificationsSource, healthSource))
+        dataSources.addAll(listOf(calendarSource, contactsSource, notificationsSource, healthSource))
 
         val calendarEngine = SyncEngine(
             rail = "calendar",
@@ -224,15 +225,6 @@ class DeviceRailService : Service() {
         )
         contactsSource.registerObserver { contactsEngine.notifyDataChanged() }
 
-        val callLogEngine = SyncEngine(
-            rail = "calllog",
-            snapshotProvider = { callLogSource.snapshot() },
-            seqTracker = seqTracker,
-            endpointProvider = { pairingStore.getEndpoint() },
-            coroutineScope = serviceScope
-        )
-        callLogSource.registerObserver { callLogEngine.notifyDataChanged() }
-
         val notificationsEngine = SyncEngine(
             rail = "notifications",
             snapshotProvider = { notificationsSource.snapshot() },
@@ -250,7 +242,22 @@ class DeviceRailService : Service() {
             coroutineScope = serviceScope
         )
 
-        syncEngines.addAll(listOf(calendarEngine, contactsEngine, callLogEngine, notificationsEngine, healthEngine))
+        syncEngines.addAll(listOf(calendarEngine, contactsEngine, notificationsEngine, healthEngine))
+
+        if (app.lararium.BuildConfig.DIST_CHANNEL == "github") {
+            val callLogSource = CallLogDataSource(this)
+            dataSources.add(callLogSource)
+
+            val callLogEngine = SyncEngine(
+                rail = "calllog",
+                snapshotProvider = { callLogSource.snapshot() },
+                seqTracker = seqTracker,
+                endpointProvider = { pairingStore.getEndpoint() },
+                coroutineScope = serviceScope
+            )
+            callLogSource.registerObserver { callLogEngine.notifyDataChanged() }
+            syncEngines.add(callLogEngine)
+        }
     }
 
     private fun startSupervisor() {

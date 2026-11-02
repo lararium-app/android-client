@@ -60,6 +60,11 @@ your pocket. All agent logic, memory, and policy live on hardware you own.
    Play and sideload sign with different keys, so a Play install updates
    from the Play Store and a sideloaded APK from GitHub releases — they
    never update each other.
+
+   **GitHub vs Play Store**:
+   - **GitHub Releases APK**: includes every rail, including SMS and call log.
+   - **Google Play closed alpha**: the same app minus the SMS and call-log rails,
+     because Google restricts those permissions to default-handler apps.
 2. **Pair** with your hearth: run `hearthd pair` on the server and open the
    emitted `lararium://pair?…` link on the phone, or set the server URL and API
    key manually in Settings.
@@ -78,7 +83,7 @@ your pocket. All agent logic, memory, and policy live on hardware you own.
 git clone https://github.com/lararium-app/android-client.git
 cd android-client
 echo "sdk.dir=$ANDROID_HOME" > local.properties
-gradle assembleDebug        # app/build/outputs/apk/debug/app-debug.apk
+./gradlew assembleGithubDebug        # app/build/outputs/apk/github/debug/app-github-debug.apk
 ```
 
 CI builds debug APKs on every push to `main` (Actions → *Build APK*).

@@ -74,11 +74,11 @@ jobs:
         run: printf '%s' "$LARARIUM_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/lararium-release.jks"
 
       - name: Unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testPlayReleaseUnitTest --no-daemon
 
       - name: Build release bundle
         run: |
-          ./gradlew bundleRelease --no-daemon -x lint \
+          ./gradlew bundlePlayRelease --no-daemon -x lint \
             "-PLARARIUM_UPLOAD_STORE_FILE=$RUNNER_TEMP/lararium-release.jks" \
             "-PLARARIUM_UPLOAD_STORE_PASSWORD=$LARARIUM_KEYSTORE_PASSWORD" \
             "-PLARARIUM_UPLOAD_KEY_ALIAS=$LARARIUM_KEY_ALIAS" \
@@ -90,7 +90,7 @@ jobs:
           set -euo pipefail
           VERSION_NAME=$(sed -n 's/.*versionName = "\(.*\)".*/\1/p' app/build.gradle.kts)
           echo "versionName=$VERSION_NAME" >> "$GITHUB_OUTPUT"
-          cp app/build/outputs/bundle/release/app-release.aab "lararium-$VERSION_NAME-$TRACK.aab"
+          cp app/build/outputs/bundle/playRelease/app-play-release.aab "lararium-$VERSION_NAME-$TRACK.aab"
 
       - name: Upload bundle artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact v4
@@ -111,7 +111,7 @@ jobs:
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: app.lararium
-          releaseFiles: app/build/outputs/bundle/release/app-release.aab
+          releaseFiles: app/build/outputs/bundle/playRelease/app-play-release.aab
           tracks: ${{ inputs.track }}
           releaseName: ${{ steps.stage.outputs.versionName }}
           status: ${{ (inputs.draft == false || inputs.draft == 'false') && 'completed' || 'draft' }}

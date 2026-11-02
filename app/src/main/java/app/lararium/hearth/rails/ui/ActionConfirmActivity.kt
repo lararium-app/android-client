@@ -51,7 +51,11 @@ class ActionConfirmActivity : ComponentActivity() {
             return
         }
 
-        val executors = listOf(DialerToolExecutor(this), SmsToolExecutor(this))
+        val executors = if (app.lararium.BuildConfig.DIST_CHANNEL == "github") {
+            listOf(DialerToolExecutor(this), SmsToolExecutor(this))
+        } else {
+            listOf(DialerToolExecutor(this))
+        }
         val sheetPresenter = SheetPresenter(
             action = action,
             executors = executors,
