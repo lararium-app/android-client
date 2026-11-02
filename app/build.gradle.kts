@@ -34,8 +34,8 @@ android {
         applicationId = "app.lararium"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
-        versionName = "0.11.3-alpha"
+        versionCode = 29
+        versionName = "0.11.4-alpha"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -49,6 +49,18 @@ android {
             abiFilters += listOf("arm64-v8a")
         }
 
+    }
+
+    flavorDimensions += "dist"
+    productFlavors {
+        create("github") {
+            dimension = "dist"
+            buildConfigField("String", "DIST_CHANNEL", "\"github\"")
+        }
+        create("play") {
+            dimension = "dist"
+            buildConfigField("String", "DIST_CHANNEL", "\"play\"")
+        }
     }
 
     signingConfigs {
