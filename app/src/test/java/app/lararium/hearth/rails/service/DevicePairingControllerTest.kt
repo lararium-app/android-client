@@ -65,15 +65,23 @@ class DevicePairingControllerTest {
         val fakeStore = DevicePairingStore(plain, secure)
 
         val postedUrls = mutableListOf<String>()
+        val pairBodies = mutableMapOf<String, String>()
+        val registerAuth = mutableListOf<String>()
         var serviceStarted = false
 
         val result = DevicePairingController.pair(
             context = mockk(relaxed = true),
             baseUrl = "https://example.com:7717",
-            token = "lar1_test_pair_token",
-            httpPoster = { url, _, _ ->
+            token = "pair1_testcode",
+            httpPoster = { url, body, headers ->
                 postedUrls.add(url)
-                HttpResponse(200, "{\"ok\":true}")
+                pairBodies[url] = body
+                if (url.endsWith("/v1/pair")) {
+                    HttpResponse(200, "{\"token\":\"lar1_minted\",\"user_id\":\"app:pixel\"}")
+                } else {
+                    registerAuth.add(headers["Authorization"] ?: "")
+                    HttpResponse(202, "{\"device_id\":\"pixel\",\"card_id\":\"c1\"}")
+                }
             },
             storeProvider = { fakeStore },
             serviceStarter = { serviceStarted = true }
@@ -82,15 +90,20 @@ class DevicePairingControllerTest {
         assertTrue(result.isSuccess)
         assertNotNull(result.endpoint)
         assertEquals("https://example.com:7717", result.endpoint!!.baseUrl)
-        assertEquals("lar1_test_pair_token", result.endpoint!!.token)
+        // Persisted credential is the MINTED token, never the spent code.
+        assertEquals("lar1_minted", result.endpoint!!.token)
         assertTrue(serviceStarted)
 
         assertEquals(2, postedUrls.size)
-        assertEquals("https://example.com:7717/local/device/v1/pair", postedUrls[0])
-        assertEquals("https://example.com:7717/local/device/v1/register", postedUrls[1])
+        assertEquals("https://example.com:7717/v1/pair", postedUrls[0])
+        assertEquals("https://example.com:7717/v1/devices/register", postedUrls[1])
+        // Pair redeems the code in the BODY, not a bearer header.
+        assertEquals("pair1_testcode", JSONObject(pairBodies[postedUrls[0]]).getString("code"))
+        // Register rides on the minted token.
+        assertEquals(listOf("Bearer lar1_minted"), registerAuth)
 
         assertTrue(fakeStore.isPaired())
-        assertEquals("https://example.com:7717", fakeStore.getEndpoint()?.baseUrl)
+        assertEquals("lar1_minted", fakeStore.getEndpoint()?.token)
     }
 
     @Test
@@ -117,7 +130,7 @@ class DevicePairingControllerTest {
             token = "lar1_test",
             httpPoster = { url, _, _ ->
                 if (url.endsWith("/pair")) {
-                    HttpResponse(200, "{\"ok\":true}")
+                    HttpResponse(200, "{\"token\":\"lar1_minted\",\"user_id\":\"app:pixel\"}")
                 } else {
                     HttpResponse(409, "{\"error\":\"duplicate_name\"}")
                 }

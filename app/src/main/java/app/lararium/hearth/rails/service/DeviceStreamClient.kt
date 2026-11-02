@@ -15,7 +15,7 @@ import javax.net.ssl.HttpsURLConnection
 /**
  * SSE streaming client for device rails action dispatches (F1).
  *
- * Connects to GET /local/device/v1/stream with Bearer auth, feeds bytes to
+ * Connects to GET /v1/devices/<id>/stream with Bearer auth, feeds bytes to
  * DeviceStreamStateMachine, and passes incoming event frames to the callback.
  * Enforces strict epoch checking and non-retryable RepairRequired on 401/403 or pair_required.
  */
@@ -42,7 +42,7 @@ class DeviceStreamClient(
         stateMachine.onConnecting()
         val epoch = stateMachine.currentEpoch()
 
-        val urlString = "${endpoint.baseUrl.trimEnd('/')}/local/device/v1/stream"
+        val urlString = "${endpoint.baseUrl.trimEnd('/')}/v1/devices/${endpoint.deviceId}/stream"
         val rejectReason = EndpointPolicy.rejectReason(urlString)
         if (rejectReason != null) {
             if (stateMachine.isCurrentEpoch(epoch)) {

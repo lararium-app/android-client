@@ -54,7 +54,7 @@ class SyncEngine(
         val currentRows = snapshotProvider()
         val acceptedSeq = seqTracker.acceptedSeq(rail)
 
-        val url = "${endpoint.baseUrl.trimEnd('/')}/local/device/v1/sync"
+        val url = "${endpoint.baseUrl.trimEnd('/')}/v1/devices/${endpoint.deviceId}/sync"
         val headers = mapOf(
             "Authorization" to "Bearer ${endpoint.token}",
             "Content-Type" to "application/json"

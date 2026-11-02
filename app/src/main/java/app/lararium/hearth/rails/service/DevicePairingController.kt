@@ -7,14 +7,20 @@ import app.lararium.hearth.HttpResponse
 import app.lararium.hearth.Net
 import app.lararium.hearth.rails.DeclaredRail
 import app.lararium.hearth.rails.RailsWire
+import org.json.JSONObject
 
 /**
  * Orchestrates device pairing and registration intake (F6, spec A3).
  *
- * Sequence:
- * 1. POST /local/device/v1/pair with Bearer token per spec.
+ * Wire contract per DEVICE-RAILS-SPEC (daemon: internal/surface/pair.go,
+ * devices_routes.go):
+ * 1. POST /v1/pair with body {"code": "<pair1_…>", "device_name": "…"}.
+ *    A code-level failure must surface a token the UI maps to a friendly
+ *    message ("bad token" → invalid/expired, "already_paired" → conflict).
  * 2. On success, generate device_id conforming to ^[a-z0-9][a-z0-9_-]{0,31}$.
- * 3. Build registration envelope via RailsWire.buildRegisterBody and POST /local/device/v1/register.
+ * 3. Build registration envelope via RailsWire.buildRegisterBody and POST
+ *    /v1/devices/register with Bearer auth of the token MINTED in step 1 —
+ *    the pairing code itself is never a bearer credential.
  * 4. Persist endpoint credentials securely via DevicePairingStore.
  * 5. Start DeviceRailService.
  */
@@ -55,27 +61,49 @@ object DevicePairingController {
             return Result.Failure("Invalid endpoint URL: $rejectReason")
         }
 
-        val authHeaders = mapOf(
-            "Authorization" to "Bearer $token",
-            "Content-Type" to "application/json"
-        )
-
-        // Step 1: POST /local/device/v1/pair
-        val pairUrl = "$cleanBase/local/device/v1/pair"
+        // Step 1: redeem the pairing code. POST /v1/pair,
+        // body {"code", "device_name"}; success -> {"token", "user_id"}.
+        val pairUrl = "$cleanBase/v1/pair"
+        val pairBody = JSONObject()
+            .put("code", token.trim())
+            .put("device_name", Build.MODEL ?: "android")
+            .toString()
         val pairResponse = try {
-            httpPoster(pairUrl, "{}", authHeaders)
+            httpPoster(
+                pairUrl,
+                pairBody,
+                mapOf("Content-Type" to "application/json")
+            )
         } catch (e: Exception) {
             return Result.Failure("Pairing failed: ${e.message ?: "network error"}")
         }
 
+        // Friendly-token the UI maps: 401 -> invalid/expired code,
+        // 409 -> hearth already paired / code spent.
+        if (pairResponse.status == 401) {
+            return Result.Failure("bad token", isRetryable = true)
+        }
+        if (pairResponse.status == 409) {
+            return Result.Failure("already_paired", isRetryable = true)
+        }
         if (pairResponse.status !in 200..299) {
-            return Result.Failure("Pairing rejected with status ${pairResponse.status}: ${pairResponse.body}")
+            return Result.Failure(
+                "Pairing rejected with status ${pairResponse.status}: ${pairResponse.body}"
+            )
+        }
+        val mintedToken = try {
+            JSONObject(pairResponse.body).optString("token")
+        } catch (_: Exception) {
+            ""
+        }
+        if (mintedToken.isBlank()) {
+            return Result.Failure("Pairing response carried no token")
         }
 
         // Step 2: Generate sanitized device_id matching ^[a-z0-9][a-z0-9_-]{0,31}$
         val deviceId = sanitizeDeviceId(Build.MODEL ?: "android")
 
-        // Step 3: Build registration payload and POST /local/device/v1/register
+        // Step 3: Build registration payload and POST /v1/devices/register
         val declaredRails = RailsWire.RAIL_NAMES.map { name ->
             DeclaredRail(
                 name = name,
@@ -89,9 +117,16 @@ object DevicePairingController {
             railsDeclared = declaredRails
         )
 
-        val registerUrl = "$cleanBase/local/device/v1/register"
+        val registerUrl = "$cleanBase/v1/devices/register"
         val registerResponse = try {
-            httpPoster(registerUrl, registerBody.toString(), authHeaders)
+            httpPoster(
+                registerUrl,
+                registerBody.toString(),
+                mapOf(
+                    "Authorization" to "Bearer $mintedToken",
+                    "Content-Type" to "application/json"
+                )
+            )
         } catch (e: Exception) {
             return Result.Failure("Registration failed: ${e.message ?: "network error"}")
         }
@@ -104,8 +139,9 @@ object DevicePairingController {
             return Result.Failure("Registration rejected with status ${registerResponse.status}: ${registerResponse.body}")
         }
 
-        // Step 4: Persist credentials in DevicePairingStore
-        val endpoint = DeviceEndpoint(baseUrl = cleanBase, token = token, deviceId = deviceId)
+        // Step 4: Persist credentials in DevicePairingStore —
+        // the minted API token, never the spent pairing code.
+        val endpoint = DeviceEndpoint(baseUrl = cleanBase, token = mintedToken, deviceId = deviceId)
         val store = storeProvider?.invoke(context) ?: DevicePairingStore(context)
         store.saveEndpoint(endpoint)
 
