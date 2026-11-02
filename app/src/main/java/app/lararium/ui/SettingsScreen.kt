@@ -54,6 +54,7 @@ import app.lararium.BuildConfig
 import app.lararium.R
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.EndpointPolicy
+import app.lararium.hearth.rails.service.DeviceRailService
 import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.PairError
@@ -1305,6 +1306,9 @@ fun PairHearthDialog(
                         .apply()
                     HearthWatchScheduler.ensurePeriodic(app)
                     HearthWatchScheduler.refreshNow(app)
+                    // One pairing lights up rails too: the service performs
+                    // /v1/devices/register with the stored hearth token.
+                    DeviceRailService.ensureRunning(app)
                     onPaired(ep)
                     onDismiss()
                 } catch (e: PairError) {

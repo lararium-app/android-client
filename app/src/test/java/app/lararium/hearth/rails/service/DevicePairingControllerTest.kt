@@ -313,4 +313,37 @@ class DevicePairingControllerTest {
         assertTrue(fakeStore.isPaired())
         assertEquals("lar1_minted_from_code", fakeStore.getEndpoint()?.token)
     }
+
+    @Test
+    fun `pairing network calls never run on the calling main thread`() = runBlocking {
+        val plain = FakeSharedPreferences()
+        val secure = FakeSharedPreferences()
+        val fakeStore = DevicePairingStore(plain, secure)
+        val threads = mutableListOf<String>()
+        val callerThread = Thread.currentThread().name
+
+        val result = DevicePairingController.pair(
+            context = mockk(relaxed = true),
+            baseUrl = "https://example.com:7717",
+            token = "pair1_threadtest",
+            httpPoster = { url, _, _ ->
+                threads += Thread.currentThread().name
+                if (url.endsWith("/v1/pair")) {
+                    HttpResponse(200, "{\"token\":\"lar1_thread_ok\"}")
+                } else {
+                    HttpResponse(200, "{\"device_id\":\"pixel\",\"status\":\"registered\"}")
+                }
+            },
+            storeProvider = { fakeStore },
+            hearthEndpointProvider = { null },
+            serviceStarter = { }
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, threads.size)
+        assertTrue(
+            "pairing HTTP ran on the caller thread ($callerThread): $threads",
+            threads.none { it == callerThread }
+        )
+    }
 }
