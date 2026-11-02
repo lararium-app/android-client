@@ -47,7 +47,7 @@ class ReceiptDrainTest {
         assertEquals(1, deliveredCount)
         assertTrue(queue.isDelivered("act-101"))
         assertEquals(0, queue.pending().size)
-        assertEquals("https://example.com:7717/local/device/v1/actions/act-101/receipt", postedUrls.first())
+        assertEquals("https://example.com:7717/v1/devices/test-dev/actions/act-101/receipt", postedUrls.first())
     }
 
     @Test
