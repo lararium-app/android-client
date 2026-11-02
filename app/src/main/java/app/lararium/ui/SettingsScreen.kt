@@ -59,6 +59,7 @@ import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.PairError
 import app.lararium.hearth.PairingLink
 import app.lararium.hearth.watch.HearthWatchScheduler
+import app.lararium.hearth.rails.ui.DevicesActivity
 import androidx.compose.ui.res.stringResource
 import kotlinx.coroutines.launch
 
@@ -191,6 +192,14 @@ fun SettingsScreen(
                                 stringResource(R.string.hearth_not_paired)
                             },
                             onClick = { showPairHearthDialog = true }
+                        )
+                        SettingsItem(
+                            icon = Icons.Default.Devices,
+                            title = stringResource(R.string.settings_devices_title),
+                            subtitle = stringResource(R.string.settings_devices_desc),
+                            onClick = {
+                                context.startActivity(Intent(context, DevicesActivity::class.java))
+                            }
                         )
                         if (hearthEndpoint != null) {
                             Surface(

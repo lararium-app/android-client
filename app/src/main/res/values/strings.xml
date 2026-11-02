@@ -124,4 +124,8 @@
     <string name="connection_dot_desc_reconnecting">Reconnecting to hearth</string>
     <string name="connection_dot_desc_offline">Offline</string>
     <string name="connection_dot_desc_unknown">Connection status unknown</string>
+
+    <!-- Settings: Device Rails (Lane G) -->
+    <string name="settings_devices_title">Device Rails</string>
+    <string name="settings_devices_desc">On-device capabilities and remote action controls</string>
 </resources>
