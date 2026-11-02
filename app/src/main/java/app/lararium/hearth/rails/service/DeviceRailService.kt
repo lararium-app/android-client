@@ -24,6 +24,7 @@ import app.lararium.hearth.rails.RailsWire
 import app.lararium.hearth.rails.ReceiptQueue
 import app.lararium.hearth.rails.SeqTracker
 import app.lararium.hearth.rails.StreamEvent
+import app.lararium.security.SecureKeyManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -59,7 +60,12 @@ class DeviceRailService : Service() {
 
         fun ensureRunning(context: Context) {
             val store = DevicePairingStore(context)
-            if (store.isPaired()) {
+            val hasHearth = try {
+                SecureKeyManager(context).getHearthEndpoint() != null
+            } catch (_: Exception) {
+                false
+            }
+            if (store.isPaired() || hasHearth) {
                 val intent = Intent(context, DeviceRailService::class.java)
                 ContextCompat.startForegroundService(context, intent)
             }
@@ -120,8 +126,45 @@ class DeviceRailService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!pairingStore.isPaired()) {
-            stopSelf()
-            return START_NOT_STICKY
+            val keyManager = try {
+                SecureKeyManager(this)
+            } catch (_: Exception) {
+                null
+            }
+            val hasHearth = keyManager?.getHearthEndpoint() != null
+            if (hasHearth) {
+                val initialNotification = buildNotification("Registering device rails…")
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(
+                        NOTIFICATION_ID,
+                        initialNotification,
+                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                    )
+                } else {
+                    startForeground(NOTIFICATION_ID, initialNotification)
+                }
+                isRunning = true
+
+                serviceScope.launch {
+                    val result = DevicePairingController.autoRegister(this@DeviceRailService)
+                    if (result.isSuccess) {
+                        updateNotification(stateMachine.state)
+                        startSupervisor()
+                        startReceiptDrainWorker()
+                        startPeriodicSync()
+                    } else {
+                        android.util.Log.w(
+                            "DeviceRailService",
+                            "Auto-registration failed: ${result.error}. Retrying next service start."
+                        )
+                        stopSelf()
+                    }
+                }
+                return START_STICKY
+            } else {
+                stopSelf()
+                return START_NOT_STICKY
+            }
         }
 
         val initialNotification = buildNotification(stateText(stateMachine.state))

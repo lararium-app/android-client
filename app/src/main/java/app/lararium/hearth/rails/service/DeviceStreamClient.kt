@@ -1,6 +1,7 @@
 package app.lararium.hearth.rails.service
 
 import app.lararium.hearth.EndpointPolicy
+import app.lararium.hearth.Net
 import app.lararium.hearth.rails.DeviceStreamState
 import app.lararium.hearth.rails.DeviceStreamStateMachine
 import app.lararium.hearth.rails.OfflineCause
@@ -8,9 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
+import java.io.InputStream
 
 /**
  * SSE streaming client for device rails action dispatches (F1).
@@ -22,15 +21,25 @@ import javax.net.ssl.HttpsURLConnection
 class DeviceStreamClient(
     private val endpointProvider: () -> DeviceEndpoint?,
     val stateMachine: DeviceStreamStateMachine,
-    private val connectionFactory: (URL) -> HttpURLConnection = { url ->
-        url.openConnection() as HttpURLConnection
+    private val streamOpener: (
+        urlString: String,
+        headers: Map<String, String>,
+        onStream: (Int, InputStream) -> Unit
+    ) -> Unit = { url, headers, onStream ->
+        Net.stream(url, headers, timeoutMs = 120_000, onStream = onStream)
     }
 ) {
     constructor(
         endpoint: DeviceEndpoint,
         stateMachine: DeviceStreamStateMachine,
-        connectionFactory: (URL) -> HttpURLConnection = { url -> url.openConnection() as HttpURLConnection }
-    ) : this({ endpoint }, stateMachine, connectionFactory)
+        streamOpener: (
+            urlString: String,
+            headers: Map<String, String>,
+            onStream: (Int, InputStream) -> Unit
+        ) -> Unit = { url, headers, onStream ->
+            Net.stream(url, headers, timeoutMs = 120_000, onStream = onStream)
+        }
+    ) : this({ endpoint }, stateMachine, streamOpener)
 
     suspend fun openStream(onFrame: (event: String?, data: JSONObject) -> Unit) {
         val endpoint = endpointProvider() ?: return
@@ -52,128 +61,102 @@ class DeviceStreamClient(
         }
 
         withContext(Dispatchers.IO) {
-            var connection: HttpURLConnection? = null
             try {
-                val url = URL(urlString)
-                val conn = connectionFactory(url).apply {
-                    requestMethod = "GET"
-                    connectTimeout = 10_000
-                    readTimeout = 120_000
-                    setRequestProperty("Authorization", "Bearer ${endpoint.token}")
-                    setRequestProperty("Accept", "text/event-stream")
-                    useCaches = false
-                }
-                connection = conn
+                val headers = mapOf(
+                    "Authorization" to "Bearer ${endpoint.token}",
+                    "Accept" to "text/event-stream"
+                )
 
-                if (!stateMachine.isCurrentEpoch(epoch)) {
-                    conn.disconnect()
-                    return@withContext
-                }
-
-                val responseCode = try {
-                    conn.responseCode
-                } catch (e: Exception) {
-                    if (stateMachine.isCurrentEpoch(epoch)) {
-                        stateMachine.onFailure(OfflineCause.NoNetwork)
-                    }
-                    return@withContext
-                }
-
-                if (!stateMachine.isCurrentEpoch(epoch)) {
-                    conn.disconnect()
-                    return@withContext
-                }
-
-                if (responseCode == 401 || responseCode == 403) {
-                    stateMachine.onFailure(OfflineCause.Unauthorized)
-                    conn.disconnect()
-                    return@withContext
-                }
-
-                if (responseCode !in 200..299) {
-                    stateMachine.onFailure(OfflineCause.NoNetwork)
-                    conn.disconnect()
-                    return@withContext
-                }
-
-                stateMachine.onStreamOpen()
-
-                val reader = conn.inputStream.bufferedReader(Charsets.UTF_8)
-                var currentEvent: String? = null
-                val dataBuilder = StringBuilder()
-
-                while (true) {
-                    val line = try {
-                        reader.readLine()
-                    } catch (e: Exception) {
-                        if (stateMachine.isCurrentEpoch(epoch)) {
-                            stateMachine.onFailure(OfflineCause.NoNetwork)
-                        }
-                        return@withContext
-                    } ?: break // EOF
-
+                streamOpener(urlString, headers) { responseCode, inputStream ->
                     if (!stateMachine.isCurrentEpoch(epoch)) {
-                        return@withContext
+                        return@streamOpener
                     }
 
-                    // Feed stream bytes to state machine for liveness tracking
-                    stateMachine.onStreamBytes()
+                    if (responseCode == 401 || responseCode == 403) {
+                        stateMachine.onFailure(OfflineCause.Unauthorized)
+                        return@streamOpener
+                    }
 
-                    when {
-                        line.startsWith(":") -> {
-                            // SSE comment / heartbeat (e.g., ": ping") — counts as bytes, no event to dispatch
+                    if (responseCode !in 200..299) {
+                        stateMachine.onFailure(OfflineCause.NoNetwork)
+                        return@streamOpener
+                    }
+
+                    stateMachine.onStreamOpen()
+
+                    val reader = inputStream.bufferedReader(Charsets.UTF_8)
+                    var currentEvent: String? = null
+                    val dataBuilder = StringBuilder()
+
+                    while (true) {
+                        val line = try {
+                            reader.readLine()
+                        } catch (e: Exception) {
+                            if (stateMachine.isCurrentEpoch(epoch)) {
+                                stateMachine.onFailure(OfflineCause.NoNetwork)
+                            }
+                            return@streamOpener
+                        } ?: break // EOF
+
+                        if (!stateMachine.isCurrentEpoch(epoch)) {
+                            return@streamOpener
                         }
-                        line.startsWith("event:") -> {
-                            currentEvent = line.removePrefix("event:").trim()
-                        }
-                        line.startsWith("data:") -> {
-                            dataBuilder.append(line.removePrefix("data:").trim()).append('\n')
-                        }
-                        line.isEmpty() -> {
-                            // Frame delimiter: dispatch accumulated frame
-                            val rawData = dataBuilder.toString().trim()
-                            if (currentEvent != null || rawData.isNotEmpty()) {
-                                val json = if (rawData.isNotEmpty()) {
-                                    try {
-                                        JSONObject(rawData)
-                                    } catch (_: Exception) {
+
+                        // Feed stream bytes to state machine for liveness tracking
+                        stateMachine.onStreamBytes()
+
+                        when {
+                            line.startsWith(":") -> {
+                                // SSE comment / heartbeat (e.g., ": ping") — counts as bytes, no event to dispatch
+                            }
+                            line.startsWith("event:") -> {
+                                currentEvent = line.removePrefix("event:").trim()
+                            }
+                            line.startsWith("data:") -> {
+                                dataBuilder.append(line.removePrefix("data:").trim()).append('\n')
+                            }
+                            line.isEmpty() -> {
+                                // Frame delimiter: dispatch accumulated frame
+                                val rawData = dataBuilder.toString().trim()
+                                if (currentEvent != null || rawData.isNotEmpty()) {
+                                    val json = if (rawData.isNotEmpty()) {
+                                        try {
+                                            JSONObject(rawData)
+                                        } catch (_: Exception) {
+                                            JSONObject()
+                                        }
+                                    } else {
                                         JSONObject()
                                     }
-                                } else {
-                                    JSONObject()
-                                }
 
-                                if (currentEvent == "pair_required" ||
-                                    json.optString("event") == "pair_required" ||
-                                    json.optString("type") == "pair_required"
-                                ) {
-                                    if (stateMachine.isCurrentEpoch(epoch)) {
-                                        stateMachine.onFailure(OfflineCause.PairRequired)
+                                    if (currentEvent == "pair_required" ||
+                                        json.optString("event") == "pair_required" ||
+                                        json.optString("type") == "pair_required"
+                                    ) {
+                                        if (stateMachine.isCurrentEpoch(epoch)) {
+                                            stateMachine.onFailure(OfflineCause.PairRequired)
+                                        }
+                                        return@streamOpener
                                     }
-                                    return@withContext
-                                }
 
-                                if (stateMachine.isCurrentEpoch(epoch)) {
-                                    onFrame(currentEvent, json)
+                                    if (stateMachine.isCurrentEpoch(epoch)) {
+                                        onFrame(currentEvent, json)
+                                    }
                                 }
+                                currentEvent = null
+                                dataBuilder.clear()
                             }
-                            currentEvent = null
-                            dataBuilder.clear()
                         }
                     }
-                }
 
-                if (stateMachine.isCurrentEpoch(epoch)) {
-                    stateMachine.onStreamClosed()
+                    if (stateMachine.isCurrentEpoch(epoch)) {
+                        stateMachine.onStreamClosed()
+                    }
                 }
             } catch (e: Exception) {
                 if (stateMachine.isCurrentEpoch(epoch)) {
                     stateMachine.onFailure(OfflineCause.NoNetwork)
                 }
-            } finally {
-                try {
-                    connection?.disconnect()
-                } catch (_: Exception) {}
             }
         }
     }

@@ -42,13 +42,12 @@ object Net {
         timeoutMs: Int = 10_000,
     ): HttpResponse = request("DELETE", urlString, null, headers, timeoutMs)
 
-    private fun request(
-        method: String,
+    fun stream(
         urlString: String,
-        body: String?,
-        headers: Map<String, String>,
-        timeoutMs: Int,
-    ): HttpResponse {
+        headers: Map<String, String> = emptyMap(),
+        timeoutMs: Int = 10_000,
+        onStream: (Int /*status*/, InputStream) -> Unit,
+    ) {
         EndpointPolicy.rejectReason(urlString)?.let { throw IOException(it) }
 
         // Header-injection guard: reject names/values with CR, LF, or NUL.
@@ -58,9 +57,43 @@ object Net {
         }
 
         val url = URL(urlString)
+        val socket = openSocket(url, timeoutMs)
+
+        socket.use { s ->
+            s.soTimeout = timeoutMs
+            val path = (url.path.ifEmpty { "/" }) + (url.query?.let { "?$it" } ?: "")
+
+            val req = buildString {
+                append("GET ").append(path).append(" HTTP/1.1\r\n")
+                append("Host: ").append(url.host)
+                if (url.port != -1) append(":").append(url.port)
+                append("\r\n")
+                append("Accept-Encoding: identity\r\nConnection: close\r\n")
+                headers.forEach { (k, v) -> append(k).append(": ").append(v).append("\r\n") }
+                append("\r\n")
+            }
+
+            val out = s.getOutputStream()
+            out.write(req.toByteArray(Charsets.US_ASCII))
+            out.flush()
+
+            val input = s.getInputStream()
+            val headerBuf = readUntilBlankLine(input)
+            val headerText = headerBuf.toString(Charsets.ISO_8859_1)
+            val lines = headerText.split("\r\n")
+
+            val statusLine = lines.firstOrNull() ?: throw IOException("empty response")
+            val status = statusLine.substringAfter(' ').substringBefore(' ').toIntOrNull()
+                ?: throw IOException("bad status line: $statusLine")
+
+            onStream(status, input)
+        }
+    }
+
+    private fun openSocket(url: URL, timeoutMs: Int): Socket {
         val port = if (url.port == -1) if (url.protocol == "https") 443 else 80 else url.port
 
-        val socket: Socket = when (url.protocol) {
+        return when (url.protocol) {
             "https" -> (SSLSocketFactory.getDefault().createSocket() as SSLSocket).also { ssl ->
                 ssl.sslParameters = ssl.sslParameters.apply {
                     endpointIdentificationAlgorithm = "HTTPS"
@@ -83,6 +116,25 @@ object Net {
             }
             else -> throw IOException("unsupported scheme ${url.protocol}")
         }
+    }
+
+    private fun request(
+        method: String,
+        urlString: String,
+        body: String?,
+        headers: Map<String, String>,
+        timeoutMs: Int,
+    ): HttpResponse {
+        EndpointPolicy.rejectReason(urlString)?.let { throw IOException(it) }
+
+        // Header-injection guard: reject names/values with CR, LF, or NUL.
+        headers.forEach { (k, v) ->
+            requireSafeHeader(k)
+            requireSafeHeader(v)
+        }
+
+        val url = URL(urlString)
+        val socket = openSocket(url, timeoutMs)
 
         socket.use { s ->
             s.soTimeout = timeoutMs + 15_000
