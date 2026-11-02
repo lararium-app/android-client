@@ -183,7 +183,7 @@ fun DevicePairingScreen(
                     if (urlError != null) urlError = null
                 },
                 label = { Text("Hearth Base URL") },
-                placeholder = { Text("https://hearth.local:8443 or http://192.168.1.5:8080") },
+                placeholder = { Text("https://hearth.local:8443") },
                 isError = urlError != null,
                 supportingText = urlError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
                 singleLine = true,
