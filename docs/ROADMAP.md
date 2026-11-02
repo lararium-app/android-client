@@ -97,19 +97,34 @@ denying actor. `vt2` runs as its own CI job.
 
 ## T3 — Device rails (reverse channel)
 
-The phone exposes itself to the hearth as an MCP server (`/v1/devices`,
-planned milestone). This is how Lararium reads the user's world without
-it ever leaving their hardware: Calendar, Contacts, Notifications, Call
-Log, Health Connect as read rails; Dialer and SMS as action rails that
-raise custody cards. Wave 2 is Google Workspace via one OAuth connector
-template; wave 3 is the home stack (Home Assistant, Tailscale, budgeting)
-that commercial assistants don't have.
+The phone exposes itself to the hearth as an MCP server (`/v1/devices`;
+daemon side shipped, client side next). This is how Lararium reads the
+user's world without it ever leaving their hardware: Calendar, Contacts,
+Notifications, Call Log, Health Connect as read rails; Dialer and SMS as
+action rails that raise custody cards. Wave 2 is Google Workspace via one
+OAuth connector template; wave 3 is the home stack (Home Assistant,
+Tailscale, budgeting) that commercial assistants don't have.
 
 Play policy note: rails touching SMS/call-log require permission
 declarations in the console; the sideload flavor ships them unfiltered.
 
 **Exit:** "what's my afternoon look like" answers from the user's own
 calendar, on a real phone, with the rail's scope visible and revocable.
+
+**Daemon side complete (2026-11-02).** DEVICE-RAILS-SPEC v2 (phone-push
+transport, PO directive — tailnet pull rejected) implemented across
+three PRs: the devices core — registry, per-rail 0600 stores,
+`kind=device` tool source, pairing tokens, grace-window liveness (PR
+#221); the surface plane — register/stream/sync/receipt endpoints for
+the phone and CRUD + admin rows for the app, additive to the legacy
+connector catalog (PR #222); and the V-T3 exit suite with its `device-rails`
+CI job (PR #223): nine end-to-end proofs over a plain-HTTPS fake phone —
+carded pairing, in-process reads with no card, full-args action cards
+dispatched over the open stream with receipt resolution, offline/grace/
+reconnect semantics, carded rail toggles, forget-with-tombstone,
+token-never-leaks sweep, misflag rejection, legacy wire compatibility.
+Remaining for T3: the Android rail client (permissions, foreground
+services, sync engine) — specced next.
 
 ## T4 — Assistant role takeover
 
