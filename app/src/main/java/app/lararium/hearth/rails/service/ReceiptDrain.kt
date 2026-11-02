@@ -7,7 +7,7 @@ import app.lararium.hearth.rails.ReceiptQueue
 /**
  * Drains pending action execution receipts to the Hearth daemon (F4, spec A6).
  *
- * Resolves each pending receipt by posting to /local/device/v1/actions/{id}/receipt.
+ * Resolves each pending receipt by posting to /v1/devices/<id>/actions/{action_id}/receipt.
  * 2xx responses mark the item delivered. Non-2xx or network errors increment attempt count
  * and follow the exponential backoff ladder from ReceiptQueue.
  */
@@ -24,7 +24,7 @@ class ReceiptDrain(
         var deliveredCount = 0
 
         for (item in pending) {
-            val url = "${endpoint.baseUrl.trimEnd('/')}/local/device/v1/actions/${item.actionId}/receipt"
+            val url = "${endpoint.baseUrl.trimEnd('/')}/v1/devices/${endpoint.deviceId}/actions/${item.actionId}/receipt"
             val headers = mapOf(
                 "Authorization" to "Bearer ${endpoint.token}",
                 "Content-Type" to "application/json"
