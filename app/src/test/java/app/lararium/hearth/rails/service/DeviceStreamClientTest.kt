@@ -9,9 +9,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
-import java.io.InputStream
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * Unit tests for DeviceStreamClient (F1, spec A2).
@@ -26,20 +23,6 @@ import java.net.URL
 class DeviceStreamClientTest {
 
     private val endpoint = DeviceEndpoint("https://example.com:7717", "lar1_test_token", "dev-1")
-
-    private class FakeHttpURLConnection(
-        url: URL,
-        private val status: Int,
-        private val streamContent: String = ""
-    ) : HttpURLConnection(url) {
-        var disconnected = false
-
-        override fun getResponseCode(): Int = status
-        override fun getInputStream(): InputStream = ByteArrayInputStream(streamContent.toByteArray(Charsets.UTF_8))
-        override fun connect() {}
-        override fun disconnect() { disconnected = true }
-        override fun usingProxy(): Boolean = false
-    }
 
     @Test
     fun streamParsesEventsAndFeedsBytes() = runBlocking {
@@ -56,7 +39,9 @@ class DeviceStreamClientTest {
         val client = DeviceStreamClient(
             endpoint = endpoint,
             stateMachine = sm,
-            connectionFactory = { url -> FakeHttpURLConnection(url, 200, sseStream) }
+            streamOpener = { _, _, onStream ->
+                onStream(200, ByteArrayInputStream(sseStream.toByteArray(Charsets.UTF_8)))
+            }
         )
 
         client.openStream { event, data ->
@@ -82,7 +67,9 @@ class DeviceStreamClientTest {
         val client = DeviceStreamClient(
             endpoint = endpoint,
             stateMachine = sm,
-            connectionFactory = { url -> FakeHttpURLConnection(url, 401) }
+            streamOpener = { _, _, onStream ->
+                onStream(401, ByteArrayInputStream(ByteArray(0)))
+            }
         )
 
         client.openStream { _, _ -> }
@@ -96,7 +83,9 @@ class DeviceStreamClientTest {
         val client = DeviceStreamClient(
             endpoint = endpoint,
             stateMachine = sm,
-            connectionFactory = { url -> FakeHttpURLConnection(url, 403) }
+            streamOpener = { _, _, onStream ->
+                onStream(403, ByteArrayInputStream(ByteArray(0)))
+            }
         )
 
         client.openStream { _, _ -> }
@@ -112,7 +101,9 @@ class DeviceStreamClientTest {
         val client = DeviceStreamClient(
             endpoint = endpoint,
             stateMachine = sm,
-            connectionFactory = { url -> FakeHttpURLConnection(url, 200, sseStream) }
+            streamOpener = { _, _, onStream ->
+                onStream(200, ByteArrayInputStream(sseStream.toByteArray(Charsets.UTF_8)))
+            }
         )
 
         client.openStream { _, _ -> }
@@ -129,10 +120,10 @@ class DeviceStreamClientTest {
         val client = DeviceStreamClient(
             endpoint = endpoint,
             stateMachine = sm,
-            connectionFactory = { url ->
+            streamOpener = { _, _, onStream ->
                 // Advance state machine epoch before connection completes, simulating a race/superseded socket
                 sm.nextEpoch()
-                FakeHttpURLConnection(url, 200, sseStream)
+                onStream(200, ByteArrayInputStream(sseStream.toByteArray(Charsets.UTF_8)))
             }
         )
 

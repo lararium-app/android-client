@@ -22,6 +22,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import app.lararium.hearth.rails.service.DevicePairingController
 import app.lararium.hearth.rails.service.DeviceRailService
+import app.lararium.security.SecureKeyManager
 import kotlinx.coroutines.launch
 
 /**
@@ -39,7 +40,16 @@ fun DevicePairingScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var baseUrl by remember { mutableStateOf(initialBaseUrl) }
+    val hearthEndpoint = remember {
+        try {
+            SecureKeyManager(context).getHearthEndpoint()
+        } catch (_: Exception) {
+            null
+        }
+    }
+    val hasHearth = hearthEndpoint != null
+
+    var baseUrl by remember { mutableStateOf(initialBaseUrl.ifBlank { hearthEndpoint?.first ?: "" }) }
     var token by remember { mutableStateOf(initialToken) }
     var isLoading by remember { mutableStateOf(false) }
     var urlError by remember { mutableStateOf<String?>(null) }
@@ -57,10 +67,12 @@ fun DevicePairingScreen(
             return
         }
 
-        val tokenValidation = PairingValidation.validateToken(token)
-        if (!tokenValidation.isValid) {
-            tokenError = tokenValidation.error
-            return
+        if (!hasHearth) {
+            val tokenValidation = PairingValidation.validateToken(token)
+            if (!tokenValidation.isValid) {
+                tokenError = tokenValidation.error
+                return
+            }
         }
 
         isLoading = true
@@ -139,7 +151,11 @@ fun DevicePairingScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Expose your phone's calendar, contacts, and messaging to your local hearth.",
+                text = if (hasHearth) {
+                    "Pairing is automatic. Your device capabilities link with your connected Hearth."
+                } else {
+                    "Expose your phone's calendar, contacts, and messaging to your local hearth."
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -192,37 +208,39 @@ fun DevicePairingScreen(
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
             )
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // Pairing Token Field (only shown when no hearth pairing exists)
+            if (!hasHearth) {
+                Spacer(modifier = Modifier.height(16.dp))
 
-            // Pairing Token Field
-            OutlinedTextField(
-                value = token,
-                onValueChange = {
-                    token = it
-                    if (tokenError != null) tokenError = null
-                },
-                label = { Text("Pairing Token") },
-                placeholder = { Text("lar1_...") },
-                trailingIcon = {
-                    IconButton(
-                        onClick = {
-                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
-                            val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()
-                            if (!clipText.isNullOrBlank()) {
-                                token = clipText.trim()
-                                tokenError = null
+                OutlinedTextField(
+                    value = token,
+                    onValueChange = {
+                        token = it
+                        if (tokenError != null) tokenError = null
+                    },
+                    label = { Text("Pairing Token") },
+                    placeholder = { Text("lar1_...") },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()
+                                if (!clipText.isNullOrBlank()) {
+                                    token = clipText.trim()
+                                    tokenError = null
+                                }
                             }
+                        ) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste from clipboard")
                         }
-                    ) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = "Paste from clipboard")
-                    }
-                },
-                isError = tokenError != null,
-                supportingText = tokenError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp)
-            )
+                    },
+                    isError = tokenError != null,
+                    supportingText = tokenError?.let { { Text(it, color = MaterialTheme.colorScheme.error) } },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+            }
 
             Spacer(modifier = Modifier.height(28.dp))
 
