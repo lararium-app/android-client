@@ -34,17 +34,20 @@ class RailToolExecutorTest {
         var emittedUri: String? = null
 
         val mockIntent = mockk<Intent>()
+        var pinnedPackage: String? = null
         every { mockIntent.action } returns Intent.ACTION_CALL
         every { mockIntent.dataString } returns "tel:555-0199"
+        every { mockIntent.setPackage(any<String>()) } answers { pinnedPackage = firstArg(); mockIntent }
 
         val executor = DialerToolExecutor(
             context = context,
-            intentFactory = { action, phoneUri ->
+            intentFactory = { action, phoneUri, _ ->
                 emittedAction = action
                 emittedUri = phoneUri
                 mockIntent
             },
-            callLauncher = { intent -> capturedIntent = intent }
+            callLauncher = { intent -> capturedIntent = intent },
+            defaultDialerPackage = { "com.test.dialer" }
         )
 
         assertTrue(executor.canHandle("device.dialer.call"))
@@ -65,6 +68,30 @@ class RailToolExecutorTest {
         assertNotNull(capturedIntent)
         assertEquals(Intent.ACTION_CALL, capturedIntent!!.action)
         assertEquals("tel:555-0199", capturedIntent!!.dataString)
+        assertEquals("com.test.dialer", pinnedPackage)
+    }
+
+    @Test
+    fun dialerExecutor_noDefaultDialer_returnsErrorWithoutLaunching() = runBlocking {
+        val context = mockk<Context>(relaxed = true)
+        var launched = false
+
+        val executor = DialerToolExecutor(
+            context = context,
+            callLauncher = { launched = true },
+            defaultDialerPackage = { null }
+        )
+
+        val action = DispatchedAction(
+            actionId = "act-call-nodialer",
+            tool = "device.dialer.call",
+            args = JSONObject().apply { put("phone", "555-0199") }
+        )
+
+        val (ok, error) = executor.execute(action)
+        assertFalse(ok)
+        assertEquals("no_default_dialer", error)
+        assertFalse(launched)
     }
 
     @Test
@@ -73,7 +100,8 @@ class RailToolExecutorTest {
 
         val executor = DialerToolExecutor(
             context = context,
-            callLauncher = { throw SecurityException("CALL_PHONE denied by OS") }
+            callLauncher = { throw SecurityException("CALL_PHONE denied by OS") },
+            defaultDialerPackage = { "com.test.dialer" }
         )
 
         val action = DispatchedAction(

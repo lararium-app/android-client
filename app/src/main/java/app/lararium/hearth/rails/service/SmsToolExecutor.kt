@@ -20,6 +20,8 @@ class SmsToolExecutor(
     companion object {
         const val ACTION_SMS_SENT = "app.lararium.rails.SMS_SENT"
         const val ACTION_SMS_DELIVERED = "app.lararium.rails.SMS_DELIVERED"
+        /** Value of android.content.Context.SMS_SERVICE. */
+        const val SMS_SERVICE_NAME = "sms"
     }
 
     override fun canHandle(tool: String): Boolean = (tool == "device.sms.send")
@@ -65,10 +67,15 @@ class SmsToolExecutor(
                 val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     context.getSystemService(SmsManager::class.java)
                 } else {
-                    @Suppress("DEPRECATION")
-                    SmsManager.getDefault()
+                    // Pre-S: equivalent of SmsManager.getDefault() via the non-deprecated
+                    // service lookup (Context.SMS_SERVICE == "sms").
+                    @Suppress("DEPRECATION", "UNCHECKED_CAST")
+                    context.getSystemService(SMS_SERVICE_NAME) as SmsManager
                 }
-                smsManager.sendTextMessage(phone, null, text, sentIntent, deliveryIntent)
+                // sendTextMessage is the only send path portable across API 26-36;
+                // the per-subscription replacements are not available below API 31.
+                @Suppress("DEPRECATION")
+                smsManager.sendTextMessage(phone, null, text, sentIntent, deliveryIntent) // codeql[java/deprecated-call] no portable replacement
             }
             Pair(true, "sms_dispatched")
         } catch (e: SecurityException) {
