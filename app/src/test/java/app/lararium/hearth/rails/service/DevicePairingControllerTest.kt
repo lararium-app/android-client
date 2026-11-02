@@ -320,6 +320,7 @@ class DevicePairingControllerTest {
         val secure = FakeSharedPreferences()
         val fakeStore = DevicePairingStore(plain, secure)
         val threads = mutableListOf<String>()
+        val callerThread = Thread.currentThread().name
 
         val result = DevicePairingController.pair(
             context = mockk(relaxed = true),
@@ -341,8 +342,8 @@ class DevicePairingControllerTest {
         assertTrue(result.isSuccess)
         assertEquals(2, threads.size)
         assertTrue(
-            "pairing HTTP ran on the caller thread: $threads",
-            threads.none { it == "main" }
+            "pairing HTTP ran on the caller thread ($callerThread): $threads",
+            threads.none { it == callerThread }
         )
     }
 }
