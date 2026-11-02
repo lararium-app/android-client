@@ -64,11 +64,11 @@ jobs:
         run: printf '%s' "$LARARIUM_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/lararium-release.jks"
 
       - name: Unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testGithubDebugUnitTest --no-daemon
 
       - name: Assemble signed APK
         run: |
-          ./gradlew assembleDebug --no-daemon -x lint \
+          ./gradlew assembleGithubDebug --no-daemon -x lint \
             "-PLARARIUM_UPLOAD_STORE_FILE=$RUNNER_TEMP/lararium-release.jks" \
             "-PLARARIUM_UPLOAD_STORE_PASSWORD=$LARARIUM_KEYSTORE_PASSWORD" \
             "-PLARARIUM_UPLOAD_KEY_ALIAS=$LARARIUM_KEY_ALIAS" \
@@ -78,7 +78,7 @@ jobs:
         id: stage
         run: |
           set -euo pipefail
-          APK=$(ls app/build/outputs/apk/debug/*.apk | head -1)
+          APK=$(ls app/build/outputs/apk/github/debug/*.apk | head -1)
           cp "$APK" "lararium-$TAG.apk"
           SHA=$(sha256sum "lararium-$TAG.apk" | cut -d' ' -f1)
           echo "apk=lararium-$TAG.apk" >> "$GITHUB_OUTPUT"

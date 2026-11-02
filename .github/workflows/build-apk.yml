@@ -35,7 +35,7 @@ jobs:
         if: ${{ env.LARARIUM_KEYSTORE_BASE64 != '' }}
         run: printf '%s' "$LARARIUM_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/lararium-release.jks"
       - name: Unit tests
-        run: ./gradlew testDebugUnitTest --no-daemon
+        run: ./gradlew testGithubDebugUnitTest --no-daemon
       - name: Assemble debug APK
         run: |
           SIGNING_ARGS=()
@@ -47,9 +47,9 @@ jobs:
               "-PLARARIUM_UPLOAD_KEY_PASSWORD=$LARARIUM_KEY_PASSWORD"
             )
           fi
-          ./gradlew assembleDebug --no-daemon -x lint "${SIGNING_ARGS[@]}"
+          ./gradlew assembleGithubDebug --no-daemon -x lint "${SIGNING_ARGS[@]}"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # actions/upload-artifact v4
         with:
           name: lararium-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/github/debug/*.apk
           if-no-files-found: error
