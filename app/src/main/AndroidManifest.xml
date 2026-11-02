@@ -81,7 +81,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="lararium" android:host="pair" />
             </intent-filter>
+        </activity>
 
+        <!-- Device rails control panel and deep link handler -->
+        <activity
+            android:name=".hearth.rails.ui.DevicesActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Aiintegratedintoandroid">
             <!-- Device rails pairing deep link: lararium://device-pair?base=…&token=… -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
@@ -90,6 +96,14 @@
                 <data android:scheme="lararium" android:host="device-pair" />
             </intent-filter>
         </activity>
+
+        <!-- Action confirmation sheet activity (A6 safety-critical) -->
+        <activity
+            android:name=".hearth.rails.ui.ActionConfirmActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.Assistant.Overlay" />
 
         <!-- Overlay activity for quick assistant popup -->
         <activity
