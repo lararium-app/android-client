@@ -63,6 +63,7 @@ import app.lararium.hearth.badge.BadgeLogic
 import app.lararium.hearth.badge.HearthBadgeState
 import app.lararium.security.SecureKeyManager
 import app.lararium.ui.approvals.ApprovalsScreen
+import app.lararium.ui.connectors.ConnectorsScreen
 import app.lararium.ui.ChatHomeScreen
 import app.lararium.ui.ChatViewModel
 import app.lararium.ui.DrawerLogic
@@ -346,6 +347,10 @@ class MainActivity : ComponentActivity() {
                             onNavigateToSettings = {
                                 scope.launch { drawerState.close() }
                                 navController.navigate("settings")
+                            },
+                            onNavigateToConnectors = {
+                                scope.launch { drawerState.close() }
+                                navController.navigate("connectors")
                             }
                         )
                     }
@@ -357,6 +362,7 @@ class MainActivity : ComponentActivity() {
                             onNavigateToChats = { navController.navigate("sessions") },
                             onNavigateToApprovals = { navController.navigate("approvals") },
                             onNavigateToSettings = { navController.navigate("settings") },
+                            onNavigateToConnectors = { navController.navigate("connectors") },
                             modifier = Modifier.width(chatLayout.railWidthDp.dp)
                         )
                     }
@@ -417,6 +423,12 @@ class MainActivity : ComponentActivity() {
                                 }
                                 composable("approvals") {
                                     ApprovalsScreen(onBack = { navController.popBackStack() })
+                                }
+                                composable("connectors") {
+                                    ConnectorsScreen(
+                                        onBack = { navController.popBackStack() },
+                                        onNavigateToSettings = { navController.navigate("settings") }
+                                    )
                                 }
                             }
                         }

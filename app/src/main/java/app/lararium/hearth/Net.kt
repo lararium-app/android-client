@@ -36,6 +36,13 @@ object Net {
         timeoutMs: Int = 10_000,
     ): HttpResponse = request("POST", urlString, body, headers, timeoutMs)
 
+    fun patch(
+        urlString: String,
+        body: String,
+        headers: Map<String, String> = emptyMap(),
+        timeoutMs: Int = 10_000,
+    ): HttpResponse = request("PATCH", urlString, body, headers, timeoutMs)
+
     fun delete(
         urlString: String,
         headers: Map<String, String> = emptyMap(),

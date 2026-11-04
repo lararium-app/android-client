@@ -43,6 +43,7 @@
     <string name="drawer_connection_not_connected">Not connected</string>
     <string name="drawer_nav_chats">Chats</string>
     <string name="drawer_nav_approvals">Approvals</string>
+    <string name="drawer_nav_connectors">Connectors</string>
     <string name="drawer_nav_settings">Settings</string>
 
     <!-- Chat & Sessions -->
