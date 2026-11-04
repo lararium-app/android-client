@@ -30,6 +30,7 @@ fun LarariumDrawerContent(
     onNavigateToChats: () -> Unit,
     onNavigateToApprovals: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToConnectors: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val connectionState = DrawerLogic.formatConnectionState(hearthEndpoint)
@@ -153,7 +154,26 @@ fun LarariumDrawerContent(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
         )
 
-        // Row 3: Settings
+        // Row 3: Connectors
+        NavigationDrawerItem(
+            icon = {
+                Icon(
+                    Icons.Default.Extension,
+                    contentDescription = null
+                )
+            },
+            label = {
+                Text(
+                    stringResource(R.string.drawer_nav_connectors),
+                    style = MaterialTheme.typography.labelLarge
+                )
+            },
+            selected = false,
+            onClick = onNavigateToConnectors,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 2.dp)
+        )
+
+        // Row 4: Settings
         NavigationDrawerItem(
             icon = {
                 Icon(
@@ -176,7 +196,7 @@ fun LarariumDrawerContent(
 
 /**
  * Tablet navigation rail hosting the same destinations as [LarariumDrawerContent]
- * (Chats, Approvals, Settings), reusing the same strings for labels/accessibility.
+ * (Chats, Approvals, Connectors, Settings), reusing the same strings for labels/accessibility.
  */
 @Composable
 fun LarariumNavigationRail(
@@ -184,10 +204,12 @@ fun LarariumNavigationRail(
     onNavigateToChats: () -> Unit,
     onNavigateToApprovals: () -> Unit,
     onNavigateToSettings: () -> Unit,
+    onNavigateToConnectors: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val chats = stringResource(R.string.drawer_nav_chats)
     val approvals = stringResource(R.string.drawer_nav_approvals)
+    val connectors = stringResource(R.string.drawer_nav_connectors)
     val settings = stringResource(R.string.drawer_nav_settings)
     NavigationRail(
         modifier = modifier.statusBarsPadding(),
@@ -220,6 +242,12 @@ fun LarariumNavigationRail(
                 }
             },
             label = { Text(approvals, style = MaterialTheme.typography.labelMedium) }
+        )
+        NavigationRailItem(
+            selected = false,
+            onClick = onNavigateToConnectors,
+            icon = { Icon(Icons.Default.Extension, contentDescription = connectors) },
+            label = { Text(connectors, style = MaterialTheme.typography.labelMedium) }
         )
         NavigationRailItem(
             selected = false,
