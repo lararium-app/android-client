@@ -8,7 +8,7 @@ class AppLockPolicy(
     private val relockTimeoutMs: Long = LOCK_RELOCK_BACKGROUND_MS
 ) {
     companion object {
-        const val LOCK_RELOCK_BACKGROUND_MS = 60_000L
+        const val LOCK_RELOCK_BACKGROUND_MS = 300_000L
     }
 
     /**
