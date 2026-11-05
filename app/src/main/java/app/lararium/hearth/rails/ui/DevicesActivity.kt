@@ -2,10 +2,10 @@ package app.lararium.hearth.rails.ui
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.*
+import androidx.fragment.app.FragmentActivity
 import app.lararium.hearth.rails.service.DeviceRailService
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 
@@ -13,7 +13,7 @@ import app.lararium.ui.theme.AiintegratedintoandroidTheme
  * Activity hosting the device rails management screens (G1/G2).
  * Handles deep-link entry for lararium://device-pair and hosts DevicesScreen and DevicePairingScreen.
  */
-class DevicesActivity : ComponentActivity() {
+class DevicesActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

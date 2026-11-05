@@ -24,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
+import app.lararium.auth.authGate
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.connectors.ConnectorRow
 import app.lararium.hearth.connectors.ConnectorSseEvent
@@ -191,18 +192,24 @@ fun ConnectorsScreen(
         val ep = endpoint
         if (ep != null) {
             scope.launch {
-                try {
-                    val ok = ConnectorsClient(ep).deleteConnector(row.name)
-                    if (ok) {
-                        rows = ConnectorsLogic.applySseEvent(
-                            rows.orEmpty(),
-                            ConnectorSseEvent.Gone(row.name),
-                        )
-                    } else {
+                authGate(
+                    context = context,
+                    reasonTitle = "Delete Connector",
+                    destructive = true
+                ) {
+                    try {
+                        val ok = ConnectorsClient(ep).deleteConnector(row.name)
+                        if (ok) {
+                            rows = ConnectorsLogic.applySseEvent(
+                                rows.orEmpty(),
+                                ConnectorSseEvent.Gone(row.name),
+                            )
+                        } else {
+                            snackbarHostState.showSnackbar("Failed to delete connector \"${row.name}\".")
+                        }
+                    } catch (_: Exception) {
                         snackbarHostState.showSnackbar("Failed to delete connector \"${row.name}\".")
                     }
-                } catch (_: Exception) {
-                    snackbarHostState.showSnackbar("Failed to delete connector \"${row.name}\".")
                 }
             }
         }

@@ -112,7 +112,7 @@ object HearthNotifier {
 
         val allowOnceAction = NotificationCompat.Action.Builder(
             0,
-            "Allow once",
+            "Review",
             allowOncePendingIntent,
         ).setAuthenticationRequired(true).build()
 

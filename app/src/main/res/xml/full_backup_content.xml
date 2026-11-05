@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Secrets and keystore-wrapped prefs never leave the device (not decryptable off-device anyway) -->
+    <exclude domain="sharedpref" path="local_token.xml" />
+    <exclude domain="sharedpref" path="assistant_secure_prefs.xml" />
+    <exclude domain="sharedpref" path="device_rails_secure.xml" />
+    <exclude domain="sharedpref" path="device_rails_plain.xml" />
+    <!-- Chat transcripts and watch rules stay on-device: private home activity is not backup material -->
+    <exclude domain="file" path="chat_history" />
+    <exclude domain="sharedpref" path="hearth_watch.xml" />
+</full-backup-content>

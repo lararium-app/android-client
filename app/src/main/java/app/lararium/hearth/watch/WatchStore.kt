@@ -6,6 +6,7 @@ import android.content.SharedPreferences
 /**
  * SharedPreferences storage for Hearth Watch state: cursors, notified cards,
  * and rate-limited alert timestamps.
+ * Genuinely not secret: cursors, notified card IDs, and rate-limited alert timestamps are non-secret telemetry/rate-limit state.
  */
 class WatchStore(private val prefs: SharedPreferences) {
 
