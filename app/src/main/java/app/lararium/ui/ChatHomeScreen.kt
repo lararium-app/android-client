@@ -21,6 +21,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -34,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lararium.R
 import app.lararium.hearth.ConnectionState
+import app.lararium.hearth.connectionDotColorArgb
 import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.badge.BadgeLogic
 import app.lararium.service.AssistantService
@@ -566,12 +568,7 @@ fun ConnectionStatusDot(
         remember { mutableFloatStateOf(1f) }
     }
 
-    val dotColor = when (state) {
-        is ConnectionState.Live -> MaterialTheme.colorScheme.primary
-        is ConnectionState.Reconnecting -> MaterialTheme.colorScheme.tertiary
-        is ConnectionState.Offline -> MaterialTheme.colorScheme.error
-        is ConnectionState.Unknown -> MaterialTheme.colorScheme.outline
-    }
+    val dotColor = Color(connectionDotColorArgb(state))
 
     val desc = when (state) {
         is ConnectionState.Live -> stringResource(R.string.connection_dot_desc_live)
