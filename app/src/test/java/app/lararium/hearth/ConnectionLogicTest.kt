@@ -235,4 +235,21 @@ class ConnectionLogicTest {
         assertNotNull("rejection reason must be logged", loggedWarning)
         assertTrue(loggedWarning!!.contains("Rejected fallback endpoint"))
     }
+
+    @Test
+    fun connectionDotColorArgb_isDeterministicAcrossThemes() {
+        // Live must be unmistakably green on every dynamic theme, and every
+        // state must render a distinct color.
+        assertEquals(0xFF4CAF50L, connectionDotColorArgb(ConnectionState.Live))
+        assertEquals(0xFFFFB300L, connectionDotColorArgb(ConnectionState.Reconnecting(2)))
+        assertEquals(0xFFE53935L, connectionDotColorArgb(ConnectionState.Offline(OfflineReason.Unreachable)))
+        assertEquals(0xFF9E9E9EL, connectionDotColorArgb(ConnectionState.Unknown))
+        val all = setOf(
+            connectionDotColorArgb(ConnectionState.Live),
+            connectionDotColorArgb(ConnectionState.Reconnecting(1)),
+            connectionDotColorArgb(ConnectionState.Offline(OfflineReason.NoNetwork)),
+            connectionDotColorArgb(ConnectionState.Unknown),
+        )
+        assertEquals(4, all.size)
+    }
 }
