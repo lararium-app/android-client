@@ -15,10 +15,12 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import app.lararium.auth.authGate
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.connectors.ConnectorFieldDescriptor
 import app.lararium.hearth.connectors.ConnectorFormState
@@ -38,6 +40,7 @@ fun ConnectorFormScreen(
     onSubmittedPending: (ConnectorRow) -> Unit,
     onSwitchToEdit: (String) -> Unit,
 ) {
+    val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -90,8 +93,6 @@ fun ConnectorFormScreen(
         val ep = endpoint ?: return
         if (!submitEnabled) return
 
-        inlineError = null
-        isSubmitting = true
         val payload = formState.toSubmitPayload()
         val transport = payload.optString("transport", "stdio")
         val target = if (transport == "http") {
@@ -100,37 +101,46 @@ fun ConnectorFormScreen(
             payload.optString("command", "")
         }
 
+        val reason = if (existingRow != null) "Update Connector" else "Save Connector"
         scope.launch {
-            try {
-                val client = ConnectorsClient(ep)
-                val result = if (existingRow != null) {
-                    client.updateConnector(existingRow.name, payload)
-                } else {
-                    client.addConnector(payload)
-                }
-
-                when (result) {
-                    is ConnectorsClient.SubmitResult.PendingApproval -> {
-                        pendingSubmittedRow = ConnectorsLogic.createPendingRow(
-                            name = result.name,
-                            transport = transport,
-                            target = target,
-                        )
-                        approvalDialogCardId = ConnectorsLogic.formatApprovalCardId(result.cardId)
+            authGate(
+                context = context,
+                reasonTitle = reason,
+                destructive = false
+            ) {
+                inlineError = null
+                isSubmitting = true
+                try {
+                    val client = ConnectorsClient(ep)
+                    val result = if (existingRow != null) {
+                        client.updateConnector(existingRow.name, payload)
+                    } else {
+                        client.addConnector(payload)
                     }
-                    is ConnectorsClient.SubmitResult.Failed -> {
-                        when (val uiErr = result.uiError) {
-                            is SubmitErrorUi.InlineError -> {
-                                inlineError = uiErr
-                            }
-                            is SubmitErrorUi.SnackbarError -> {
-                                snackbarHostState.showSnackbar(uiErr.message)
+
+                    when (result) {
+                        is ConnectorsClient.SubmitResult.PendingApproval -> {
+                            pendingSubmittedRow = ConnectorsLogic.createPendingRow(
+                                name = result.name,
+                                transport = transport,
+                                target = target,
+                            )
+                            approvalDialogCardId = ConnectorsLogic.formatApprovalCardId(result.cardId)
+                        }
+                        is ConnectorsClient.SubmitResult.Failed -> {
+                            when (val uiErr = result.uiError) {
+                                is SubmitErrorUi.InlineError -> {
+                                    inlineError = uiErr
+                                }
+                                is SubmitErrorUi.SnackbarError -> {
+                                    snackbarHostState.showSnackbar(uiErr.message)
+                                }
                             }
                         }
                     }
+                } finally {
+                    isSubmitting = false
                 }
-            } finally {
-                isSubmitting = false
             }
         }
     }

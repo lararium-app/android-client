@@ -32,6 +32,7 @@ class HearthChatClient(
 
     companion object {
         const val PREFS_NAME = "assistant_settings"
+        // Genuinely not secret: hearth_session_id is an ephemeral conversation identifier.
         const val KEY_SESSION_ID = "hearth_session_id"
         const val APPROVAL_NOTICE = "Your hearth is asking for approval on another device"
         const val STILL_ANSWERING_MARKER = "still-answering"

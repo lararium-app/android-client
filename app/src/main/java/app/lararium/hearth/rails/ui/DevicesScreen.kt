@@ -28,6 +28,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
+import app.lararium.auth.authGate
 import app.lararium.hearth.rails.DeviceStreamState
 import app.lararium.hearth.rails.NOTIFICATION_ACCESS
 import app.lararium.hearth.rails.HEALTH_CONNECT
@@ -35,6 +36,7 @@ import app.lararium.hearth.rails.RailPermissions
 import app.lararium.hearth.rails.RailsWire
 import app.lararium.hearth.rails.service.DevicePairingStore
 import app.lararium.hearth.rails.service.DeviceRailService
+import kotlinx.coroutines.launch
 
 /**
  * Devices control panel (G1, spec A3/A4).
@@ -48,6 +50,7 @@ fun DevicesScreen(
     onNavigateToPairing: (baseUrl: String?, token: String?) -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val store = remember { DevicePairingStore(context) }
     val plainPrefs = remember {
         context.getSharedPreferences(DevicePairingStore.PLAIN_PREFS_NAME, Context.MODE_PRIVATE)
@@ -293,11 +296,19 @@ fun DevicesScreen(
                                         }
                                         Button(
                                             onClick = {
-                                                val oldBase = endpoint?.baseUrl
-                                                store.clear()
-                                                DeviceRailService.stopIfIdle(context)
-                                                isPaired = false
-                                                onNavigateToPairing(oldBase, null)
+                                                scope.launch {
+                                                    authGate(
+                                                        context = context,
+                                                        reasonTitle = "Re-pair Device Rails",
+                                                        destructive = true
+                                                    ) {
+                                                        val oldBase = endpoint?.baseUrl
+                                                        store.clear()
+                                                        DeviceRailService.stopIfIdle(context)
+                                                        isPaired = false
+                                                        onNavigateToPairing(oldBase, null)
+                                                    }
+                                                }
                                             },
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = MaterialTheme.colorScheme.error
@@ -414,11 +425,19 @@ fun DevicesScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        store.clear()
-                        DeviceRailService.stopIfIdle(context)
-                        isPaired = false
-                        endpoint = null
-                        showForgetDialog = false
+                        scope.launch {
+                            authGate(
+                                context = context,
+                                reasonTitle = "Unpair Device Rails",
+                                destructive = true
+                            ) {
+                                store.clear()
+                                DeviceRailService.stopIfIdle(context)
+                                isPaired = false
+                                endpoint = null
+                                showForgetDialog = false
+                            }
+                        }
                     },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.error
