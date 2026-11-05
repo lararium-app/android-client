@@ -453,9 +453,16 @@ object ConnectorsLogic {
         )
     }
 
-    fun parseRows(rawJsonArray: String): List<ConnectorRow> {
-        if (rawJsonArray.isBlank()) return emptyList()
-        val arr = JSONArray(rawJsonArray)
+    fun parseRows(rawJson: String): List<ConnectorRow> {
+        if (rawJson.isBlank()) return emptyList()
+        // The daemon answers GET /v1/mcp/connectors with a wrapped object
+        // ({"connectors":[...]}); older builds sent a bare array. Accept both.
+        val trimmed = rawJson.trim()
+        val arr = if (trimmed.startsWith("{")) {
+            JSONObject(trimmed).optJSONArray("connectors") ?: JSONArray()
+        } else {
+            JSONArray(trimmed)
+        }
         val result = mutableListOf<ConnectorRow>()
         for (i in 0 until arr.length()) {
             val obj = arr.optJSONObject(i) ?: continue

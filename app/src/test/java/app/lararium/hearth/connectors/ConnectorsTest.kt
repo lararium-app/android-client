@@ -520,4 +520,50 @@ class ConnectorsTest {
         assertEquals("read-only", snapshots[2].single().appState)
         assertTrue(snapshots[3].isEmpty())
     }
+
+    // -----------------------------------------------------------------------
+    // Live daemon shape: GET /v1/mcp/connectors wraps rows in an object
+    // ({"connectors":[...]}) — captured verbatim from a running daemon.
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun parseRows_acceptsWrappedDaemonPayload() {
+        val raw = """
+        {
+          "connectors": [
+            {
+              "name": "searxng",
+              "state": "ready",
+              "tools": 4,
+              "restarts": 1,
+              "reason": "ok",
+              "app_state": "read-only",
+              "enabled": true,
+              "tool_list": [
+                {"name": "searxng_web_search", "read_only": true, "destructive": false, "open_world": true}
+              ],
+              "has_write_tools": false,
+              "fingerprint": "",
+              "last_used": null,
+              "url_or_command": "",
+              "env": []
+            }
+          ]
+        }
+        """.trimIndent()
+        val rows = ConnectorsLogic.parseRows(raw)
+        assertEquals(1, rows.size)
+        val row = rows.single()
+        assertEquals("searxng", row.name)
+        assertEquals("ready", row.state)
+        assertEquals(4, row.tools)
+        assertEquals(1, row.restarts)
+        assertEquals("read-only", row.appState)
+        assertTrue(row.enabled)
+    }
+
+    @Test
+    fun parseRows_wrappedObjectWithoutConnectorsKeyYieldsEmpty() {
+        assertTrue(ConnectorsLogic.parseRows("""{"other": true}""").isEmpty())
+    }
 }

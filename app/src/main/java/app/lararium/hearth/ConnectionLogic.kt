@@ -205,3 +205,16 @@ class SendGate {
         recordedQuery = null
     }
 }
+
+/**
+ * Deterministic status-dot colors (ARGB). Theme-dependent colors
+ * (primary/outline) washed out to near-white under M3 dynamic theming, so a
+ * connected dot read as gray/white. Fixed palette keeps the signal legible
+ * on every theme; Live matches the drawer's green.
+ */
+fun connectionDotColorArgb(state: ConnectionState): Long = when (state) {
+    ConnectionState.Live -> 0xFF4CAF50L
+    is ConnectionState.Reconnecting -> 0xFFFFB300L
+    is ConnectionState.Offline -> 0xFFE53935L
+    is ConnectionState.Unknown -> 0xFF9E9E9EL
+}
