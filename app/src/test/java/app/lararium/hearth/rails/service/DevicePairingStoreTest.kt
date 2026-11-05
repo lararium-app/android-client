@@ -152,13 +152,19 @@ class DevicePairingStoreTest {
 
         plain.edit()
             .putString(DevicePairingStore.KEY_BASE_URL, "https://old.example.com")
+            .putString(DevicePairingStore.KEY_TOKEN, "old_plain_token")
+            .putString(DevicePairingStore.KEY_DEVICE_ID, "old_plain_id")
             .commit()
 
         val store = DevicePairingStore(plain, secure)
         store.saveEndpoint(DeviceEndpoint("https://new.example.com", "tok", "dev"))
 
         assertFalse(plain.contains(DevicePairingStore.KEY_BASE_URL))
+        assertFalse(plain.contains(DevicePairingStore.KEY_TOKEN))
+        assertFalse(plain.contains(DevicePairingStore.KEY_DEVICE_ID))
         assertEquals("https://new.example.com", secure.getString(DevicePairingStore.KEY_BASE_URL, null))
+        assertEquals("tok", secure.getString(DevicePairingStore.KEY_TOKEN, null))
+        assertEquals("dev", secure.getString(DevicePairingStore.KEY_DEVICE_ID, null))
     }
 
     @Test
