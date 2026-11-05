@@ -9,6 +9,7 @@ import android.content.SharedPreferences
 class SettingsManager(context: Context) {
     
     companion object {
+        // Genuinely not secret: user UI preferences (voice input method, language, orientation).
         private const val PREFS_NAME = "assistant_settings"
         private const val KEY_VOICE_INPUT_METHOD = "voice_input_method"
         private const val KEY_TTS_ENABLED = "tts_enabled"

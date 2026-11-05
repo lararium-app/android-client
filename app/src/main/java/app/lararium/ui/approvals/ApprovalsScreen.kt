@@ -18,12 +18,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import app.lararium.auth.authGate
 import app.lararium.hearth.Endpoint
 import app.lararium.R
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.badge.HearthBadgeState
 import app.lararium.hearth.watch.CardInfo
 import app.lararium.hearth.watch.WatchLogic
+import app.lararium.receiver.CardActionReceiver
 import app.lararium.security.SecureKeyManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -72,37 +74,46 @@ fun ApprovalsScreen(onBack: () -> Unit) {
     }
 
     val resolveCard: (String, String) -> Unit = { cardId, verdict ->
-        pendingId = cardId
-        scope.launch(Dispatchers.IO) {
-            try {
-                val epTriple = SecureKeyManager(context).getHearthEndpoint()
-                if (epTriple == null) {
-                    snackbarHostState.showSnackbar("Not paired with a hearth yet.")
-                    return@launch
-                }
-                val endpoint = Endpoint(epTriple.first, epTriple.second, epTriple.third)
-                val client = LarariumClient(endpoint)
-                val (status, body) = client.resolveCard(cardId, verdict)
-                if (status == 200) {
-                    withContext(Dispatchers.Main) {
-                        cards = cards?.filter { it.id != cardId }
-                    }
-                    HearthBadgeState.refresh(context)
-                } else {
-                    val failureMessage = describeResolveFailure(status, body)
-                    snackbarHostState.showSnackbar(failureMessage)
-                }
-            } catch (e: Exception) {
-                val failureMessage = if (e is java.io.IOException) {
-                    "Can't reach your hearth."
-                } else {
-                    describeResolveFailure(0, e.message ?: "")
-                }
-                snackbarHostState.showSnackbar(failureMessage)
-            } finally {
-                withContext(Dispatchers.Main) {
-                    if (pendingId == cardId) {
-                        pendingId = null
+        scope.launch {
+            authGate(
+                context = context,
+                reasonTitle = "Resolve Custody Card",
+                destructive = false
+            ) {
+                pendingId = cardId
+                withContext(Dispatchers.IO) {
+                    try {
+                        val epTriple = SecureKeyManager(context).getHearthEndpoint()
+                        if (epTriple == null) {
+                            snackbarHostState.showSnackbar("Not paired with a hearth yet.")
+                            return@withContext
+                        }
+                        val endpoint = Endpoint(epTriple.first, epTriple.second, epTriple.third)
+                        val client = LarariumClient(endpoint)
+                        val (status, body) = client.resolveCard(cardId, verdict)
+                        if (status == 200) {
+                            withContext(Dispatchers.Main) {
+                                cards = cards?.filter { it.id != cardId }
+                            }
+                            CardActionReceiver.markCardResolved(cardId)
+                            HearthBadgeState.refresh(context)
+                        } else {
+                            val failureMessage = describeResolveFailure(status, body)
+                            snackbarHostState.showSnackbar(failureMessage)
+                        }
+                    } catch (e: Exception) {
+                        val failureMessage = if (e is java.io.IOException) {
+                            "Can't reach your hearth."
+                        } else {
+                            describeResolveFailure(0, e.message ?: "")
+                        }
+                        snackbarHostState.showSnackbar(failureMessage)
+                    } finally {
+                        withContext(Dispatchers.Main) {
+                            if (pendingId == cardId) {
+                                pendingId = null
+                            }
+                        }
                     }
                 }
             }

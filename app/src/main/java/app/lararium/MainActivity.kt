@@ -9,12 +9,16 @@ import android.os.Bundle
 import android.content.pm.PackageManager
 import android.provider.Settings
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.LifecycleEventObserver
+import app.lararium.auth.AppLock
+import app.lararium.auth.ui.LockScreen
+import app.lararium.receiver.CardNotificationIntentLogic
 import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.hearth.watch.HearthWatchScheduler
 import androidx.compose.animation.*
@@ -83,7 +87,7 @@ import kotlinx.coroutines.withContext
 
 private const val BADGE_REFRESH_MS = 30_000L
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
 
     /** Deep-link target route to navigate to once the compose navigation graph is ready. */
     private val openRoute = MutableStateFlow<String?>(null)
@@ -102,10 +106,21 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handlePairingIntent(intent)
+        handleReviewCardIntent(intent)
         openRoute.value = intent.getStringExtra("lararium_open")
         intent.removeExtra("lararium_open")
         openSessionId.value = intent.getStringExtra(HearthNotifier.EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() }
         intent.removeExtra(HearthNotifier.EXTRA_SESSION_ID)
+    }
+
+    private fun handleReviewCardIntent(intent: Intent?) {
+        if (intent == null) return
+        if (intent.action == CardNotificationIntentLogic.ACTION_REVIEW_CARD) {
+            val cardId = intent.getStringExtra(CardNotificationIntentLogic.EXTRA_CARD_ID)
+            if (!cardId.isNullOrBlank()) {
+                openRoute.value = "approvals"
+            }
+        }
     }
 
     override fun onDestroy() {
@@ -217,6 +232,14 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
 
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> AppLock.onForeground(System.currentTimeMillis())
+                Lifecycle.Event.ON_STOP -> AppLock.onBackground(System.currentTimeMillis())
+                else -> {}
+            }
+        })
+
         permissionLauncher.launch(
             arrayOf(
                 Manifest.permission.RECORD_AUDIO
@@ -225,6 +248,7 @@ class MainActivity : ComponentActivity() {
 
         // Cold start — handle a pairing link that launched the activity.
         handlePairingIntent(intent)
+        handleReviewCardIntent(intent)
         openRoute.value = intent?.getStringExtra("lararium_open")
         intent?.removeExtra("lararium_open")
         openSessionId.value = intent?.getStringExtra(HearthNotifier.EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() }
@@ -232,8 +256,33 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             AiintegratedintoandroidTheme {
-                val context = LocalContext.current
-                val app = context.applicationContext as AssistantApplication
+                val isUnlocked by AppLock.isUnlockedState.collectAsStateWithLifecycle()
+
+                fun triggerUnlock() {
+                    AppLock.authenticator.authenticate(
+                        activity = this@MainActivity,
+                        reasonTitle = "Unlock Lararium",
+                        reasonText = "Confirm your identity to open Lararium"
+                    ) { success ->
+                        if (success) {
+                            AppLock.unlock()
+                        }
+                    }
+                }
+
+                LaunchedEffect(isUnlocked) {
+                    if (!isUnlocked) {
+                        triggerUnlock()
+                    }
+                }
+
+                if (!isUnlocked) {
+                    LockScreen(
+                        onUnlock = { triggerUnlock() }
+                    )
+                } else {
+                    val context = LocalContext.current
+                    val app = context.applicationContext as AssistantApplication
                 val isPaired = app.secureKeyManager.getHearthEndpoint() != null
 
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -434,6 +483,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     }
+                }
                 }
                 }
             }

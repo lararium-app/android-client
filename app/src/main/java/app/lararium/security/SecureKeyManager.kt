@@ -35,19 +35,33 @@ class SecureKeyManager(private val context: Context) {
         private const val PREF_PAIRING_CODE = "pairing_code"
         private const val PLAIN_PREFS_NAME = "local_token"
         private const val PLAIN_PAIRING_CODE_KEY = "pairingCode"
+
+        // ========== Device Rails Credentials (T6 Token-Store Audit) ==========
+        private const val PREF_DEVICE_TOKEN = "device_token"
+        private const val PREF_DEVICE_ID = "device_id"
+        private const val PREF_DEVICE_BASE_URL = "device_base_url"
+        private const val PLAIN_DEVICE_RAILS_PREFS = "device_rails_plain"
     }
 
-    private val keyStore: KeyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply {
-        load(null)
+    // Lazy so JVM unit tests (no AndroidKeyStore provider) can construct managers that
+    // never encrypt: reading an empty prefs map must not touch the provider. First real
+    // crypto use initialises it, on-device only.
+    private val keyStore: KeyStore by lazy {
+        KeyStore.getInstance(ANDROID_KEYSTORE).apply {
+            load(null)
+        }
     }
 
     private val prefs by lazy {
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     }
 
-    init {
-        createKeyIfNeeded()
-    }
+    /**
+     * Keystore key creation deferred to first crypto use: constructing this manager (e.g.
+     * transitively from a service reading an empty prefs map) must not require the
+     * AndroidKeyStore provider. On device the first encrypt/decrypt initialises the key.
+     */
+    private val keyReady: Unit by lazy { createKeyIfNeeded() }
 
     /**
      * Create encryption key in Android Keystore if it doesn't exist.
@@ -77,6 +91,7 @@ class SecureKeyManager(private val context: Context) {
     }
 
     private fun getSecretKey(): SecretKey {
+        keyReady // ensure the keystore key exists before first read (initialises on device)
         return keyStore.getKey(KEY_ALIAS, null) as SecretKey
     }
 
@@ -153,7 +168,7 @@ class SecureKeyManager(private val context: Context) {
      * Returns a Triple(baseUrl, token, name).
      */
     fun getHearthEndpoint(): Triple<String, String, String>? {
-        val encrypted = prefs.getString(PREF_HEARTH_ENDPOINT, null) ?: return null
+        val encrypted = prefs.getString(PREF_HEARTH_ENDPOINT, null)?.takeIf { it.isNotBlank() } ?: return null
         return try {
             val json = org.json.JSONObject(decrypt(encrypted))
             Triple(
@@ -195,7 +210,7 @@ class SecureKeyManager(private val context: Context) {
      * reads old, writes to secure prefs, deletes old.
      */
     fun getPairingCode(): String? {
-        val encrypted = prefs.getString(PREF_PAIRING_CODE, null)
+        val encrypted = prefs.getString(PREF_PAIRING_CODE, null)?.takeIf { it.isNotBlank() }
         if (encrypted != null) {
             return try {
                 decrypt(encrypted)
@@ -207,7 +222,7 @@ class SecureKeyManager(private val context: Context) {
 
         // Migrate legacy plain value on first read: read old, write new, delete old
         val plainPrefs = context.getSharedPreferences(PLAIN_PREFS_NAME, Context.MODE_PRIVATE)
-        val legacyCode = plainPrefs.getString(PLAIN_PAIRING_CODE_KEY, null)
+        val legacyCode = plainPrefs.getString(PLAIN_PAIRING_CODE_KEY, null)?.takeIf { it.isNotBlank() }
         if (legacyCode != null) {
             Log.i(TAG, "Migrating legacy pairingCode from local_token to secure storage (L-21)")
             setPairingCode(legacyCode)
@@ -249,5 +264,146 @@ class SecureKeyManager(private val context: Context) {
     fun needsTokenRotation(rotationIntervalMs: Long = 24 * 60 * 60 * 1000): Boolean {
         val lastRefresh = getTokenRefreshTime()
         return System.currentTimeMillis() - lastRefresh > rotationIntervalMs
+    }
+
+    // ========== Device Rails Credentials Storage (T6 Token-Store Audit) ==========
+
+    /**
+     * Store device rails bearer token encrypted in Keystore-wrapped secure storage.
+     * Purges legacy plain value immediately upon write.
+     */
+    fun setDeviceToken(token: String) {
+        val encrypted = encrypt(token)
+        prefs.edit().putString(PREF_DEVICE_TOKEN, encrypted).apply()
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        if (plainPrefs.contains("device_token")) {
+            plainPrefs.edit().remove("device_token").apply()
+        }
+        Log.i(TAG, "Device rails token stored securely in keystore-wrapped preferences")
+    }
+
+    /**
+     * Retrieve device rails bearer token. Migrates on first read from legacy plain prefs.
+     */
+    fun getDeviceToken(): String? {
+        val encrypted = prefs.getString(PREF_DEVICE_TOKEN, null)?.takeIf { it.isNotBlank() }
+        if (encrypted != null) {
+            return try {
+                decrypt(encrypted)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to decrypt device token", e)
+                null
+            }
+        }
+
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        val legacyToken = plainPrefs.getString("device_token", null)?.takeIf { it.isNotBlank() }
+        if (legacyToken != null) {
+            Log.i(TAG, "Migrating legacy device_token to secure storage (T6)")
+            setDeviceToken(legacyToken)
+            plainPrefs.edit().remove("device_token").apply()
+            return legacyToken
+        }
+
+        return null
+    }
+
+    fun hasDeviceToken(): Boolean {
+        if (prefs.contains(PREF_DEVICE_TOKEN)) return true
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        return plainPrefs.contains("device_token")
+    }
+
+    fun clearDeviceToken() {
+        prefs.edit().remove(PREF_DEVICE_TOKEN).apply()
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        plainPrefs.edit().remove("device_token").apply()
+    }
+
+    fun setDeviceId(deviceId: String) {
+        val encrypted = encrypt(deviceId)
+        prefs.edit().putString(PREF_DEVICE_ID, encrypted).apply()
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        if (plainPrefs.contains("device_id")) {
+            plainPrefs.edit().remove("device_id").apply()
+        }
+    }
+
+    fun getDeviceId(): String? {
+        val encrypted = prefs.getString(PREF_DEVICE_ID, null)?.takeIf { it.isNotBlank() }
+        if (encrypted != null) {
+            return try {
+                decrypt(encrypted)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to decrypt device id", e)
+                null
+            }
+        }
+
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        val legacyId = plainPrefs.getString("device_id", null)?.takeIf { it.isNotBlank() }
+        if (legacyId != null) {
+            setDeviceId(legacyId)
+            plainPrefs.edit().remove("device_id").apply()
+            return legacyId
+        }
+
+        return null
+    }
+
+    fun hasDeviceId(): Boolean {
+        if (prefs.contains(PREF_DEVICE_ID)) return true
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        return plainPrefs.contains("device_id")
+    }
+
+    fun clearDeviceId() {
+        prefs.edit().remove(PREF_DEVICE_ID).apply()
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        plainPrefs.edit().remove("device_id").apply()
+    }
+
+    fun setDeviceBaseUrl(baseUrl: String) {
+        // Base URL is a network endpoint; stored securely alongside device credentials
+        val encrypted = encrypt(baseUrl)
+        prefs.edit().putString(PREF_DEVICE_BASE_URL, encrypted).apply()
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        if (plainPrefs.contains("device_base_url")) {
+            plainPrefs.edit().remove("device_base_url").apply()
+        }
+    }
+
+    fun getDeviceBaseUrl(): String? {
+        val encrypted = prefs.getString(PREF_DEVICE_BASE_URL, null)?.takeIf { it.isNotBlank() }
+        if (encrypted != null) {
+            return try {
+                decrypt(encrypted)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to decrypt device base url", e)
+                null
+            }
+        }
+
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        val legacyUrl = plainPrefs.getString("device_base_url", null)?.takeIf { it.isNotBlank() }
+        if (legacyUrl != null) {
+            setDeviceBaseUrl(legacyUrl)
+            plainPrefs.edit().remove("device_base_url").apply()
+            return legacyUrl
+        }
+
+        return null
+    }
+
+    fun hasDeviceBaseUrl(): Boolean {
+        if (prefs.contains(PREF_DEVICE_BASE_URL)) return true
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        return plainPrefs.contains("device_base_url")
+    }
+
+    fun clearDeviceBaseUrl() {
+        prefs.edit().remove(PREF_DEVICE_BASE_URL).apply()
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
+        plainPrefs.edit().remove("device_base_url").apply()
     }
 }
