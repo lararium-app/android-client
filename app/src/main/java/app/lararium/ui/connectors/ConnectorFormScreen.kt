@@ -1,5 +1,6 @@
 package app.lararium.ui.connectors
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,6 +12,8 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.ErrorOutline
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -23,6 +26,7 @@ import androidx.compose.ui.unit.dp
 import app.lararium.auth.authGate
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.connectors.ConnectorFieldDescriptor
+import app.lararium.hearth.connectors.ConnectorFormLayout
 import app.lararium.hearth.connectors.ConnectorFormState
 import app.lararium.hearth.connectors.ConnectorRow
 import app.lararium.hearth.connectors.ConnectorsClient
@@ -47,12 +51,18 @@ fun ConnectorFormScreen(
     var isLoadingDescriptor by remember(existingRow?.name) { mutableStateOf(true) }
     var isOfflineFallback by remember(existingRow?.name) { mutableStateOf(false) }
     var formState by remember(existingRow?.name) {
-        mutableStateOf(
-            ConnectorsLogic.initialFormState(
-                descriptor = ConnectorsLogic.defaultV1FormDescriptor(),
-                existingRow = existingRow,
-            )
+        val initial = ConnectorsLogic.initialFormState(
+            descriptor = ConnectorsLogic.defaultV1FormDescriptor(),
+            existingRow = existingRow,
         )
+        val transportField = initial.descriptor.fields.firstOrNull { it.key == "transport" }
+        val allowedTransports = transportField?.allowed?.takeIf { it.isNotEmpty() } ?: listOf("stdio", "http")
+        val stateWithHttp = if (existingRow == null && "http" in allowedTransports) {
+            initial.withScalar("transport", "http")
+        } else {
+            initial
+        }
+        mutableStateOf(stateWithHttp)
     }
 
     var isSubmitting by remember { mutableStateOf(false) }
@@ -60,38 +70,56 @@ fun ConnectorFormScreen(
     var approvalDialogCardId by remember { mutableStateOf<String?>(null) }
     var pendingSubmittedRow by remember { mutableStateOf<ConnectorRow?>(null) }
 
+    var isAdvancedExpanded by remember(existingRow?.name) { mutableStateOf(false) }
+    var showTransportPicker by remember(existingRow?.name) { mutableStateOf(false) }
+    var expandedDetailsKeys by remember(existingRow?.name) { mutableStateOf<Set<String>>(emptySet()) }
+
     LaunchedEffect(endpoint, existingRow?.name) {
         isLoadingDescriptor = true
         inlineError = null
-        if (endpoint == null) {
-            val fallback = ConnectorsLogic.defaultV1FormDescriptor()
-            formState = ConnectorsLogic.initialFormState(fallback, existingRow)
+        val descriptor = if (endpoint == null) {
             isOfflineFallback = true
-            isLoadingDescriptor = false
+            ConnectorsLogic.defaultV1FormDescriptor()
         } else {
             try {
-                val descriptor = ConnectorsClient(endpoint).fetchFormDescriptor()
-                formState = ConnectorsLogic.initialFormState(descriptor, existingRow)
+                val fetched = ConnectorsClient(endpoint).fetchFormDescriptor()
                 isOfflineFallback = false
+                fetched
             } catch (_: Exception) {
-                val fallback = ConnectorsLogic.defaultV1FormDescriptor()
-                formState = ConnectorsLogic.initialFormState(fallback, existingRow)
                 isOfflineFallback = true
-            } finally {
-                isLoadingDescriptor = false
+                ConnectorsLogic.defaultV1FormDescriptor()
             }
         }
+
+        val initial = ConnectorsLogic.initialFormState(descriptor, existingRow)
+        val transportField = descriptor.fields.firstOrNull { it.key == "transport" }
+        val allowedTransports = transportField?.allowed?.takeIf { it.isNotEmpty() } ?: listOf("stdio", "http")
+        formState = if (existingRow == null && "http" in allowedTransports) {
+            initial.withScalar("transport", "http")
+        } else {
+            initial
+        }
+        isLoadingDescriptor = false
     }
 
     val isEditMode = existingRow != null
-    val submitEnabled = formState.canSubmit(
+    val layout = remember(formState.descriptor, formState.scalarValues) {
+        ConnectorFormLayout.compute(formState.descriptor, formState.scalarValues)
+    }
+
+    val canActuallySubmit = formState.canSubmit(
         isOfflineFallback = isOfflineFallback,
         isSubmitting = isSubmitting,
     )
 
+    val hiddenAdvancedNudge = ConnectorFormLayout.getHiddenAdvancedBlockingNudge(
+        layout = layout,
+        formState = formState,
+        isAdvancedExpanded = isAdvancedExpanded,
+    )
+
     fun submitForm() {
         val ep = endpoint ?: return
-        if (!submitEnabled) return
 
         val payload = formState.toSubmitPayload()
         val transport = payload.optString("transport", "stdio")
@@ -295,23 +323,143 @@ fun ConnectorFormScreen(
                     }
                 }
 
-                // Generic field renderer: iterate fields in descriptor order
-                for (field in formState.descriptor.fields) {
-                    GenericFormFieldItem(
+                // -------------------------------------------------------------------
+                // SIMPLE SECTION: Short conversation, one question per card
+                // -------------------------------------------------------------------
+                layout.simpleFields.forEach { field ->
+                    ConversationalCard(
                         field = field,
                         formState = formState,
-                        onStateChange = { updated ->
-                            formState = updated
+                        isDetailsExpanded = expandedDetailsKeys.contains(field.key),
+                        onToggleDetails = {
+                            expandedDetailsKeys = if (expandedDetailsKeys.contains(field.key)) {
+                                expandedDetailsKeys - field.key
+                            } else {
+                                expandedDetailsKeys + field.key
+                            }
+                        },
+                        onStateChange = { next ->
+                            formState = next
                             inlineError = null
                         },
                     )
                 }
 
+                // -------------------------------------------------------------------
+                // COLLAPSIBLE ADVANCED OPTIONS DISCLOSURE ROW
+                // -------------------------------------------------------------------
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { isAdvancedExpanded = !isAdvancedExpanded },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                    ),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Advanced options",
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Text(
+                                text = if (isAdvancedExpanded) {
+                                    "Hide advanced configuration"
+                                } else {
+                                    "Transport protocol, headers, environment variables, and timeouts"
+                                },
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        Icon(
+                            imageVector = if (isAdvancedExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = if (isAdvancedExpanded) "Collapse Advanced options" else "Expand Advanced options",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                // -------------------------------------------------------------------
+                // EXPANDED ADVANCED SECTION
+                // -------------------------------------------------------------------
+                if (isAdvancedExpanded) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                    ) {
+                        layout.advancedFields.forEach { field ->
+                            if (field.key.equals("transport", ignoreCase = true)) {
+                                AdvancedTransportItem(
+                                    field = field,
+                                    formState = formState,
+                                    showTransportPicker = showTransportPicker,
+                                    onShowPicker = { showTransportPicker = true },
+                                    onStateChange = { next ->
+                                        formState = next
+                                        inlineError = null
+                                    },
+                                )
+                            } else {
+                                AdvancedFormFieldItem(
+                                    field = field,
+                                    formState = formState,
+                                    isDetailsExpanded = expandedDetailsKeys.contains(field.key),
+                                    onToggleDetails = {
+                                        expandedDetailsKeys = if (expandedDetailsKeys.contains(field.key)) {
+                                            expandedDetailsKeys - field.key
+                                        } else {
+                                            expandedDetailsKeys + field.key
+                                        }
+                                    },
+                                    onStateChange = { next ->
+                                        formState = next
+                                        inlineError = null
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // -------------------------------------------------------------------
+                // SUBMIT BUTTON
+                // -------------------------------------------------------------------
+                val submitButtonEnabled = !isOfflineFallback && !isSubmitting
+
                 Button(
-                    onClick = { submitForm() },
-                    enabled = submitEnabled,
+                    onClick = {
+                        if (hiddenAdvancedNudge != null) {
+                            // Blocked by hidden advanced required field: auto-expand and show friendly nudge
+                            isAdvancedExpanded = true
+                            inlineError = SubmitErrorUi.InlineError(message = hiddenAdvancedNudge)
+                        } else if (!canActuallySubmit) {
+                            val firstInvalid = layout.simpleFields.firstOrNull { formState.validateField(it) != null }
+                                ?: layout.advancedFields.firstOrNull { formState.validateField(it) != null }
+                            if (firstInvalid != null) {
+                                val raw = formState.validateField(firstInvalid) ?: "Please fill this in first"
+                                val friendly = ConnectorFormLayout.mapFriendlyError(firstInvalid, raw)
+                                inlineError = SubmitErrorUi.InlineError(message = friendly.headline)
+                                if (layout.advancedFields.contains(firstInvalid)) {
+                                    isAdvancedExpanded = true
+                                }
+                            }
+                        } else {
+                            submitForm()
+                        }
+                    },
+                    enabled = submitButtonEnabled,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(50.dp),
@@ -371,53 +519,257 @@ fun ConnectorFormScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+// ---------------------------------------------------------------------------
+// CONVERSATIONAL CARD FOR SIMPLE SECTION
+// ---------------------------------------------------------------------------
+
 @Composable
-private fun GenericFormFieldItem(
+private fun ConversationalCard(
     field: ConnectorFieldDescriptor,
     formState: ConnectorFormState,
+    isDetailsExpanded: Boolean,
+    onToggleDetails: () -> Unit,
     onStateChange: (ConnectorFormState) -> Unit,
 ) {
-    val isRequired = formState.isFieldRequired(field)
-    val labelText = if (isRequired) "${field.key} *" else field.key
+    val question = when (field.key.lowercase()) {
+        "name" -> "What should we call it?"
+        "url", "base_url" -> "Where does it live?"
+        else -> ConnectorFormLayout.humanizeKey(field.key)
+    }
+    val hint = ConnectorFormLayout.getFieldDescription(field)
     val fieldError = formState.validateField(field)
+    val isReadOnlyName = formState.isEditMode && field.key == "name"
+    val value = if (isReadOnlyName && formState.editTargetName != null) {
+        formState.editTargetName
+    } else {
+        formState.scalarValues[field.key].orEmpty()
+    }
+    val showError = value.isNotEmpty() && fieldError != null
 
-    when (ConnectorsLogic.controlKindForField(field)) {
-        RenderedControlKind.TEXT -> {
-            val isReadOnlyName = formState.isEditMode && field.key == "name"
-            val value = formState.scalarValues[field.key].orEmpty()
-            val showLiveError = value.isNotEmpty() && fieldError != null
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            Text(
+                text = question,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
 
-            val supportingHint = buildString {
-                if (field.description.isNotBlank()) append(field.description)
-                if (field.validation.maxLength != null) {
-                    if (isNotEmpty()) append(" · ")
-                    append("max ${field.validation.maxLength} chars")
-                }
+            if (hint.isNotBlank()) {
+                Text(
+                    text = hint,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
 
             OutlinedTextField(
                 value = value,
                 onValueChange = { next ->
                     if (!isReadOnlyName) {
-                        onStateChange(formState.withScalar(field.key, next))
+                        if (field.key == "url" || field.key == "base_url") {
+                            val nextState = ConnectorFormLayout.applyTargetInput(formState, next)
+                            onStateChange(nextState)
+                        } else {
+                            onStateChange(formState.withScalar(field.key, next))
+                        }
                     }
                 },
-                label = { Text(labelText) },
                 readOnly = isReadOnlyName,
                 enabled = !isReadOnlyName,
-                isError = showLiveError,
-                supportingText = {
-                    if (showLiveError) {
-                        Text(fieldError.orEmpty(), color = MaterialTheme.colorScheme.error)
-                    } else if (supportingHint.isNotBlank()) {
-                        Text(supportingHint)
+                isError = showError,
+                placeholder = {
+                    val ph = when (field.key.lowercase()) {
+                        "name" -> "Front door camera"
+                        "url", "base_url" -> "https://…"
+                        else -> ConnectorFormLayout.humanizeKey(field.key)
                     }
+                    Text(ph)
                 },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
             )
+
+            if (showError) {
+                FriendlyErrorRow(
+                    field = field,
+                    rawError = fieldError!!,
+                    isDetailsExpanded = isDetailsExpanded,
+                    onToggleDetails = onToggleDetails,
+                )
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TRANSPORT DISPLAY IN ADVANCED SECTION (CHIP WITH CHANGE AFFORDANCE)
+// ---------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AdvancedTransportItem(
+    field: ConnectorFieldDescriptor,
+    formState: ConnectorFormState,
+    showTransportPicker: Boolean,
+    onShowPicker: () -> Unit,
+    onStateChange: (ConnectorFormState) -> Unit,
+) {
+    val currentTransport = formState.scalarValues["transport"]?.takeIf { it.isNotBlank() } ?: "http"
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+        ),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Text(
+                text = "Connection method",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+
+            if (!showTransportPicker) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    SuggestionChip(
+                        onClick = {},
+                        label = {
+                            Text(
+                                text = if (currentTransport == "http") "Web service (HTTP)" else "Local command (stdio)",
+                                style = MaterialTheme.typography.bodySmall,
+                            )
+                        },
+                    )
+                    TextButton(onClick = onShowPicker) {
+                        Text("Change")
+                    }
+                }
+            } else {
+                var expandedDropdown by remember { mutableStateOf(false) }
+                ExposedDropdownMenuBox(
+                    expanded = expandedDropdown,
+                    onExpandedChange = { expandedDropdown = !expandedDropdown },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    OutlinedTextField(
+                        value = currentTransport,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Transport protocol") },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDropdown)
+                        },
+                        modifier = Modifier
+                            .menuAnchor(MenuAnchorType.PrimaryNotEditable)
+                            .fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                    )
+                    ExposedDropdownMenu(
+                        expanded = expandedDropdown,
+                        onDismissRequest = { expandedDropdown = false },
+                    ) {
+                        (field.allowed.ifEmpty { listOf("stdio", "http") }).forEach { option ->
+                            DropdownMenuItem(
+                                text = { Text(option) },
+                                onClick = {
+                                    onStateChange(formState.withScalar("transport", option))
+                                    expandedDropdown = false
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ADVANCED FIELD ITEM RENDERER
+// ---------------------------------------------------------------------------
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AdvancedFormFieldItem(
+    field: ConnectorFieldDescriptor,
+    formState: ConnectorFormState,
+    isDetailsExpanded: Boolean,
+    onToggleDetails: () -> Unit,
+    onStateChange: (ConnectorFormState) -> Unit,
+) {
+    val isRequired = formState.isFieldRequired(field)
+    val humanizedTitle = ConnectorFormLayout.humanizeKey(field.key)
+    val labelText = if (isRequired) "$humanizedTitle *" else humanizedTitle
+    val fieldError = formState.validateField(field)
+    val description = ConnectorFormLayout.getFieldDescription(field)
+
+    when (ConnectorsLogic.controlKindForField(field)) {
+        RenderedControlKind.TEXT -> {
+            val isReadOnlyName = formState.isEditMode && field.key == "name"
+            val value = formState.scalarValues[field.key].orEmpty()
+            val showError = value.isNotEmpty() && fieldError != null
+
+            OutlinedTextField(
+                value = value,
+                onValueChange = { next ->
+                    if (!isReadOnlyName) {
+                        if (field.key == "command") {
+                            val allowedTransports = formState.descriptor.fields.firstOrNull { it.key == "transport" }?.allowed
+                                ?: listOf("stdio", "http")
+                            val inferred = ConnectorsLogic.inferTransportFromTarget(next, allowedTransports)
+                            val nextState = formState
+                                .withScalar("transport", inferred)
+                                .withScalar("command", next)
+                            onStateChange(nextState)
+                        } else {
+                            onStateChange(formState.withScalar(field.key, next))
+                        }
+                    }
+                },
+                label = { Text(labelText) },
+                readOnly = isReadOnlyName,
+                enabled = !isReadOnlyName,
+                isError = showError,
+                supportingText = description.takeIf { it.isNotBlank() }?.let { desc ->
+                    { Text(desc) }
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+            )
+
+            if (showError) {
+                FriendlyErrorRow(
+                    field = field,
+                    rawError = fieldError!!,
+                    isDetailsExpanded = isDetailsExpanded,
+                    onToggleDetails = onToggleDetails,
+                )
+            }
         }
 
         RenderedControlKind.DROPDOWN -> {
@@ -437,7 +789,7 @@ private fun GenericFormFieldItem(
                     trailingIcon = {
                         ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded)
                     },
-                    supportingText = field.description.takeIf { it.isNotBlank() }?.let { desc ->
+                    supportingText = description.takeIf { it.isNotBlank() }?.let { desc ->
                         { Text(desc) }
                     },
                     modifier = Modifier
@@ -466,7 +818,7 @@ private fun GenericFormFieldItem(
             val value = formState.scalarValues[field.key].orEmpty()
             val showError = value.isNotEmpty() && fieldError != null
             val rangeHint = buildString {
-                if (field.description.isNotBlank()) append(field.description)
+                if (description.isNotBlank()) append(description)
                 val min = field.validation.min
                 val max = field.validation.max
                 if (min != null || max != null) {
@@ -482,25 +834,30 @@ private fun GenericFormFieldItem(
                 },
                 label = { Text(labelText) },
                 isError = showError,
-                supportingText = {
-                    if (showError) {
-                        Text(fieldError.orEmpty(), color = MaterialTheme.colorScheme.error)
-                    } else if (rangeHint.isNotBlank()) {
-                        Text(rangeHint)
-                    }
+                supportingText = rangeHint.takeIf { it.isNotBlank() }?.let { hint ->
+                    { Text(hint) }
                 },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
             )
+
+            if (showError) {
+                FriendlyErrorRow(
+                    field = field,
+                    rawError = fieldError!!,
+                    isDetailsExpanded = isDetailsExpanded,
+                    onToggleDetails = onToggleDetails,
+                )
+            }
         }
 
         RenderedControlKind.DURATION -> {
             val value = formState.scalarValues[field.key].orEmpty()
             val showError = value.isNotEmpty() && fieldError != null
             val rulesHint = buildString {
-                if (field.description.isNotBlank()) append(field.description)
+                if (description.isNotBlank()) append(description)
                 if (field.validation.rules.isNotEmpty()) {
                     if (isNotEmpty()) append(" — ")
                     append(field.validation.rules.joinToString("; "))
@@ -515,17 +872,22 @@ private fun GenericFormFieldItem(
                 label = { Text(labelText) },
                 placeholder = { Text("30s") },
                 isError = showError,
-                supportingText = {
-                    if (showError) {
-                        Text(fieldError.orEmpty(), color = MaterialTheme.colorScheme.error)
-                    } else if (rulesHint.isNotBlank()) {
-                        Text(rulesHint)
-                    }
+                supportingText = rulesHint.takeIf { it.isNotBlank() }?.let { hint ->
+                    { Text(hint) }
                 },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
             )
+
+            if (showError) {
+                FriendlyErrorRow(
+                    field = field,
+                    rawError = fieldError!!,
+                    isDetailsExpanded = isDetailsExpanded,
+                    onToggleDetails = onToggleDetails,
+                )
+            }
         }
 
         RenderedControlKind.STRING_LIST -> {
@@ -554,9 +916,9 @@ private fun GenericFormFieldItem(
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                             )
-                            if (field.description.isNotBlank()) {
+                            if (description.isNotBlank()) {
                                 Text(
-                                    text = field.description,
+                                    text = description,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -581,7 +943,7 @@ private fun GenericFormFieldItem(
                                 onValueChange = { next ->
                                     onStateChange(formState.updateListItem(field.key, idx, next))
                                 },
-                                placeholder = { Text("${field.key}[$idx]") },
+                                placeholder = { Text("$humanizedTitle [$idx]") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(10.dp),
@@ -604,7 +966,7 @@ private fun GenericFormFieldItem(
         RenderedControlKind.SECRET_TEXT -> {
             val value = formState.scalarValues[field.key].orEmpty()
             val secretHint = buildString {
-                if (field.description.isNotBlank()) append(field.description)
+                if (description.isNotBlank()) append(description)
                 if (formState.isEditMode) {
                     if (isNotEmpty()) append(" — ")
                     append("Secrets are never read back; leave blank only if you want to clear them.")
@@ -654,9 +1016,9 @@ private fun GenericFormFieldItem(
                                 style = MaterialTheme.typography.titleSmall,
                                 fontWeight = FontWeight.SemiBold,
                             )
-                            if (field.description.isNotBlank()) {
+                            if (description.isNotBlank()) {
                                 Text(
-                                    text = field.description,
+                                    text = description,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -694,7 +1056,7 @@ private fun GenericFormFieldItem(
                                 onValueChange = { nextName ->
                                     onStateChange(formState.updateMapEntry(field.key, idx, nextName, entry.value))
                                 },
-                                label = { Text("NAME") },
+                                label = { Text("Name") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(10.dp),
@@ -724,13 +1086,63 @@ private fun GenericFormFieldItem(
                     }
 
                     if (fieldError != null) {
-                        Text(
-                            text = fieldError,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
+                        FriendlyErrorRow(
+                            field = field,
+                            rawError = fieldError,
+                            isDetailsExpanded = isDetailsExpanded,
+                            onToggleDetails = onToggleDetails,
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// FRIENDLY ERROR ROW WITH DETAILS EXPANDER
+// ---------------------------------------------------------------------------
+
+@Composable
+private fun FriendlyErrorRow(
+    field: ConnectorFieldDescriptor,
+    rawError: String,
+    isDetailsExpanded: Boolean,
+    onToggleDetails: () -> Unit,
+) {
+    val friendly = ConnectorFormLayout.mapFriendlyError(field, rawError)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+    ) {
+        Text(
+            text = friendly.headline,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
+
+        val raw = friendly.rawDetail
+        if (!raw.isNullOrBlank() && raw != friendly.headline) {
+            TextButton(
+                onClick = onToggleDetails,
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.height(26.dp),
+            ) {
+                Text(
+                    text = if (isDetailsExpanded) "Hide details" else "Details",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+            if (isDetailsExpanded) {
+                Text(
+                    text = raw,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
             }
         }
     }
