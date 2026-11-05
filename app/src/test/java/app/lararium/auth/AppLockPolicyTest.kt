@@ -8,7 +8,7 @@ import org.junit.Test
 
 /**
  * Pure JVM unit tests for [AppLockPolicy] (R2, R7).
- * Tests start state, unlock transitions, 60s background re-lock boundaries, and timer clearing.
+ * Tests start state, unlock transitions, 5-minute background re-lock boundaries, and timer clearing.
  * ZERO Android dependencies.
  */
 class AppLockPolicyTest {
@@ -107,5 +107,18 @@ class AppLockPolicyTest {
 
         policy.onForeground(100_000L)
         assertFalse(policy.isUnlocked)
+    }
+
+    @Test
+    fun defaultRelockTimeout_isFiveMinutes() {
+        val policy = AppLockPolicy()
+        policy.unlock()
+        policy.onBackground(0L)
+        policy.onForeground(299_900L)
+        assertTrue("App stays unlocked at 4:59 backgrounded (default 5 min)", policy.isUnlocked)
+
+        policy.onBackground(300_000L)
+        policy.onForeground(600_100L)
+        assertFalse("App re-locks past 5 min in background (default)", policy.isUnlocked)
     }
 }
