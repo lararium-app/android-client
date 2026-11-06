@@ -33,7 +33,9 @@ object DeclaredRails {
             DeclaredRail(
                 name = name,
                 readOnly = name in RailsWire.READ_RAILS,
-                enabled = true
+                // health: placeholder data source (issue #94); flip when a real
+                // Health Connect source lands.
+                enabled = name != "health"
             )
         }
 }
