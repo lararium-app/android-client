@@ -13,6 +13,7 @@ import android.net.Network
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import app.lararium.MainActivity
 import app.lararium.R
@@ -25,6 +26,7 @@ import app.lararium.hearth.rails.ReceiptQueue
 import app.lararium.hearth.rails.SeqTracker
 import app.lararium.hearth.rails.StreamEvent
 import app.lararium.security.SecureKeyManager
+import app.lararium.service.FgsTypes
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,7 +39,7 @@ import kotlinx.coroutines.launch
 /**
  * Dedicated foreground service maintaining device rails stream liveness and push sync (F3, spec A2).
  *
- * Foreground service type: dataSync
+ * Foreground service type: specialUse (subtype heartrails-sync; #91, see docs/PLAY-LANE.md)
  * Hosts:
  * - Persistent SSE stream client and epoch-guarded reconnect supervisor
  * - ConnectivityManager.NetworkCallback for network transitions
@@ -117,10 +119,7 @@ class DeviceRailService : Service() {
             endpointProvider = { pairingStore.getEndpoint() }
         )
 
-        toolExecutors.add(DialerToolExecutor(this))
-        if (app.lararium.BuildConfig.DIST_CHANNEL == "github") {
-            toolExecutors.add(SmsToolExecutor(this))
-        }
+        toolExecutors.addAll(ActionExecutors.forContext(this))
 
         setupDataSources()
         registerNetworkCallback()
@@ -136,15 +135,9 @@ class DeviceRailService : Service() {
             val hasHearth = keyManager?.getHearthEndpoint() != null
             if (hasHearth) {
                 val initialNotification = buildNotification("Registering device rails…")
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    startForeground(
-                        NOTIFICATION_ID,
-                        initialNotification,
-                        ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                    )
-                } else {
-                    startForeground(NOTIFICATION_ID, initialNotification)
-                }
+                ServiceCompat.startForeground(
+                    this, NOTIFICATION_ID, initialNotification, FgsTypes.specialUse()
+                )
                 isRunning = true
 
                 serviceScope.launch {
@@ -170,15 +163,9 @@ class DeviceRailService : Service() {
         }
 
         val initialNotification = buildNotification(stateText(stateMachine.state))
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                initialNotification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, initialNotification)
-        }
+        ServiceCompat.startForeground(
+            this, NOTIFICATION_ID, initialNotification, FgsTypes.specialUse()
+        )
 
         isRunning = true
 

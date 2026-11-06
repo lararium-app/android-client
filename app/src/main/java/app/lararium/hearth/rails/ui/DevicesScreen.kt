@@ -33,6 +33,7 @@ import app.lararium.hearth.rails.DeviceStreamState
 import app.lararium.hearth.rails.NOTIFICATION_ACCESS
 import app.lararium.hearth.rails.HEALTH_CONNECT
 import app.lararium.hearth.rails.RailPermissions
+import app.lararium.hearth.rails.DeclaredRails
 import app.lararium.hearth.rails.RailsWire
 import app.lararium.hearth.rails.service.DevicePairingStore
 import app.lararium.hearth.rails.service.DeviceRailService
@@ -65,7 +66,7 @@ fun DevicesScreen(
     var pendingRailToEnable by remember { mutableStateOf<String?>(null) }
 
     fun readStoreEnabledMap(): Map<String, Boolean> {
-        return RailsWire.RAIL_NAMES.associateWith { rail ->
+        return DeclaredRails.names().associateWith { rail ->
             plainPrefs.getBoolean("rail_enabled_$rail", true)
         }
     }
@@ -73,7 +74,7 @@ fun DevicesScreen(
     var storeEnabledMap by remember { mutableStateOf(readStoreEnabledMap()) }
 
     fun refreshGrantedPermissions(): Set<String> {
-        val allPermissions = RailsWire.RAIL_NAMES.flatMap {
+        val allPermissions = DeclaredRails.names().flatMap {
             RailPermissions.requiredPermissions(it)
         }.toSet()
 
@@ -206,7 +207,7 @@ fun DevicesScreen(
                         if (app.lararium.BuildConfig.DIST_CHANNEL == "play") {
                             Spacer(modifier = Modifier.height(8.dp))
                             Text(
-                                text = "Some rails (SMS, call log) are only in the GitHub build — github.com/lararium-app/android-client/releases",
+                                text = "Some rails (dialer, SMS, call log) ship only in the GitHub build — github.com/lararium-app/android-client/releases",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -359,7 +360,7 @@ fun DevicesScreen(
                 if (app.lararium.BuildConfig.DIST_CHANNEL == "play") {
                     item {
                         Text(
-                            text = "Some rails (SMS, call log) are only in the GitHub build — github.com/lararium-app/android-client/releases",
+                            text = "Some rails (dialer, SMS, call log) ship only in the GitHub build — github.com/lararium-app/android-client/releases",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
@@ -371,7 +372,8 @@ fun DevicesScreen(
                 val rows = ToggleLogic.buildAllRows(
                     storeEnabledMap = storeEnabledMap,
                     granted = grantedPermissions,
-                    accessState = accessState
+                    accessState = accessState,
+                    rails = DeclaredRails.names()
                 )
 
                 items(rows, key = { it.name }) { row ->
