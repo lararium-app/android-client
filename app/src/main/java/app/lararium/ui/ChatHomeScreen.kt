@@ -40,6 +40,7 @@ import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.badge.BadgeLogic
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
+import app.lararium.service.VoiceCaptureOrigin
 
 /**
  * Full-height chat screen occupying the primary content area under a minimal top bar.
@@ -291,7 +292,7 @@ fun ChatHomeScreen(
                                 if (state is AssistantState.Listening) {
                                     viewModel?.stopVoiceCapture() ?: assistantService?.stopVoiceCapture()
                                 } else {
-                                    viewModel?.startVoiceCapture() ?: assistantService?.startVoiceCapture()
+                                    viewModel?.startVoiceCapture() ?: assistantService?.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
                                 }
                             },
                             modifier = Modifier.size(40.dp)

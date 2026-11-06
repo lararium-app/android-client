@@ -8,5 +8,21 @@
     <uses-permission
         android:name="android.permission.READ_CALL_LOG"
         tools:node="remove" />
+    <uses-permission
+        android:name="android.permission.CALL_PHONE"
+        tools:node="remove" />
+
+    <uses-permission
+        android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
+        tools:node="remove" />
+
+    <!--
+        #92: the key-event accessibility service is GitHub-only. On Play the
+        QS tile and assist intent are the entry points. The class stays compiled;
+        only its manifest entry is removed.
+    -->
+    <service
+        android:name=".service.AssistantAccessibilityService"
+        tools:node="remove" />
 
 </manifest>
