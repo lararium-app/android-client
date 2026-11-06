@@ -100,9 +100,10 @@ object ToggleLogic {
     fun buildAllRows(
         storeEnabledMap: Map<String, Boolean>,
         granted: Set<String>,
-        accessState: Map<String, Boolean> = emptyMap()
+        accessState: Map<String, Boolean> = emptyMap(),
+        rails: Set<String> = RailsWire.RAIL_NAMES
     ): List<RailRowDisplay> {
-        return RailsWire.RAIL_NAMES.map { rail ->
+        return rails.map { rail ->
             buildRowDisplay(
                 rail = rail,
                 storeEnabled = storeEnabledMap[rail] ?: false,

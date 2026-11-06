@@ -13,7 +13,11 @@ import android.net.Uri
 import android.os.Binder
 import android.os.IBinder
 import android.util.Log
+import android.Manifest
+import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
+import androidx.core.app.ServiceCompat
+import androidx.core.content.ContextCompat
 import app.lararium.AssistantApplication
 import app.lararium.MainActivity
 import app.lararium.R
@@ -162,6 +166,7 @@ class AssistantService : Service() {
         const val EXTRA_TRIGGER = "trigger"
         const val EXTRA_QUERY = "query"
         const val EXTRA_LAUNCH_OVERLAY = "launch_overlay"
+        const val EXTRA_USER_INITIATED = "user_initiated"
 
         @Volatile
         var activeSessionId: String? = null
@@ -253,14 +258,20 @@ class AssistantService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_ACTIVATE -> {
-                startForeground(NOTIFICATION_ID, createNotification("Ready"))
+                startAssistantForeground()
                 // Clear session on each activation for fresh start
                 clearSession()
                 if (intent.getBooleanExtra(EXTRA_LAUNCH_OVERLAY, true)) {
                     launchOverlay()
                 }
             }
-            ACTION_START_VOICE -> startVoiceCapture()
+            ACTION_START_VOICE -> startVoiceCapture(
+                if (intent.getBooleanExtra(EXTRA_USER_INITIATED, false)) {
+                    VoiceCaptureOrigin.INTENT_USER_INITIATED
+                } else {
+                    VoiceCaptureOrigin.INTENT_UNATTRIBUTED
+                }
+            )
             ACTION_STOP_VOICE -> stopVoiceCapture()
             ACTION_QUERY_TEXT -> {
                 val query = intent.getStringExtra(EXTRA_QUERY) ?: ""
@@ -325,9 +336,38 @@ class AssistantService : Service() {
     }
 
     /**
-     * Start voice capture based on settings (Vosk or system speech recognizer).
+     * #93: foreground with specialUse|microphone. The microphone bit is only
+     * included when RECORD_AUDIO is granted (API 34+ throws otherwise); on
+     * SecurityException fall back to the specialUse-only type.
      */
-    fun startVoiceCapture() {
+    private fun startAssistantForeground() {
+        val micGranted = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.RECORD_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
+        val notification = createNotification("Ready")
+        try {
+            ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, notification, FgsTypes.assistant(micGranted)
+            )
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Microphone FGS type rejected; falling back to specialUse", e)
+            ServiceCompat.startForeground(
+                this, NOTIFICATION_ID, notification, FgsTypes.assistant(micGranted = false)
+            )
+        }
+    }
+
+    private val voiceCaptureGate = VoiceCaptureGate(log = { Log.w(TAG, it) })
+
+    /**
+     * Start voice capture based on settings (Vosk or system speech recognizer).
+     * Refused unless [origin] is a user-initiated entry point (#93).
+     */
+    fun startVoiceCapture(origin: VoiceCaptureOrigin) {
+        voiceCaptureGate.guard(origin) { startVoiceCaptureInternal() }
+    }
+
+    private fun startVoiceCaptureInternal() {
         // If already listening, check if recognizer is actually active
         if (_assistantState.value is AssistantState.Listening) {
             if (activeVoiceCaptureMode == VoiceCaptureMode.SYSTEM && speechRecognizerManager.isCurrentlyListening()) {

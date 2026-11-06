@@ -8,6 +8,7 @@ import app.lararium.hearth.EndpointPolicy
 import app.lararium.hearth.HttpResponse
 import app.lararium.hearth.Net
 import app.lararium.hearth.rails.DeclaredRail
+import app.lararium.hearth.rails.DeclaredRails
 import app.lararium.hearth.rails.RailsWire
 import app.lararium.security.SecureKeyManager
 import org.json.JSONObject
@@ -92,13 +93,7 @@ object DevicePairingController {
         val deviceId = sanitizeDeviceId(Build.MODEL ?: "android")
         val displayName = sanitizeDisplayName(Build.MODEL ?: "android")
 
-        val declaredRails = RailsWire.RAIL_NAMES.map { name ->
-            DeclaredRail(
-                name = name,
-                readOnly = name in RailsWire.READ_RAILS,
-                enabled = true
-            )
-        }
+        val declaredRails = DeclaredRails.build()
         val registerBody = RailsWire.buildRegisterBody(
             deviceId = deviceId,
             displayName = displayName,
@@ -216,13 +211,7 @@ object DevicePairingController {
         val displayName = sanitizeDisplayName(Build.MODEL ?: "android")
 
         // Step 3: Build registration payload and POST /v1/devices/register
-        val declaredRails = RailsWire.RAIL_NAMES.map { name ->
-            DeclaredRail(
-                name = name,
-                readOnly = name in RailsWire.READ_RAILS,
-                enabled = true
-            )
-        }
+        val declaredRails = DeclaredRails.build()
         val registerBody = RailsWire.buildRegisterBody(
             deviceId = deviceId,
             displayName = displayName,

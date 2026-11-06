@@ -48,6 +48,7 @@ import app.lararium.AssistantApplication
 import app.lararium.R
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
+import app.lararium.service.VoiceCaptureOrigin
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import app.lararium.util.PdfExtractor
 import app.lararium.util.PdfResult
@@ -212,7 +213,7 @@ fun CompactAssistantView(
     val autoStartVoice = settingsManager.autoStartVoice
     LaunchedEffect(Unit) {
         if (autoStartVoice && state is AssistantState.Idle) {
-            service.startVoiceCapture()
+            service.startVoiceCapture(VoiceCaptureOrigin.OVERLAY_AUTOSTART)
         }
     }
 
@@ -543,7 +544,7 @@ fun CompactAssistantView(
                             when {
                                 isGenerating -> service.stopResponse()
                                 state is AssistantState.Listening -> service.stopVoiceCapture()
-                                else -> service.startVoiceCapture()
+                                else -> service.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
                             }
                         },
                         modifier = Modifier.size(48.dp),
@@ -842,7 +843,7 @@ fun FullChatScreen(
                                 when {
                                     isGenerating -> service.stopResponse()
                                     state is AssistantState.Listening -> service.stopVoiceCapture()
-                                    else -> service.startVoiceCapture()
+                                    else -> service.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
                                 }
                             },
                             modifier = Modifier.size(48.dp),

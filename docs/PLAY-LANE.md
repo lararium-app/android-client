@@ -117,3 +117,23 @@ Never trust the upload step's exit code alone — read the track state after eve
 3. Discard the edit (`DELETE .../edits/<id>`; its empty body is normal).
 
 If a release landed `completed` when a `draft` was intended, `PUT` the track with the same `versionCodes` and `status: "draft"` (replace semantics — send the full release list), then commit and verify again in a **new** edit session.
+
+## 3. Foreground-service declarations (API 34+)
+
+### 3.1 Rails stream service — `specialUse` (#91)
+`DeviceRailService` previously used `dataSync`, which Android 14+ caps at roughly 6 h per 24 h. It is now `foregroundServiceType="specialUse"` with
+`<property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="heartrails-sync" />` and the `FOREGROUND_SERVICE_SPECIAL_USE` permission. Boot auto-start, `START_STICKY` and the watchdog are unchanged (approvals liveness is the product requirement).
+
+Declaration steps:
+1. Play Console → **App content** → **Foreground service permissions** → declare **Special use** (`FOREGROUND_SERVICE_SPECIAL_USE`).
+2. Enter the subtype `heartrails-sync` (and `ai_assistant_processing` for `AssistantService`), and attach the justification below plus a short demo video showing the persistent notification and an approval arriving.
+3. Declare **Microphone** (`FOREGROUND_SERVICE_MICROPHONE`) for `AssistantService`: capture starts only from a user action (QS tile, assist intent, notification action, in-app mic tap).
+
+Draft justification:
+> This service keeps a user-paired phone's approval stream reachable for their own self-hosted assistant; no data leaves the user's network. It maintains a single persistent connection to the user's own server so that action approvals arrive promptly, shows a persistent notification while running, and stops when the user unpairs the device.
+
+Checklist:
+- [ ] Console: Special use FGS declaration submitted with subtype `heartrails-sync` and the justification above.
+- [ ] Console: Microphone FGS declaration submitted for `AssistantService`.
+- [ ] Verify on an API 34+ device that the rails service stays up past 6 h with no `ForegroundServiceStartNotAllowedException` / timeout.
+- [ ] Verify the Play bundle has no `CALL_PHONE`, `SEND_SMS`, `READ_CALL_LOG` and no accessibility service in the merged manifest.

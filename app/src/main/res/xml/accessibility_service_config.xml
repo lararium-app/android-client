@@ -1,13 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Accessibility service configuration for power button detection -->
+<!-- Accessibility service configuration for power button detection.
+
+     #92: minimal subscription. AssistantAccessibilityService only consumes KEY
+     events (onKeyEvent: triple-power / volume combo) and its onAccessibilityEvent
+     is a no-op, so no accessibilityEventTypes are subscribed at all (mask 0):
+     window-state/content events (which expose other apps' window titles and UI
+     churn) are NOT delivered. Key-event filtering is gated solely by
+     canRequestFilterKeyEvents + flagRequestFilterKeyEvents, independent of the
+     event-type mask. flagRetrieveInteractiveWindows was dropped (unused);
+     packageNames is left unset by design (key events are device-global). -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
-    android:accessibilityEventTypes="typeWindowStateChanged|typeWindowContentChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
-    android:accessibilityFlags="flagRequestFilterKeyEvents|flagRetrieveInteractiveWindows"
+    android:accessibilityFlags="flagRequestFilterKeyEvents"
     android:canPerformGestures="false"
     android:canRequestFilterKeyEvents="true"
     android:canRetrieveWindowContent="false"
     android:description="@string/accessibility_service_description"
     android:isAccessibilityTool="false"
-    android:notificationTimeout="100"
-    android:packageNames="" />
+    android:notificationTimeout="100" />

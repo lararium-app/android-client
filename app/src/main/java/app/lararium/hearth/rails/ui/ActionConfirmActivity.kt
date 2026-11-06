@@ -24,8 +24,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.lararium.hearth.rails.service.DeviceRailService
-import app.lararium.hearth.rails.service.DialerToolExecutor
-import app.lararium.hearth.rails.service.SmsToolExecutor
+import app.lararium.hearth.rails.service.ActionExecutors
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -51,11 +50,7 @@ class ActionConfirmActivity : ComponentActivity() {
             return
         }
 
-        val executors = if (app.lararium.BuildConfig.DIST_CHANNEL == "github") {
-            listOf(DialerToolExecutor(this), SmsToolExecutor(this))
-        } else {
-            listOf(DialerToolExecutor(this))
-        }
+        val executors = ActionExecutors.forContext(this)
         val sheetPresenter = SheetPresenter(
             action = action,
             executors = executors,
