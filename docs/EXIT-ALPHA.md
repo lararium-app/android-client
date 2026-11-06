@@ -10,7 +10,7 @@ run, or release note), we tag beta.
 
 - **The client exits alpha with the daemon.** When hearthd ships
   v1.0.0, the client ships v1.0.0 and the `-alpha` suffix drops. Until
-  then every client release stays on the 0.9.x-alpha line — the gates
+  then every client release stays on the 0.11.x-alpha line — the gates
   below close *before* the 1.0 tag, not after.
 - The stable signing cert is unchanged, so 0.9.x installs upgrade in
   place — pairing, tokens, and history survive the version bump.
@@ -84,8 +84,10 @@ run, or release note), we tag beta.
 - [ ] Every removal PR carries a dead-reference sweep in review; every
       feature PR keeps the pure-logic-test pattern (logic JVM-testable
       without an emulator).
-- [ ] Release-note claims are grep-verified against the shipped code
-      before publishing.
+- [x] Release-note claims are grep-verified against the shipped code
+      before publishing. Every README claim verified against `app/src`
+      2026-11-06 with a per-claim verdict table (audit origin:
+      lararium-app/android-client#96; the verified README landed with it).
 
 ## F. Ship mechanics (proven)
 
