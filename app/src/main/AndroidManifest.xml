@@ -82,6 +82,11 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="lararium" android:host="pair" />
             </intent-filter>
+
+            <!-- Icon shown in the system assistant picker -->
+            <meta-data
+                android:name="com.android.systemui.action_assist_icon"
+                android:resource="@drawable/ic_assistant" />
         </activity>
 
         <!-- Device rails control panel and deep link handler -->
