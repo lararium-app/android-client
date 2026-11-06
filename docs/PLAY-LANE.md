@@ -107,7 +107,7 @@ The workflow `.github/workflows/play-release.yml` is triggered on demand via `wo
 ### 2.4 Sideload APK Lane (Unchanged & First-Class)
 - The GitHub Releases APK lane (`.github/workflows/release-apk.yml`, triggered on tags matching `v*`) remains completely unchanged and continues as a first-class distribution path.
 - Sideload users and users running alternative Android environments can download signed APKs directly from GitHub Releases without interacting with Google Play.
-- Both lanes sign with the same upload keystore, preserving signing consistency across distribution channels.
+- Both lanes publish builds signed with the same stable key, while the Play build ships a reduced permission set.
 
 ### 2.5 Track Read-Back (Verification)
 Never trust the upload step's exit code alone — read the track state after every run. Direct console reads can answer with an HTML 404 page on fresh app entries, so the reliable probe opens an **edit session**:
