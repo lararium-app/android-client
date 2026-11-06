@@ -12,6 +12,7 @@ import app.lararium.hearth.ConnectionState
 import app.lararium.llm.ChatSession
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
+import app.lararium.service.VoiceCaptureOrigin
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -133,7 +134,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun startVoiceCapture() {
-        _assistantService.value?.startVoiceCapture()
+        _assistantService.value?.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
     }
 
     fun stopVoiceCapture() {
