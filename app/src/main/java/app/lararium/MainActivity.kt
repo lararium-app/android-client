@@ -109,6 +109,7 @@ class MainActivity : FragmentActivity() {
         handleReviewCardIntent(intent)
         openRoute.value = intent.getStringExtra("lararium_open")
         intent.removeExtra("lararium_open")
+        AssistIntentLogic.routeFor(intent?.action)?.let { if (openRoute.value == null) openRoute.value = it }
         openSessionId.value = intent.getStringExtra(HearthNotifier.EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() }
         intent.removeExtra(HearthNotifier.EXTRA_SESSION_ID)
     }
@@ -251,6 +252,7 @@ class MainActivity : FragmentActivity() {
         handleReviewCardIntent(intent)
         openRoute.value = intent?.getStringExtra("lararium_open")
         intent?.removeExtra("lararium_open")
+        AssistIntentLogic.routeFor(intent?.action)?.let { if (openRoute.value == null) openRoute.value = it }
         openSessionId.value = intent?.getStringExtra(HearthNotifier.EXTRA_SESSION_ID)?.takeIf { it.isNotBlank() }
         intent?.removeExtra(HearthNotifier.EXTRA_SESSION_ID)
 
