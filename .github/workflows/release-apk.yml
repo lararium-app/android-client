@@ -1,7 +1,7 @@
 name: Release APK
 
 # Tag a commit `v*` (e.g. v0.9.5-alpha) and this builds the stable-signed
-# debug APK and publishes the GitHub Release with it attached.
+# non-debuggable, minified release APK and publishes the GitHub Release with it attached.
 # If a draft release for the tag already exists (hand-written notes), the
 # APK is uploaded to it and the release is published as authored.
 # Uses the same ANDROID_KEYSTORE_* secrets as the CI build.
@@ -68,7 +68,7 @@ jobs:
 
       - name: Assemble signed APK
         run: |
-          ./gradlew assembleGithubDebug --no-daemon -x lint \
+          ./gradlew assembleGithubRelease --no-daemon -x lint \
             "-PLARARIUM_UPLOAD_STORE_FILE=$RUNNER_TEMP/lararium-release.jks" \
             "-PLARARIUM_UPLOAD_STORE_PASSWORD=$LARARIUM_KEYSTORE_PASSWORD" \
             "-PLARARIUM_UPLOAD_KEY_ALIAS=$LARARIUM_KEY_ALIAS" \
@@ -78,7 +78,7 @@ jobs:
         id: stage
         run: |
           set -euo pipefail
-          APK=$(ls app/build/outputs/apk/github/debug/*.apk | head -1)
+          APK=$(ls app/build/outputs/apk/github/release/*.apk | head -1)
           cp "$APK" "lararium-$TAG.apk"
           SHA=$(sha256sum "lararium-$TAG.apk" | cut -d' ' -f1)
           echo "apk=lararium-$TAG.apk" >> "$GITHUB_OUTPUT"
@@ -88,6 +88,17 @@ jobs:
           "$APKSIGNER" verify --print-certs "lararium-$TAG.apk" | grep -i "SHA-256 digest" || true
           echo "::endgroup::"
 
+      - name: Refuse debuggable artifacts
+        run: |
+          set -euo pipefail
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1)
+          BADGING=$("$AAPT2" dump badging "${{ steps.stage.outputs.apk }}")
+          if echo "$BADGING" | grep -qi "debuggable"; then
+            echo "Refusing to publish: APK is marked debuggable."
+            exit 1
+          fi
+          echo "APK is not debuggable."
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -95,14 +106,20 @@ jobs:
           set -euo pipefail
           APK="${{ steps.stage.outputs.apk }}"
           SHA="${{ steps.stage.outputs.sha256 }}"
+          ASSETS=("$APK")
+          MAPPING=app/build/outputs/mapping/githubRelease/mapping.txt
+          if [ -f "$MAPPING" ]; then
+            gzip -9 -c "$MAPPING" > "lararium-$TAG-mapping.txt.gz"
+            ASSETS+=("lararium-$TAG-mapping.txt.gz")
+          fi
           if gh release view "$TAG" --json isDraft >/dev/null 2>&1; then
             # Author-drafted release: attach the binary, keep the notes, publish.
-            gh release upload "$TAG" "$APK" --clobber
+            gh release upload "$TAG" "${ASSETS[@]}" --clobber
             gh release edit "$TAG" --draft=false
           else
             printf 'Android %s\n\nAutomated build from tag `%s`, signed with the stable release key — installs straight over previous versions, no re-pairing needed.\n\n**SHA-256:** `%s`\n' \
               "$TAG" "$TAG" "$SHA" > notes.md
-            gh release create "$TAG" "$APK" \
+            gh release create "$TAG" "${ASSETS[@]}" \
               --title "Android $TAG" \
               --notes-file notes.md
           fi
