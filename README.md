@@ -6,10 +6,9 @@ hearth. Your phone is the sensor, the voice, and the approval gate; your own
 `hearthd` daemon is the brain. No third-party cloud, no telemetry, no accounts.
 
 Based on [gos-ai](https://github.com/mx37/gos-ai) by Maxim (MIT): full credit
-for the original app architecture, assistant UX, on-device voice pipeline, and
-local llama.cpp integration. Lararium points that foundation at the Lararium
-surface protocol — streaming sessions, tool-call cards, Knock-First approvals,
-and doors & policy.
+for the original app architecture, assistant UX, and on-device voice pipeline.
+Lararium points that foundation at the Lararium surface protocol — streaming
+chat sessions, custody approval cards, and device rails.
 
 ⚠️ DISCLAIMER: THIS IS A COMMUNITY-OPEN-SOURCE PROJECT. IT IS NOT AFFILIATED WITH, ENDORSED BY, OR OFFICIALLY SUPPORTED BY THE GRAPHENEOS PROJECT OR ITS TEAM.
 
@@ -20,32 +19,27 @@ GrapheneOS).
 
 An always-available assistant without surrendering your data to a cloud
 brain-in-a-box. Pair the app with your own `hearthd` and the phone stays a
-sensor/actuator UI: chat streams token-by-token, tool and cell operations
-render as cards, and gated actions knock — an approval card you answer from
-your pocket. All agent logic, memory, and policy live on hardware you own.
+sensor/actuator UI: chat streams token-by-token, and gated actions raise
+custody approval cards you answer from your pocket. All agent logic, memory,
+and policy live on hardware you own.
 
 ## Features
 
 - **Many ways in**: Volume Up + Down, triple power press, accessibility button,
   default assistant, Quick Settings tile
-- **Streaming chat** over Server-Sent Events with markdown rendering and
-  tool-call / cell-operation cards
-- **Knock-First approvals on your phone** — spend, send, delete, or any gated
-  door asks before it acts (approve / deny, plus once-always-deny door cards)
-- **Doors & policy panel** — view and edit the live rule set
-  (auto / ask / deny per pattern)
-- **Local AI fallback** — on-device llama.cpp GGUF when the hearth is out of
-  reach; native libs built into CI APKs for arm64
-- **Voice**: Vosk (offline), Android system STT, or cloud Whisper; optional TTS
-- **Images & PDFs** with vision models, web search & weather agent tools
+- **Streaming chat** over Server-Sent Events with markdown rendering
+- **Custody approvals on your phone** — review and resolve pending action cards
+  from your hearth (approve once, always, or deny)
+- **Voice**: Vosk (offline), Android system STT; optional TTS
+- **Images & PDFs**: attach images or extract text from PDFs to include with
+  your query
 
-## AI backends
+## AI backend
 
-| Provider | Description |
-|----------|-------------|
-| **Lararium hearth** (default) | Your own `hearthd` surface — pair link or base URL + API key |
-| **On-device (offline)** | Local GGUF via bundled llama.cpp — no internet needed |
-| **OpenRouter (advanced)** | Hosted cloud fallback — useful for testing vision models |
+Assistant answers come directly from your paired **Lararium hearth** (`hearthd`)
+server over local network or secure transport. All model inference, tool
+execution, and conversation memory reside on the hearth daemon; the client
+carries no third-party cloud backends, embedded model weights, or external API keys.
 
 ## Quick start
 
@@ -54,20 +48,16 @@ your pocket. All agent logic, memory, and policy live on hardware you own.
      [play.google.com/apps/testing/app.lararium](https://play.google.com/apps/testing/app.lararium)
      on the phone, tap **Join tests**, then **Install**. No email list —
      anyone with the link can opt in, and leaving is one tap.
-   - **Sideload**: install the APK from [Releases](../../releases) (each
-     release lists its APK SHA-256) or build locally.
+   - **Sideload**: install the release APK (`lararium-<tag>.apk`) from
+     [Releases](../../releases) (each release lists its APK SHA-256) or
+     build locally.
 
-   Play and sideload sign with different keys, so a Play install updates
-   from the Play Store and a sideloaded APK from GitHub releases — they
-   never update each other.
-
-   **GitHub vs Play Store**:
-   - **GitHub Releases APK**: includes every rail, including SMS and call log.
-   - **Google Play closed alpha**: the same app minus the SMS and call-log rails,
-     because Google restricts those permissions to default-handler apps.
+   Both lanes publish builds signed with the same stable key, while the
+   Play build ships a reduced permission set (the Play build omits the
+   dialer, SMS, and call-log rails restricted by Google Play policy).
 2. **Pair** with your hearth: run `hearthd pair` on the server and open the
-   emitted `lararium://pair?…` link on the phone, or set the server URL and API
-   key manually in Settings.
+   emitted `lararium://pair?…` link on the phone, or set the server URL and
+   pairing code manually in Settings.
 3. **Set as default assistant**:
    ```
    Settings → Apps → Default apps → Digital assistant app → Lararium
@@ -93,17 +83,14 @@ CI builds debug APKs on every push to `main` (Actions → *Build APK*).
 - Bearer tokens cross TLS; cleartext is permitted only for loopback / RFC1918
   / CGNAT-tailnet hosts, enforced in app code and re-checked after DNS
   resolution (defeats rebinding)
-- API keys stored in EncryptedSharedPreferences backed by the Android Keystore
-  (AES-256-GCM)
-- PII redaction before any optional cloud request (device IDs, phones, emails)
+- Auth tokens and hearth endpoints stored in EncryptedSharedPreferences backed
+  by the Android Keystore (AES-256-GCM)
+- PII redaction before queries are sent to the hearth (device IDs, phones, emails)
 - No Firebase, no analytics, no ad identifiers, no FCM push
 - Minimal permissions: microphone, internet, foreground service
 
 ## Known issues
 
-- Local AI requires building or obtaining native `arm64-v8a` llama libraries
-  (see LOCAL_AI_SETUP)
-- Local models have no web search, weather, or vision
 - TTS quality depends on the engine installed on the device
 
 ## Documentation
@@ -127,5 +114,3 @@ Lararium contributions MIT the Lararium authors.
   this client is based on; the maintainer has blessed this direction
 - **GrapheneOS** — privacy-focused Android
 - **Vosk** — on-device speech recognition
-- **llama.cpp** — on-device LLM inference
-- **Brave / Exa** — optional search APIs
