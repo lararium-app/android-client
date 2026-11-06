@@ -138,6 +138,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.biometric)
+    // MainActivity uses registerForActivityResult; Fragment >= 1.3.0 is required (release lintVital),
+    // biometric 1.1.0 otherwise drags in 1.2.5.
+    implementation("androidx.fragment:fragment:1.8.5")
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
