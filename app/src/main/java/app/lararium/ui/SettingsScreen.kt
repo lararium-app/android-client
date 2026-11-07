@@ -194,6 +194,30 @@ fun SettingsScreen(
                             },
                             onClick = { showPairHearthDialog = true }
                         )
+                        FirstRunCopy.hearthExplainer(unpaired = hearthEndpoint == null)?.let { explainer ->
+                            Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+                                Text(
+                                    text = explainer,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Text(
+                                    text = FirstRunCopy.SETUP_LINK_LABEL,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .padding(top = 4.dp)
+                                        .clickable {
+                                            context.startActivity(
+                                                Intent(
+                                                    Intent.ACTION_VIEW,
+                                                    Uri.parse(FirstRunCopy.INSTALL_GUIDE_URL)
+                                                )
+                                            )
+                                        }
+                                )
+                            }
+                        }
                         SettingsItem(
                             icon = Icons.Default.Devices,
                             title = stringResource(R.string.settings_devices_title),
