@@ -1,5 +1,7 @@
 package app.lararium.ui.approvals
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,6 +29,7 @@ import app.lararium.hearth.watch.CardInfo
 import app.lararium.hearth.watch.WatchLogic
 import app.lararium.receiver.CardActionReceiver
 import app.lararium.security.SecureKeyManager
+import app.lararium.ui.FirstRunCopy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -45,10 +48,12 @@ fun ApprovalsScreen(onBack: () -> Unit) {
     var cards by remember { mutableStateOf<List<CardInfo>?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     var pendingId by remember { mutableStateOf<String?>(null) }
+    var unpaired by remember { mutableStateOf(false) }
 
     val loadCards: suspend () -> Unit = {
         error = null
         val epTriple = SecureKeyManager(context).getHearthEndpoint()
+        unpaired = epTriple == null
         if (epTriple == null) {
             error = "Not paired with a hearth yet."
         } else {
@@ -163,12 +168,39 @@ fun ApprovalsScreen(onBack: () -> Unit) {
                             .padding(24.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = error ?: "",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.error,
-                            textAlign = TextAlign.Center
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = error ?: "",
+                                style = MaterialTheme.typography.bodyLarge,
+                                color = MaterialTheme.colorScheme.error,
+                                textAlign = TextAlign.Center
+                            )
+                            val explainer = FirstRunCopy.hearthExplainer(unpaired)
+                            if (explainer != null) {
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = explainer,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(
+                                    text = FirstRunCopy.SETUP_LINK_LABEL,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier
+                                        .clickable {
+                                            context.startActivity(
+                                                Intent(
+                                                    Intent.ACTION_VIEW,
+                                                    Uri.parse(FirstRunCopy.INSTALL_GUIDE_URL)
+                                                )
+                                            )
+                                        }
+                                )
+                            }
+                        }
                     }
                 }
                 cards == null -> {
