@@ -204,15 +204,6 @@ fun DevicesScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
-                        if (app.lararium.BuildConfig.DIST_CHANNEL == "play") {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Text(
-                                text = "Some rails (dialer, SMS, call log) ship only in the GitHub build — github.com/lararium-app/android-client/releases",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
                         Spacer(modifier = Modifier.height(24.dp))
 
                         Button(
@@ -355,17 +346,6 @@ fun DevicesScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(start = 4.dp, top = 8.dp)
                     )
-                }
-
-                if (app.lararium.BuildConfig.DIST_CHANNEL == "play") {
-                    item {
-                        Text(
-                            text = "Some rails (dialer, SMS, call log) ship only in the GitHub build — github.com/lararium-app/android-client/releases",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-                        )
-                    }
                 }
 
                 // Rails rows

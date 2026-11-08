@@ -8,36 +8,29 @@ import org.junit.Test
 class DeclaredRailsTest {
 
     @Test
-    fun play_excludesDialerSmsCalllog() {
-        val names = DeclaredRails.names { "play" }
-        assertFalse("dialer" in names)
-        assertFalse("sms" in names)
-        assertFalse("calllog" in names)
-        assertEquals(setOf("calendar", "contacts", "notifications", "health"), names)
+    fun declaresEveryRail_inEveryBuild() {
+        assertEquals(RailsWire.RAIL_NAMES, DeclaredRails.names())
+        assertEquals(RailsWire.RAIL_NAMES, DeclaredRails.build().map { it.name }.toSet())
     }
 
     @Test
-    fun play_buildKeepsReadOnlySemanticsAndExcludesGatedRails() {
-        val rails = DeclaredRails.build { "play" }
-        assertEquals(setOf("calendar", "contacts", "notifications", "health"), rails.map { it.name }.toSet())
-        assertTrue(rails.all { it.readOnly })
-        assertTrue(rails.filter { it.name != "health" }.all { it.enabled })
+    fun dialerSmsCalllogAreDeclared() {
+        val names = DeclaredRails.names()
+        assertTrue("dialer" in names)
+        assertTrue("sms" in names)
+        assertTrue("calllog" in names)
     }
 
     @Test
-    fun github_declaresEveryRail() {
-        assertEquals(RailsWire.RAIL_NAMES, DeclaredRails.names { "github" })
-        val dialer = DeclaredRails.build { "github" }.first { it.name == "dialer" }
+    fun actionRailsAreNotReadOnly() {
+        val dialer = DeclaredRails.build().first { it.name == "dialer" }
         assertFalse(dialer.readOnly)
     }
 
     @Test
-    fun health_isDeclaredButDisabledInEveryChannel() {
-        for (channel in listOf("play", "github")) {
-            val rails = DeclaredRails.build { channel }
-            assertTrue(rails.filter { it.name != "health" }.all { it.enabled })
-            val health = rails.single { it.name == "health" }
-            assertFalse(health.enabled)
-        }
+    fun health_isDeclaredButDisabled() {
+        val rails = DeclaredRails.build()
+        assertTrue(rails.filter { it.name != "health" }.all { it.enabled })
+        assertFalse(rails.single { it.name == "health" }.enabled)
     }
 }

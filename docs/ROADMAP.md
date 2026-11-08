@@ -136,6 +136,13 @@ existing overlay as the target, (2) wake word via an on-device tiny KWS
 → "Ask Lararium". Circle-to-search itself is proprietary with no
 third-party hook — we serve the same want, not their gesture.
 
+**Status:** stage 1 is implemented and pending two-OEM-skin verification.
+`LarariumVoiceService`/session route summons into the existing overlay;
+Settings requests/changes `ROLE_ASSISTANT` (API 29+, graceful fallback
+below); the split flavors are unified (dialer/SMS/call-log in main,
+runtime-degrade when denied). Stages 2 (wake word) and 3 (screen
+context) are not started.
+
 **Exit:** on two OEM skins, summoning the assistant reaches Lararium
 with screen context, and revoking the role degrades gracefully to the
 overlay.

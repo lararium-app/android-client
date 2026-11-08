@@ -107,7 +107,7 @@ The workflow `.github/workflows/play-release.yml` is triggered on demand via `wo
 ### 2.4 Sideload APK Lane (Unchanged & First-Class)
 - The GitHub Releases APK lane (`.github/workflows/release-apk.yml`, triggered on tags matching `v*`) remains completely unchanged and continues as a first-class distribution path.
 - Sideload users and users running alternative Android environments can download signed APKs directly from GitHub Releases without interacting with Google Play.
-- Both lanes publish builds signed with the same stable key, while the Play build ships a reduced permission set.
+- Both lanes publish builds signed with the same stable key, and compile the same code (see section 4: the single artifact supersedes the split).
 
 ### 2.5 Track Read-Back (Verification)
 Never trust the upload step's exit code alone — read the track state after every run. Direct console reads can answer with an HTML 404 page on fresh app entries, so the reliable probe opens an **edit session**:
@@ -136,4 +136,13 @@ Checklist:
 - [ ] Console: Special use FGS declaration submitted with subtype `heartrails-sync` and the justification above.
 - [ ] Console: Microphone FGS declaration submitted for `AssistantService`.
 - [ ] Verify on an API 34+ device that the rails service stays up past 6 h with no `ForegroundServiceStartNotAllowedException` / timeout.
-- [ ] Verify the Play bundle has no `CALL_PHONE`, `SEND_SMS`, `READ_CALL_LOG` and no accessibility service in the merged manifest.
+- [ ] Verify the Play bundle has no accessibility service in the merged manifest (it still declares `CALL_PHONE`, `SEND_SMS`, `READ_CALL_LOG`; see section 4).
+
+## 4. Assistant-role path (permissions)
+
+Permissions: the manifest declares `SEND_SMS`, `READ_CALL_LOG` and `CALL_PHONE` in every build. They are intended to be granted through the **ASSISTANT role path (T4)**: the user makes Lararium the system assistant (Settings → "Set Lararium as assistant", which launches `RoleManager.createRequestRoleIntent(ROLE_ASSISTANT)`), backed by `LarariumVoiceService`. The role is additive: when it is not held, or is revoked, or the device is below API 29, the app behaves exactly as before and any rail whose permission is denied degrades (`permission_revoked` result / empty snapshot) instead of crashing.
+
+- The foreground-service declarations in section 3 are unchanged.
+- **Single artifact supersedes the split.** The play flavor no longer strips `CALL_PHONE`/`SEND_SMS`/`READ_CALL_LOG`, and the dialer/SMS executors and call-log rail live in the main source set. The `play` and `github` product flavors remain only as build-identity stubs (`BuildConfig.DIST_CHANNEL`, release task names). They are **not byte-identical**: the play overlay still removes the accessibility service (github convenience, not being pursued). Release lanes should move to one task later.
+- Play Console: the SMS / Call Log permission declaration for this artifact is a console action still to be reviewed before a Play rollout.
+

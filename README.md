@@ -52,9 +52,10 @@ carries no third-party cloud backends, embedded model weights, or external API k
      [Releases](../../releases) (each release lists its APK SHA-256) or
      build locally.
 
-   Both lanes publish builds signed with the same stable key, while the
-   Play build ships a reduced permission set (the Play build omits the
-   dialer, SMS, and call-log rails restricted by Google Play policy).
+   Both lanes publish builds signed with the same stable key and compile
+   the same rail code; the dialer, SMS, and call-log rails are available
+   everywhere and degrade at runtime when their permission is not granted
+   (see the Assistant-role path in `docs/PLAY-LANE.md`).
 2. **Pair** with your hearth: run `hearthd pair` on the server and open the
    emitted `lararium://pair?…` link on the phone, or set the server URL and
    pairing code manually in Settings.

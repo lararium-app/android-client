@@ -40,27 +40,29 @@ class SmsToolExecutor(
             return Pair(false, "missing_phone_number")
         }
 
-        val sentIntent = PendingIntent.getBroadcast(
-            context,
-            action.actionId.hashCode(),
-            Intent(ACTION_SMS_SENT).apply {
-                setPackage(context.packageName)
-                putExtra("action_id", action.actionId)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val deliveryIntent = PendingIntent.getBroadcast(
-            context,
-            action.actionId.hashCode(),
-            Intent(ACTION_SMS_DELIVERED).apply {
-                setPackage(context.packageName)
-                putExtra("action_id", action.actionId)
-            },
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
+        // PendingIntent creation sits inside the try too: SEND_SMS absent/revoked
+        // (or any framework failure) degrades to a result, never throws.
         return try {
+            val sentIntent = PendingIntent.getBroadcast(
+                context,
+                action.actionId.hashCode(),
+                Intent(ACTION_SMS_SENT).apply {
+                    setPackage(context.packageName)
+                    putExtra("action_id", action.actionId)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val deliveryIntent = PendingIntent.getBroadcast(
+                context,
+                action.actionId.hashCode(),
+                Intent(ACTION_SMS_DELIVERED).apply {
+                    setPackage(context.packageName)
+                    putExtra("action_id", action.actionId)
+                },
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
             if (smsSender != null) {
                 smsSender.invoke(phone, null, text, sentIntent, deliveryIntent)
             } else {

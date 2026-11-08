@@ -41,10 +41,13 @@ class DialerToolExecutor(
 
         val dialerPackage = defaultDialerPackage() ?: return Pair(false, "no_default_dialer")
         val phoneUri = "tel:$phone"
-        val intent = intentFactory(Intent.ACTION_CALL, phoneUri, dialerPackage)
-        intent.setPackage(dialerPackage)
 
+        // Everything past this point is inside the try: a missing/revoked
+        // CALL_PHONE (or any other failure) must degrade to a result, never
+        // throw to the caller.
         return try {
+            val intent = intentFactory(Intent.ACTION_CALL, phoneUri, dialerPackage)
+            intent.setPackage(dialerPackage)
             callLauncher(intent)
             Pair(true, "call_placed")
         } catch (e: SecurityException) {
