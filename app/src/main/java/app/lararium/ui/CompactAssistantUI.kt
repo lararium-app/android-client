@@ -60,12 +60,53 @@ import app.lararium.util.PdfResult
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import app.lararium.util.LinkPolicy
+import app.lararium.assistant.NotificationSummary
+import app.lararium.assistant.ScreenContextPolicy
+import app.lararium.assistant.ScreenContextProvider
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.ui.text.style.TextOverflow
+
+/** One offered notification line; [checked] defaults to true and is user-controlled. */
+class ContextEntry(val summary: NotificationSummary) {
+    var checked by mutableStateOf(true)
+}
 
 class CompactAssistantActivity : FragmentActivity() {
 
     private var assistantService: AssistantService? = null
     private var bound = false
     private val serviceState = mutableStateOf<AssistantService?>(null)
+    private val contextEntries = mutableStateListOf<ContextEntry>()
+    private val sharedText = mutableStateOf("")
+
+    private fun loadContext() {
+        runCatching {
+            contextEntries.clear()
+            ScreenContextProvider.snapshot(SettingsManager(this)).forEach { contextEntries.add(ContextEntry(it)) }
+        }
+    }
+
+    private fun excludePackage(pkg: String) {
+        runCatching {
+            val manager = SettingsManager(this)
+            manager.screenContextExcludedPackages = manager.screenContextExcludedPackages + pkg
+            contextEntries.removeAll { it.summary.packageName == pkg }
+        }
+    }
+
+    private fun readSharedText(source: Intent?): String = runCatching {
+        if (source?.action == Intent.ACTION_SEND && source.type == "text/plain") {
+            ScreenContextPolicy.sanitizeShared(source.getStringExtra(Intent.EXTRA_TEXT).orEmpty())
+        } else ""
+    }.getOrDefault("")
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedText.value = readSharedText(intent)
+        loadContext()
+    }
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -107,6 +148,8 @@ class CompactAssistantActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         applyFlagSecure()
         enableEdgeToEdge()
+        sharedText.value = readSharedText(intent)
+        loadContext()
 
         lifecycle.addObserver(LifecycleEventObserver { _, event ->
             when (event) {
@@ -201,7 +244,10 @@ class CompactAssistantActivity : FragmentActivity() {
                                         messages = messages,
                                         onCollapse = { isExpanded = false },
                                         onDismiss = { finish() },
-                                        onShowHistory = { showHistory = true }
+                                        onShowHistory = { showHistory = true },
+                                        contextEntries = contextEntries,
+                                        onExcludePackage = { excludePackage(it) },
+                                        initialText = sharedText.value
                                     )
                                 }
                                 else -> {
@@ -211,7 +257,10 @@ class CompactAssistantActivity : FragmentActivity() {
                                         transcription = transcription,
                                         response = response,
                                         onExpand = { isExpanded = true },
-                                        onDismiss = { finish() }
+                                        onDismiss = { finish() },
+                                        contextEntries = contextEntries,
+                                        onExcludePackage = { excludePackage(it) },
+                                        initialText = sharedText.value
                                     )
                                 }
                             }
@@ -244,12 +293,15 @@ fun CompactAssistantView(
     transcription: String,
     response: String,
     onExpand: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    contextEntries: MutableList<ContextEntry> = mutableListOf(),
+    onExcludePackage: (String) -> Unit = {},
+    initialText: String = ""
 ) {
     val context = LocalContext.current
     val settingsManager = remember { SettingsManager(context) }
     val scope = rememberCoroutineScope()
-    var textInput by remember { mutableStateOf("") }
+    var textInput by remember(initialText) { mutableStateOf(initialText) }
     val scrollState = rememberScrollState()
 
     var selectedImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -558,6 +610,8 @@ fun CompactAssistantView(
                     }
                 }
 
+                NotificationContextSection(contextEntries, onExcludePackage)
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -631,7 +685,10 @@ fun CompactAssistantView(
                                     currentText.ifBlank { "What's in this image?" }
                                 }
 
-                                service.processTextQuery(queryText, currentImageBase64)
+                                val outgoing = ScreenContextPolicy.prependContext(
+                                    contextEntries.filter { it.checked }.map { it.summary }, queryText)
+                                service.processTextQuery(outgoing, currentImageBase64)
+                                contextEntries.clear()
                                 textInput = ""
                                 selectedImageBitmap = null
                                 selectedImageBase64 = null
@@ -661,11 +718,14 @@ fun FullChatScreen(
     messages: List<app.lararium.llm.ChatSession.Message>,
     onCollapse: () -> Unit,
     onDismiss: () -> Unit,
-    onShowHistory: () -> Unit = {}
+    onShowHistory: () -> Unit = {},
+    contextEntries: MutableList<ContextEntry> = mutableListOf(),
+    onExcludePackage: (String) -> Unit = {},
+    initialText: String = ""
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var textInput by remember { mutableStateOf("") }
+    var textInput by remember(initialText) { mutableStateOf(initialText) }
     val scrollState = rememberScrollState()
 
     var selectedImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
@@ -865,6 +925,8 @@ fun FullChatScreen(
                         }
                     }
 
+                    NotificationContextSection(contextEntries, onExcludePackage)
+
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -925,7 +987,10 @@ fun FullChatScreen(
                                         currentText.ifBlank { "What's in this image?" }
                                     }
 
-                                    service.processTextQuery(queryText, currentImageBase64)
+                                    val outgoing = ScreenContextPolicy.prependContext(
+                                        contextEntries.filter { it.checked }.map { it.summary }, queryText)
+                                    service.processTextQuery(outgoing, currentImageBase64)
+                                    contextEntries.clear()
                                     textInput = ""
                                     selectedImageBitmap = null
                                     selectedImageBase64 = null
@@ -1316,6 +1381,72 @@ fun ChatHistoryItem(
                 Icon(Icons.Default.Delete, "Delete",
                     tint = MaterialTheme.colorScheme.error,
                     modifier = Modifier.size(18.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun NotificationContextSection(
+    entries: MutableList<ContextEntry>,
+    onExcludePackage: (String) -> Unit
+) {
+    if (entries.isEmpty()) return
+    var expanded by remember { mutableStateOf(true) }
+    var menuFor by remember { mutableStateOf<ContextEntry?>(null) }
+    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "Context from recent notifications (${entries.size})",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.weight(1f)
+            )
+            Icon(
+                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                contentDescription = if (expanded) "Collapse" else "Expand",
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        if (expanded) {
+            entries.toList().forEach { entry ->
+                val pkg = entry.summary.packageName
+                Box {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .combinedClickable(
+                                onClick = { entry.checked = !entry.checked },
+                                onLongClick = { menuFor = entry }
+                            ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Checkbox(checked = entry.checked, onCheckedChange = { entry.checked = it })
+                        Text(
+                            "$pkg: ${ScreenContextPolicy.displayLine(entry.summary)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    DropdownMenu(expanded = menuFor === entry, onDismissRequest = { menuFor = null }) {
+                        DropdownMenuItem(
+                            text = { Text("Exclude $pkg") },
+                            onClick = {
+                                menuFor = null
+                                onExcludePackage(pkg)
+                            }
+                        )
+                    }
+                }
             }
         }
     }

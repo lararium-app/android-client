@@ -130,22 +130,30 @@ services, sync engine) — specced next.
 
 The OEM-replacement headline: claim `ROLE_ASSISTANT` so the power button
 and hold-gesture open Lararium instead of Google. Staged: (1) role +
-existing overlay as the target, (2) wake word via an on-device tiny KWS
-(Google's hotword is not licensable; Vosk is too heavy for 24/7),
-(3) screen context via role-provided screenshots, fallback share-sheet
-→ "Ask Lararium". Circle-to-search itself is proprietary with no
-third-party hook — we serve the same want, not their gesture.
+existing overlay as the target, (2) ~~wake word~~ **closed by SDK
+research** — the public `VoiceInteractionService` exposes no hotword
+enrollment or detection API (`@hide`-only), and Google's hotword model
+is not licensable; the default-assistant summon gesture is the
+sanctioned wake experience, so the wake word is out of scope,
+(3) screen context — the role provides NO screenshot hook either
+(screenshots require an accessibility service or per-session
+MediaProjection consent); the public-compliant path is the existing
+notification ring plus a share-sheet "Ask Lararium" surface, where the
+user hands content over explicitly.
 
-**Status:** stage 1 is implemented and pending two-OEM-skin verification.
-`LarariumVoiceService`/session route summons into the existing overlay;
-Settings requests/changes `ROLE_ASSISTANT` (API 29+, graceful fallback
-below); the split flavors are unified (dialer/SMS/call-log in main,
-runtime-degrade when denied). Stages 2 (wake word) and 3 (screen
-context) are not started.
+**Status:** stage 1 is implemented (merged) and pending two-OEM-skin
+verification. `LarariumVoiceService`/session route summons into the
+existing overlay; Settings requests/changes `ROLE_ASSISTANT` (API 29+,
+graceful fallback below); the split flavors are unified (dialer/SMS/
+call-log in main, runtime-degrade when denied). Stage 2 closed as
+out-of-scope per the research above. Stage 3 (notification context +
+share-sheet) in progress.
 
-**Exit:** on two OEM skins, summoning the assistant reaches Lararium
-with screen context, and revoking the role degrades gracefully to the
-overlay.
+**Exit:** on two OEM skins, summoning the assistant reaches Lararium,
+optional opt-in context (notification summaries, share-sheet) works
+with the toggle off by default, and revoking the role degrades
+gracefully to the overlay. Circle-to-search itself is proprietary with
+no third-party hook — we serve the same want, not their gesture.
 
 ## T5 — Watch the agent work
 
