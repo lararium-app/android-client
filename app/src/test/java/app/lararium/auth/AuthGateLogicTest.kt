@@ -151,4 +151,49 @@ class AuthGateLogicTest {
         assertEquals(1, blockExecutions)
         assertFalse("Successful auth must clear hasBeenBackgrounded", policy.hasBeenBackgrounded)
     }
+
+    @Test
+    fun allSecretWriteTargets_requireGate() {
+        for (target in SecretWriteTarget.entries) {
+            assertTrue(
+                "Secret write target $target must require AuthGateLogic",
+                AuthGateLogic.requiresGateForSecretWrite(target)
+            )
+        }
+    }
+
+    @Test
+    fun scaryVerbs_destructiveAndReplacingSecretDecisions() {
+        // Always-destructive verbs prompt even when not replacing an existing secret
+        assertTrue(AuthGateLogic.isDestructiveVerb(ScaryVerb.CONNECTOR_DELETE))
+        assertTrue(AuthGateLogic.isDestructiveVerb(ScaryVerb.HEARTH_UNPAIR_CLEAR))
+        assertTrue(AuthGateLogic.isDestructiveVerb(ScaryVerb.DEVICE_RAILS_REPAIR_CLEAR))
+        assertTrue(AuthGateLogic.isDestructiveVerb(ScaryVerb.DEVICE_RAILS_UNPAIR_CLEAR))
+
+        // Pairing/write verbs are non-destructive on initial pair, but destructive when replacing an existing secret
+        assertFalse(AuthGateLogic.isDestructiveVerb(ScaryVerb.HEARTH_PAIR_WRITE, replacingExistingSecret = false))
+        assertTrue(AuthGateLogic.isDestructiveVerb(ScaryVerb.HEARTH_PAIR_WRITE, replacingExistingSecret = true))
+        assertFalse(AuthGateLogic.isDestructiveVerb(ScaryVerb.DEVICE_RAILS_PAIR_WRITE, replacingExistingSecret = false))
+        assertTrue(AuthGateLogic.isDestructiveVerb(ScaryVerb.DEVICE_RAILS_PAIR_WRITE, replacingExistingSecret = true))
+
+        // Connector add/edit/reauth, approval resolve, and device action approve require auth when locked or backgrounded
+        for (verb in listOf(
+            ScaryVerb.CONNECTOR_ADD,
+            ScaryVerb.CONNECTOR_EDIT,
+            ScaryVerb.CONNECTOR_REAUTH,
+            ScaryVerb.APPROVAL_RESOLVE,
+            ScaryVerb.DEVICE_ACTION_APPROVE
+        )) {
+            val destructive = AuthGateLogic.isDestructiveVerb(verb)
+            assertFalse(destructive)
+            assertTrue(
+                "Verb $verb must authenticate when locked",
+                AuthGateLogic.shouldAuthenticate(isUnlocked = false, destructive = destructive, hasBeenBackgrounded = false)
+            )
+            assertTrue(
+                "Verb $verb must authenticate after backgrounding",
+                AuthGateLogic.shouldAuthenticate(isUnlocked = true, destructive = destructive, hasBeenBackgrounded = true)
+            )
+        }
+    }
 }

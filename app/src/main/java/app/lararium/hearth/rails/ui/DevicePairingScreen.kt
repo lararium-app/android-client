@@ -20,7 +20,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import app.lararium.auth.ScaryVerb
+import app.lararium.auth.authGate
 import app.lararium.hearth.rails.service.DevicePairingController
+import app.lararium.hearth.rails.service.DevicePairingStore
 import app.lararium.hearth.rails.service.DeviceRailService
 import app.lararium.security.SecureKeyManager
 import kotlinx.coroutines.launch
@@ -77,20 +80,31 @@ fun DevicePairingScreen(
 
         isLoading = true
         scope.launch {
+            val replacingExisting = try {
+                DevicePairingStore(context).isPaired()
+            } catch (_: Exception) {
+                false
+            }
             try {
-                val result = DevicePairingController.pair(
+                authGate(
                     context = context,
-                    baseUrl = baseUrl.trim(),
-                    token = token.trim()
-                )
+                    verb = ScaryVerb.DEVICE_RAILS_PAIR_WRITE,
+                    replacingExistingSecret = replacingExisting
+                ) {
+                    val result = DevicePairingController.pair(
+                        context = context,
+                        baseUrl = baseUrl.trim(),
+                        token = token.trim()
+                    )
 
-                when (result) {
-                    is DevicePairingController.Result.Success -> {
-                        DeviceRailService.ensureRunning(context)
-                        onPairingSuccess()
-                    }
-                    is DevicePairingController.Result.Failure -> {
-                        generalError = PairingValidation.friendlyPairErrorMessage(result.error)
+                    when (result) {
+                        is DevicePairingController.Result.Success -> {
+                            DeviceRailService.ensureRunning(context)
+                            onPairingSuccess()
+                        }
+                        is DevicePairingController.Result.Failure -> {
+                            generalError = PairingValidation.friendlyPairErrorMessage(result.error)
+                        }
                     }
                 }
             } catch (e: Exception) {

@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat
 import app.lararium.AssistantApplication
 import app.lararium.MainActivity
 import app.lararium.R
+import app.lararium.auth.AppLock
 import app.lararium.audio.AudioCaptureManager
 import app.lararium.audio.SpeechRecognizerManager
 import app.lararium.audio.VoiceActivityDetector
@@ -699,6 +700,12 @@ class AssistantService : Service() {
      */
     private suspend fun processQueryInternal(query: String, imageBase64: String? = null) {
         try {
+            if (!AppLock.policy.canReachHearth()) {
+                val lockedError = "Unlock Lararium first"
+                _response.value = lockedError
+                _assistantState.value = AssistantState.Error(lockedError)
+                return
+            }
             val sanitizedQuery = sanitizeQuery(query)
             val app = application as AssistantApplication
             val endpoint = app.secureKeyManager.getHearthEndpoint()
@@ -1078,6 +1085,7 @@ class AssistantService : Service() {
      * `waitForTurnCommit`, and merges the committed reply via [DrawerLogic.mergeMessages].
      */
     private fun maybeRestoreHearthChat() {
+        if (!AppLock.policy.canReachHearth()) return
         serviceScope.launch(Dispatchers.IO) {
             val sid = HearthChatClient.getStoredSessionId(this@AssistantService) ?: return@launch
             if (!ChatStateLogic.shouldRehydrate(_chatMessages.value, _assistantState.value, _response.value)) return@launch
@@ -1257,6 +1265,7 @@ class AssistantService : Service() {
     }
 
     private fun isMonitoringEligible(): Boolean {
+        if (!AppLock.policy.canReachHearth()) return false
         val app = application as? AssistantApplication ?: return false
         val endpoint = app.secureKeyManager.getHearthEndpoint()
         return endpoint != null
@@ -1267,6 +1276,7 @@ class AssistantService : Service() {
             _connectionState.value = ConnectionState.Unknown
             return
         }
+        maybeRestoreHearthChat()
         dispatchConnectionEvent(ConnectionEvent.ManualRetry)
     }
 

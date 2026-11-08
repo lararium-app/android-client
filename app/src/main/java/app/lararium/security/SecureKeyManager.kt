@@ -3,9 +3,9 @@ package app.lararium.security
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
-import android.util.Base64
 import android.util.Log
 import java.security.KeyStore
+import java.util.Base64
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
@@ -15,7 +15,10 @@ import javax.crypto.spec.GCMParameterSpec
  * Secure key management using Android Keystore.
  * Encrypts API keys and sensitive data at rest.
  */
-class SecureKeyManager(private val context: Context) {
+class SecureKeyManager @JvmOverloads constructor(
+    private val context: Context,
+    private val secretKeyProvider: (() -> SecretKey)? = null
+) {
 
     companion object {
         private const val TAG = "SecureKeyManager"
@@ -91,6 +94,7 @@ class SecureKeyManager(private val context: Context) {
     }
 
     private fun getSecretKey(): SecretKey {
+        secretKeyProvider?.let { return it() }
         keyReady // ensure the keystore key exists before first read (initialises on device)
         return keyStore.getKey(KEY_ALIAS, null) as SecretKey
     }
@@ -111,14 +115,14 @@ class SecureKeyManager(private val context: Context) {
         System.arraycopy(iv, 0, combined, 0, iv.size)
         System.arraycopy(ciphertext, 0, combined, iv.size, ciphertext.size)
         
-        return Base64.encodeToString(combined, Base64.NO_WRAP)
+        return Base64.getEncoder().encodeToString(combined)
     }
 
     /**
      * Decrypt Base64-encoded data using Android Keystore key.
      */
     private fun decrypt(encryptedData: String): String {
-        val combined = Base64.decode(encryptedData, Base64.NO_WRAP)
+        val combined = Base64.getDecoder().decode(encryptedData)
         
         // Extract IV and ciphertext
         val iv = combined.copyOfRange(0, GCM_IV_LENGTH)
@@ -210,8 +214,12 @@ class SecureKeyManager(private val context: Context) {
      * reads old, writes to secure prefs, deletes old.
      */
     fun getPairingCode(): String? {
+        val plainPrefs = context.getSharedPreferences(PLAIN_PREFS_NAME, Context.MODE_PRIVATE)
         val encrypted = prefs.getString(PREF_PAIRING_CODE, null)?.takeIf { it.isNotBlank() }
         if (encrypted != null) {
+            if (plainPrefs.contains(PLAIN_PAIRING_CODE_KEY)) {
+                plainPrefs.edit().remove(PLAIN_PAIRING_CODE_KEY).apply()
+            }
             return try {
                 decrypt(encrypted)
             } catch (e: Exception) {
@@ -221,13 +229,15 @@ class SecureKeyManager(private val context: Context) {
         }
 
         // Migrate legacy plain value on first read: read old, write new, delete old
-        val plainPrefs = context.getSharedPreferences(PLAIN_PREFS_NAME, Context.MODE_PRIVATE)
         val legacyCode = plainPrefs.getString(PLAIN_PAIRING_CODE_KEY, null)?.takeIf { it.isNotBlank() }
         if (legacyCode != null) {
             Log.i(TAG, "Migrating legacy pairingCode from local_token to secure storage (L-21)")
             setPairingCode(legacyCode)
             plainPrefs.edit().remove(PLAIN_PAIRING_CODE_KEY).apply()
             return legacyCode
+        }
+        if (plainPrefs.contains(PLAIN_PAIRING_CODE_KEY)) {
+            plainPrefs.edit().remove(PLAIN_PAIRING_CODE_KEY).apply()
         }
 
         return null
@@ -286,8 +296,12 @@ class SecureKeyManager(private val context: Context) {
      * Retrieve device rails bearer token. Migrates on first read from legacy plain prefs.
      */
     fun getDeviceToken(): String? {
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
         val encrypted = prefs.getString(PREF_DEVICE_TOKEN, null)?.takeIf { it.isNotBlank() }
         if (encrypted != null) {
+            if (plainPrefs.contains("device_token")) {
+                plainPrefs.edit().remove("device_token").apply()
+            }
             return try {
                 decrypt(encrypted)
             } catch (e: Exception) {
@@ -296,13 +310,15 @@ class SecureKeyManager(private val context: Context) {
             }
         }
 
-        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
         val legacyToken = plainPrefs.getString("device_token", null)?.takeIf { it.isNotBlank() }
         if (legacyToken != null) {
             Log.i(TAG, "Migrating legacy device_token to secure storage (T6)")
             setDeviceToken(legacyToken)
             plainPrefs.edit().remove("device_token").apply()
             return legacyToken
+        }
+        if (plainPrefs.contains("device_token")) {
+            plainPrefs.edit().remove("device_token").apply()
         }
 
         return null
@@ -330,8 +346,12 @@ class SecureKeyManager(private val context: Context) {
     }
 
     fun getDeviceId(): String? {
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
         val encrypted = prefs.getString(PREF_DEVICE_ID, null)?.takeIf { it.isNotBlank() }
         if (encrypted != null) {
+            if (plainPrefs.contains("device_id")) {
+                plainPrefs.edit().remove("device_id").apply()
+            }
             return try {
                 decrypt(encrypted)
             } catch (e: Exception) {
@@ -340,12 +360,14 @@ class SecureKeyManager(private val context: Context) {
             }
         }
 
-        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
         val legacyId = plainPrefs.getString("device_id", null)?.takeIf { it.isNotBlank() }
         if (legacyId != null) {
             setDeviceId(legacyId)
             plainPrefs.edit().remove("device_id").apply()
             return legacyId
+        }
+        if (plainPrefs.contains("device_id")) {
+            plainPrefs.edit().remove("device_id").apply()
         }
 
         return null
@@ -374,8 +396,12 @@ class SecureKeyManager(private val context: Context) {
     }
 
     fun getDeviceBaseUrl(): String? {
+        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
         val encrypted = prefs.getString(PREF_DEVICE_BASE_URL, null)?.takeIf { it.isNotBlank() }
         if (encrypted != null) {
+            if (plainPrefs.contains("device_base_url")) {
+                plainPrefs.edit().remove("device_base_url").apply()
+            }
             return try {
                 decrypt(encrypted)
             } catch (e: Exception) {
@@ -384,12 +410,14 @@ class SecureKeyManager(private val context: Context) {
             }
         }
 
-        val plainPrefs = context.getSharedPreferences(PLAIN_DEVICE_RAILS_PREFS, Context.MODE_PRIVATE)
         val legacyUrl = plainPrefs.getString("device_base_url", null)?.takeIf { it.isNotBlank() }
         if (legacyUrl != null) {
             setDeviceBaseUrl(legacyUrl)
             plainPrefs.edit().remove("device_base_url").apply()
             return legacyUrl
+        }
+        if (plainPrefs.contains("device_base_url")) {
+            plainPrefs.edit().remove("device_base_url").apply()
         }
 
         return null

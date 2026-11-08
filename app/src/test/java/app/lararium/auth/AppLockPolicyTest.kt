@@ -121,4 +121,51 @@ class AppLockPolicyTest {
         policy.onForeground(600_100L)
         assertFalse("App re-locks past 5 min in background (default)", policy.isUnlocked)
     }
+
+    @Test
+    fun allEntryPaths_requireUnlockOnColdStart() {
+        val policy = AppLockPolicy()
+        for (path in AppLockPolicy.EntryPath.entries) {
+            assertTrue(
+                "Entry path $path must be gated on cold start",
+                policy.requiresUnlockForEntry(path)
+            )
+        }
+        assertFalse("Hearth calls must be blocked on cold start", policy.canReachHearth())
+    }
+
+    @Test
+    fun allEntryPaths_allowedWhenUnlockedAndWithinTimeout_relockedPastTimeout() {
+        val policy = AppLockPolicy()
+        policy.unlock()
+        for (path in AppLockPolicy.EntryPath.entries) {
+            assertFalse(
+                "Entry path $path must not require unlock when already unlocked",
+                policy.requiresUnlockForEntry(path)
+            )
+        }
+        assertTrue("Hearth calls must be permitted when unlocked", policy.canReachHearth())
+
+        // Background < 5 min -> still unlocked
+        policy.onBackground(1_000L)
+        policy.onForeground(200_000L)
+        for (path in AppLockPolicy.EntryPath.entries) {
+            assertFalse(
+                "Entry path $path stays unlocked within 5-min background window",
+                policy.requiresUnlockForEntry(path)
+            )
+        }
+        assertTrue(policy.canReachHearth())
+
+        // Background > 5 min -> re-locked for every entry path
+        policy.onBackground(200_000L)
+        policy.onForeground(500_500L)
+        for (path in AppLockPolicy.EntryPath.entries) {
+            assertTrue(
+                "Entry path $path must re-gate after >5 min in background",
+                policy.requiresUnlockForEntry(path)
+            )
+        }
+        assertFalse("Hearth calls must be blocked after >5 min background relock", policy.canReachHearth())
+    }
 }
