@@ -20,6 +20,14 @@ object BiometricAuthPolicy {
         NO_HARDWARE_PASSTHROUGH
     }
 
+    // Mirror AndroidX BiometricManager.Authenticators bitmasks for pure JVM unit testability.
+    const val AUTH_BIOMETRIC_STRONG: Int = 0x000F
+    const val AUTH_BIOMETRIC_WEAK: Int = 0x00FF
+    const val AUTH_DEVICE_CREDENTIAL: Int = 0x8000
+
+    const val NO_ENROLLMENT_WARNING: String =
+        "No screen lock or biometrics enrolled — set a device PIN or biometric to lock Lararium"
+
     /**
      * Pure function determining which authentication strategy to employ.
      *
@@ -50,6 +58,60 @@ object BiometricAuthPolicy {
                 }
             }
             else -> AuthStrategy.NO_HARDWARE_PASSTHROUGH
+        }
+    }
+
+    /**
+     * Pure mapping from [AuthStrategy] and [sdkInt] to AndroidX BiometricPrompt allowedAuthenticators bitmask.
+     *
+     * Note: On API 26..29, androidx.biometric 1.1.0 rejects `DEVICE_CREDENTIAL` alone or `BIOMETRIC_STRONG | DEVICE_CREDENTIAL`,
+     * but supports `BIOMETRIC_WEAK | DEVICE_CREDENTIAL` (`0x80FF`), which falls back cleanly to the device PIN/pattern/password
+     * when no biometrics are enrolled.
+     */
+    fun allowedAuthenticatorsFor(strategy: AuthStrategy, sdkInt: Int): Int {
+        return when (strategy) {
+            AuthStrategy.BIOMETRIC_AND_CREDENTIAL -> AUTH_BIOMETRIC_STRONG or AUTH_DEVICE_CREDENTIAL
+            AuthStrategy.BIOMETRIC_STRONG_ONLY -> AUTH_BIOMETRIC_STRONG
+            AuthStrategy.DEVICE_CREDENTIAL_ONLY -> {
+                if (sdkInt >= 30) {
+                    AUTH_DEVICE_CREDENTIAL
+                } else {
+                    AUTH_BIOMETRIC_WEAK or AUTH_DEVICE_CREDENTIAL
+                }
+            }
+            AuthStrategy.NO_HARDWARE_PASSTHROUGH -> 0
+        }
+    }
+
+    /**
+     * Negative button label for [BiometricPrompt.PromptInfo].
+     * On API 26..29 (`BIOMETRIC_STRONG_ONLY`), offers `"Use PIN"` when a device credential is enrolled.
+     */
+    fun negativeButtonTextFor(strategy: AuthStrategy, hasDeviceCredential: Boolean): String? {
+        return when (strategy) {
+            AuthStrategy.BIOMETRIC_STRONG_ONLY -> if (hasDeviceCredential) "Use PIN" else "Cancel"
+            else -> null
+        }
+    }
+
+    /**
+     * Whether tapping the negative button on [strategy] should trigger a device-credential fallback prompt.
+     */
+    fun shouldFallbackToCredentialOnNegativeButton(
+        strategy: AuthStrategy,
+        hasDeviceCredential: Boolean
+    ): Boolean {
+        return strategy == AuthStrategy.BIOMETRIC_STRONG_ONLY && hasDeviceCredential
+    }
+
+    /**
+     * Non-null user-visible warning message when falling back without any enrolled biometric or credential.
+     * Ensures passthrough is never silent (T6 A.4).
+     */
+    fun fallbackWarningFor(strategy: AuthStrategy): String? {
+        return when (strategy) {
+            AuthStrategy.NO_HARDWARE_PASSTHROUGH -> NO_ENROLLMENT_WARNING
+            else -> null
         }
     }
 }

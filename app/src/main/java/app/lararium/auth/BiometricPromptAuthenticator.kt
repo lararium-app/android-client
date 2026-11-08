@@ -3,18 +3,24 @@ package app.lararium.auth
 import android.app.KeyguardManager
 import android.content.Context
 import android.os.Build
+import android.util.Log
+import android.widget.Toast
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 
 /**
- * AndroidX BiometricPrompt implementation of [Authenticator] (R1, R2).
+ * AndroidX BiometricPrompt implementation of [Authenticator] (R1, R2, T6 A.4).
  * Uses [BiometricAuthPolicy] to enforce allowed authenticators matching platform capabilities.
  */
 class BiometricPromptAuthenticator(
     private val policy: BiometricAuthPolicy = BiometricAuthPolicy
 ) : Authenticator {
+
+    companion object {
+        private const val TAG = "BiometricAuth"
+    }
 
     override fun authenticate(
         activity: Any?,
@@ -36,54 +42,71 @@ class BiometricPromptAuthenticator(
         ) == BiometricManager.BIOMETRIC_SUCCESS
 
         val isDeviceSecure = keyguardManager?.isDeviceSecure == true
+        val sdkInt = Build.VERSION.SDK_INT
 
         val strategy = policy.determineStrategy(
-            sdkInt = Build.VERSION.SDK_INT,
+            sdkInt = sdkInt,
             hasStrongBiometric = hasStrongBiometric,
             hasDeviceCredential = isDeviceSecure
         )
 
         when (strategy) {
             BiometricAuthPolicy.AuthStrategy.NO_HARDWARE_PASSTHROUGH -> {
-                // No biometric hardware or enrollment, and credentials not usable.
-                // Allow the app to stay usable per roadmap fallback rules.
+                // Neither biometrics nor device credentials are enrolled.
+                // Warn explicitly (never silently) and allow the app to stay usable per roadmap fallback rules.
+                val warning = policy.fallbackWarningFor(strategy)
+                if (warning != null) {
+                    Log.w(TAG, warning)
+                    try {
+                        Toast.makeText(fragmentActivity.applicationContext, warning, Toast.LENGTH_LONG).show()
+                    } catch (_: Exception) {
+                        // Ignore toast errors in headless/test environments
+                    }
+                }
                 onResult(true)
             }
-            BiometricAuthPolicy.AuthStrategy.BIOMETRIC_AND_CREDENTIAL -> {
+            BiometricAuthPolicy.AuthStrategy.BIOMETRIC_AND_CREDENTIAL,
+            BiometricAuthPolicy.AuthStrategy.DEVICE_CREDENTIAL_ONLY -> {
                 launchPrompt(
                     activity = fragmentActivity,
                     title = reasonTitle,
                     subtitle = reasonText,
-                    allowedAuthenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                        BiometricManager.Authenticators.DEVICE_CREDENTIAL,
-                    negativeButtonText = null,
+                    allowedAuthenticators = policy.allowedAuthenticatorsFor(strategy, sdkInt),
+                    negativeButtonText = policy.negativeButtonTextFor(strategy, isDeviceSecure),
+                    onNegativeButtonFallback = null,
                     onResult = onResult
                 )
             }
             BiometricAuthPolicy.AuthStrategy.BIOMETRIC_STRONG_ONLY -> {
+                val fallback: (() -> Unit)? = if (
+                    policy.shouldFallbackToCredentialOnNegativeButton(strategy, isDeviceSecure)
+                ) {
+                    {
+                        launchPrompt(
+                            activity = fragmentActivity,
+                            title = reasonTitle,
+                            subtitle = reasonText,
+                            allowedAuthenticators = policy.allowedAuthenticatorsFor(
+                                BiometricAuthPolicy.AuthStrategy.DEVICE_CREDENTIAL_ONLY,
+                                sdkInt
+                            ),
+                            negativeButtonText = null,
+                            onNegativeButtonFallback = null,
+                            onResult = onResult
+                        )
+                    }
+                } else {
+                    null
+                }
                 launchPrompt(
                     activity = fragmentActivity,
                     title = reasonTitle,
                     subtitle = reasonText,
-                    allowedAuthenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG,
-                    negativeButtonText = "Cancel",
+                    allowedAuthenticators = policy.allowedAuthenticatorsFor(strategy, sdkInt),
+                    negativeButtonText = policy.negativeButtonTextFor(strategy, isDeviceSecure),
+                    onNegativeButtonFallback = fallback,
                     onResult = onResult
                 )
-            }
-            BiometricAuthPolicy.AuthStrategy.DEVICE_CREDENTIAL_ONLY -> {
-                if (Build.VERSION.SDK_INT >= 30) {
-                    launchPrompt(
-                        activity = fragmentActivity,
-                        title = reasonTitle,
-                        subtitle = reasonText,
-                        allowedAuthenticators = BiometricManager.Authenticators.DEVICE_CREDENTIAL,
-                        negativeButtonText = null,
-                        onResult = onResult
-                    )
-                } else {
-                    // On API 26-29 without strong biometric hardware, pass through
-                    onResult(true)
-                }
             }
         }
     }
@@ -94,6 +117,7 @@ class BiometricPromptAuthenticator(
         subtitle: String,
         allowedAuthenticators: Int,
         negativeButtonText: String?,
+        onNegativeButtonFallback: (() -> Unit)?,
         onResult: (Boolean) -> Unit
     ) {
         val executor = ContextCompat.getMainExecutor(activity)
@@ -105,6 +129,10 @@ class BiometricPromptAuthenticator(
 
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 super.onAuthenticationError(errorCode, errString)
+                if (errorCode == BiometricPrompt.ERROR_NEGATIVE_BUTTON && onNegativeButtonFallback != null) {
+                    onNegativeButtonFallback.invoke()
+                    return
+                }
                 onResult(false)
             }
 

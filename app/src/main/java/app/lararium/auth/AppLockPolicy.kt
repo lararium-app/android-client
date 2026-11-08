@@ -12,6 +12,36 @@ class AppLockPolicy(
     }
 
     /**
+     * All app entry paths that can reach hearth or device-rails state (T6 A.1).
+     */
+    enum class EntryPath {
+        LAUNCHER_MAIN,
+        ASSIST_GESTURE,
+        NOTIFICATION_CARD_REVIEW,
+        NOTIFICATION_SESSION_REPLY,
+        DEEP_LINK_HEARTH_PAIR,
+        DEEP_LINK_DEVICE_PAIR,
+        DEVICES_ACTIVITY,
+        ASSISTANT_OVERLAY,
+        RECENT_APPS_RESUME
+    }
+
+    /**
+     * Whether entering the app via [path] requires unlocking before any hearth call or screen render.
+     * Every entry path is gated behind [isUnlocked] (cold start + resume past [relockTimeoutMs]).
+     */
+    fun requiresUnlockForEntry(@Suppress("UNUSED_PARAMETER") path: EntryPath): Boolean {
+        return !isUnlocked
+    }
+
+    /**
+     * Whether background/foreground components are permitted to issue hearth calls right now.
+     */
+    fun canReachHearth(): Boolean {
+        return isUnlocked
+    }
+
+    /**
      * Whether the app is currently unlocked. Initial state is false (LOCKED).
      */
     var isUnlocked: Boolean = false
