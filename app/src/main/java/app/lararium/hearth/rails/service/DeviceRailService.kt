@@ -231,20 +231,20 @@ class DeviceRailService : Service() {
 
         syncEngines.addAll(listOf(calendarEngine, contactsEngine, notificationsEngine, healthEngine))
 
-        if (app.lararium.BuildConfig.DIST_CHANNEL == "github") {
-            val callLogSource = CallLogDataSource(this)
-            dataSources.add(callLogSource)
+        // Call log rail: declared in every build; the data source degrades
+        // (empty snapshot) when READ_CALL_LOG is not granted.
+        val callLogSource = CallLogDataSource(this)
+        dataSources.add(callLogSource)
 
-            val callLogEngine = SyncEngine(
-                rail = "calllog",
-                snapshotProvider = { callLogSource.snapshot() },
-                seqTracker = seqTracker,
-                endpointProvider = { pairingStore.getEndpoint() },
-                coroutineScope = serviceScope
-            )
-            callLogSource.registerObserver { callLogEngine.notifyDataChanged() }
-            syncEngines.add(callLogEngine)
-        }
+        val callLogEngine = SyncEngine(
+            rail = "calllog",
+            snapshotProvider = { callLogSource.snapshot() },
+            seqTracker = seqTracker,
+            endpointProvider = { pairingStore.getEndpoint() },
+            coroutineScope = serviceScope
+        )
+        callLogSource.registerObserver { callLogEngine.notifyDataChanged() }
+        syncEngines.add(callLogEngine)
     }
 
     private fun startSupervisor() {

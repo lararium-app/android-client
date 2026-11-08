@@ -2,26 +2,24 @@ package app.lararium.hearth.rails.service
 
 import android.content.Context
 import app.lararium.hearth.rails.DeclaredRails
+import app.lararium.hearth.rails.RailsWire
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
+/** Flavors are build-identity stubs: the play variant compiles identical rail code. */
 class PlayFlavorGatingTest {
 
     @Test
-    fun factoryReturnsNoActionExecutorsInPlayVariant() {
-        assertTrue(ActionExecutors.forContext(mockk<Context>(relaxed = true)).isEmpty())
+    fun factoryReturnsDialerAndSms() {
+        val executors = ActionExecutors.forContext(mockk<Context>(relaxed = true))
+        assertEquals(1, executors.count { it.canHandle("device.dialer.call") })
+        assertEquals(2, executors.size)
     }
 
     @Test
-    fun buildConfigChannelIsPlayAndDeclaredRailsExcludeGated() {
+    fun playChannelDeclaresEveryRail() {
         assertEquals("play", app.lararium.BuildConfig.DIST_CHANNEL)
-        val names = DeclaredRails.names()
-        assertFalse("dialer" in names)
-        assertFalse("sms" in names)
-        assertFalse("calllog" in names)
-        assertEquals(setOf("calendar", "contacts", "notifications", "health"), names)
+        assertEquals(RailsWire.RAIL_NAMES, DeclaredRails.names())
     }
 }

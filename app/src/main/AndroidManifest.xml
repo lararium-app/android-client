@@ -22,6 +22,7 @@
     <uses-permission android:name="android.permission.READ_CALENDAR" />
     <uses-permission android:name="android.permission.WRITE_CALENDAR" />
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!-- granted via ASSISTANT role path (T4); runtime-denied = rail degrades -->
     <uses-permission android:name="android.permission.READ_CALL_LOG" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.SEND_SMS" />
@@ -145,9 +146,9 @@
                 android:resource="@xml/accessibility_service_config" />
         </service>
 
-        <!-- Voice interaction service (system assistant integration) -->
+        <!-- Voice interaction service: the ROLE_ASSISTANT machinery (T4 stage 1) -->
         <service
-            android:name=".service.AssistantVoiceInteractionService"
+            android:name=".assistant.LarariumVoiceService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION">
             <meta-data
@@ -160,7 +161,7 @@
 
         <!-- Voice interaction session (bound internally by framework) -->
         <service
-            android:name=".service.AssistantVoiceInteractionSessionService"
+            android:name=".assistant.LarariumVoiceSessionService"
             android:exported="true"
             android:permission="android.permission.BIND_VOICE_INTERACTION" />
 

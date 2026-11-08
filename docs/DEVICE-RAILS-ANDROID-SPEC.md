@@ -145,7 +145,8 @@ Following the repo's `WatchLogic` and `ChatLane` patterns, device rail lifecycle
 - Android components (`DeviceStreamService`, `DeviceRailSyncWorker`, Compose UI) act as thin wrappers around this engine.
 
 ### A9 — Distribution and Play Store Policy
-- Build Flavors:
+- Build Flavors (superseded by T4 flavor unification: both flavors now compile identical rail code; see
+  `docs/PLAY-LANE.md` "Assistant-role path"):
   - `play`: Complies with Google Play Developer Program Policies. SMS and Call Log capabilities declare appropriate
     use-case groups in the Play Console (documented in `docs/PLAY-LANE.md`).
   - `sideload`: Built from identical code without permission restrictions, distributed directly via GitHub Releases.

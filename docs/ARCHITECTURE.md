@@ -15,9 +15,12 @@ app/src/main/
 │   ├── service/
 │   │   ├── AssistantService.kt            # central orchestrator + connection machine
 │   │   ├── AssistantAccessibilityService.kt
-│   │   ├── AssistantVoiceInteractionService.kt
-│   │   ├── AssistantVoiceInteractionSessionService.kt
 │   │   └── AssistantTileService.kt
+│   ├── assistant/
+│   │   ├── LarariumVoiceService.kt        # VoiceInteractionService (ROLE_ASSISTANT machinery)
+│   │   ├── LarariumVoiceSessionService.kt
+│   │   ├── LarariumVoiceSession.kt        # onShow -> existing overlay flow
+│   │   └── AssistantRolePolicy.kt         # pure Settings row decision
 │   ├── hearth/
 │   │   ├── LarariumClient.kt              # HTTP + SSE transport, auth, pairing endpoints
 │   │   ├── HearthChatClient.kt            # chat lane over streamTurn
