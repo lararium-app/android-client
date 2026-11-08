@@ -17,6 +17,8 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.LifecycleEventObserver
 import app.lararium.auth.AppLock
+import app.lararium.auth.ScaryVerb
+import app.lararium.auth.authGate
 import app.lararium.auth.ui.LockScreen
 import app.lararium.receiver.CardNotificationIntentLogic
 import app.lararium.hearth.watch.HearthNotifier
@@ -95,6 +97,9 @@ class MainActivity : FragmentActivity() {
     /** Target session id from a reply notification tap. */
     private val openSessionId = MutableStateFlow<String?>(null)
 
+    /** Pending lararium://pair deep link held until AppLock is unlocked (T6 A.1). */
+    private val pendingPairingUri = MutableStateFlow<String?>(null)
+
     /** Transient status shown to the user after a pairing attempt. */
     private val pairingStatus = mutableStateOf<String?>(null)
 
@@ -105,7 +110,7 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handlePairingIntent(intent)
+        enqueuePairingIntent(intent)
         handleReviewCardIntent(intent)
         openRoute.value = intent.getStringExtra("lararium_open")
         intent.removeExtra("lararium_open")
@@ -129,12 +134,17 @@ class MainActivity : FragmentActivity() {
         activityScope.cancel()
     }
 
-    /** Parse a lararium://pair deep link, persist, and verify via health(). */
-    private fun handlePairingIntent(intent: Intent?) {
+    /** Enqueue a lararium://pair deep link so it is only processed after AppLock unlock (T6 A.1). */
+    private fun enqueuePairingIntent(intent: Intent?) {
         val data = intent?.data ?: return
         if (data.scheme != "lararium" || data.host != "pair") return
         val raw = intent.dataString ?: return
+        pendingPairingUri.value = raw
+        intent.data = null
+    }
 
+    /** Parse a lararium://pair deep link, confirm with user, and persist via authGate. */
+    private fun showPairingConfirmDialog(raw: String) {
         val parsed = PairingLink.parse(raw)
         if (parsed == null) {
             pairingStatus.value = "Invalid pairing link"
@@ -147,6 +157,7 @@ class MainActivity : FragmentActivity() {
         // displayed.
         val current = (applicationContext as AssistantApplication)
             .secureKeyManager.getHearthEndpoint()
+        val replacingExisting = current != null
         val prompt = if (current == null) {
             "Pair this device with \"${ep.name}\"?\n\n${ep.baseUrl}"
         } else {
@@ -158,30 +169,35 @@ class MainActivity : FragmentActivity() {
             .setTitle("Lararium pairing")
             .setMessage(prompt)
             .setNegativeButton("Cancel") { d, _ -> d.dismiss() }
-            .setPositiveButton("Pair") { _, _ -> connectPairedEndpoint(ep) }
+            .setPositiveButton("Pair") { _, _ -> connectPairedEndpoint(ep, replacingExisting) }
             .show()
     }
 
-    /** Verified-pair step of a confirmed deep link. */
-    private fun connectPairedEndpoint(ep: app.lararium.hearth.Endpoint) {
-        pairingStatus.value = "Connecting to ${ep.name}…"
-
+    /** Verified-pair step of a confirmed deep link, gated by authGate (T6 A.2). */
+    private fun connectPairedEndpoint(ep: app.lararium.hearth.Endpoint, replacingExisting: Boolean) {
         activityScope.launch {
-            val app = applicationContext as AssistantApplication
-            try {
-                val client = LarariumClient(ep)
-                client.health() // verify reachability
-                app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
-                HearthWatchScheduler.ensurePeriodic(app)
-                HearthWatchScheduler.refreshNow(app)
-                pairingStatus.value = "Paired with ${ep.name} ✓"
+            authGate(
+                context = this@MainActivity,
+                verb = ScaryVerb.HEARTH_PAIR_WRITE,
+                replacingExistingSecret = replacingExisting
+            ) {
+                pairingStatus.value = "Connecting to ${ep.name}…"
+                val app = applicationContext as AssistantApplication
                 try {
-                    DevicePairingController.autoRegister(app)
+                    val client = LarariumClient(ep)
+                    client.health() // verify reachability
+                    app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                    HearthWatchScheduler.ensurePeriodic(app)
+                    HearthWatchScheduler.refreshNow(app)
+                    pairingStatus.value = "Paired with ${ep.name} ✓"
+                    try {
+                        DevicePairingController.autoRegister(app)
+                    } catch (e: Exception) {
+                        android.util.Log.w("MainActivity", "Device rails auto-registration deferred: ${e.message}")
+                    }
                 } catch (e: Exception) {
-                    android.util.Log.w("MainActivity", "Device rails auto-registration deferred: ${e.message}")
+                    pairingStatus.value = "Pairing failed: ${e.message}"
                 }
-            } catch (e: Exception) {
-                pairingStatus.value = "Pairing failed: ${e.message}"
             }
         }
     }
@@ -217,11 +233,14 @@ class MainActivity : FragmentActivity() {
     
     override fun onStart() {
         super.onStart()
-        val app = applicationContext as AssistantApplication
-        if (app.secureKeyManager.getHearthEndpoint() != null) {
-            HearthWatchScheduler.refreshNow(this)
+        AppLock.onForeground(System.currentTimeMillis())
+        if (AppLock.policy.canReachHearth()) {
+            val app = applicationContext as AssistantApplication
+            if (app.secureKeyManager.getHearthEndpoint() != null) {
+                HearthWatchScheduler.refreshNow(this)
+            }
+            chatViewModel.assistantService.value?.retryConnectionNow()
         }
-        chatViewModel.assistantService.value?.retryConnectionNow()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -247,8 +266,8 @@ class MainActivity : FragmentActivity() {
             )
         )
 
-        // Cold start — handle a pairing link that launched the activity.
-        handlePairingIntent(intent)
+        // Cold start — enqueue a pairing link that launched the activity (processed after unlock).
+        enqueuePairingIntent(intent)
         handleReviewCardIntent(intent)
         openRoute.value = intent?.getStringExtra("lararium_open")
         intent?.removeExtra("lararium_open")
@@ -321,7 +340,21 @@ class MainActivity : FragmentActivity() {
                 val status by pairingStatus
                 val targetRoute by openRoute.collectAsStateWithLifecycle()
                 val targetSessionId by openSessionId.collectAsStateWithLifecycle()
+                val pendingPairing by pendingPairingUri.collectAsStateWithLifecycle()
                 val pendingApprovals by HearthBadgeState.pending.collectAsStateWithLifecycle()
+
+                LaunchedEffect(Unit) {
+                    if (app.secureKeyManager.getHearthEndpoint() != null) {
+                        HearthWatchScheduler.refreshNow(this@MainActivity)
+                    }
+                    chatViewModel.assistantService.value?.retryConnectionNow()
+                }
+
+                LaunchedEffect(pendingPairing) {
+                    val raw = pendingPairing ?: return@LaunchedEffect
+                    pendingPairingUri.value = null
+                    showPairingConfirmDialog(raw)
+                }
 
                 val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
                 val scope = rememberCoroutineScope()

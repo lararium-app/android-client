@@ -1,7 +1,7 @@
 package app.lararium.hearth.rails.ui
 
 import android.os.Bundle
-import androidx.activity.ComponentActivity
+import android.view.WindowManager
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
@@ -23,23 +23,32 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.lifecycleScope
+import app.lararium.auth.ScaryVerb
+import app.lararium.auth.authGate
 import app.lararium.hearth.rails.service.DeviceRailService
 import app.lararium.hearth.rails.service.ActionExecutors
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 /**
- * Transparent/dialog-themed safety-critical confirmation sheet (G3, spec A6).
+ * Transparent/dialog-themed safety-critical confirmation sheet (G3, spec A6, T6 A.2).
  * Shows humanized action, 60s countdown, Approve/Deny buttons, and local denial guarantee.
  * Non-cancelable by back press (back = deny).
  */
-class ActionConfirmActivity : ComponentActivity() {
+class ActionConfirmActivity : FragmentActivity() {
 
     private var presenter: SheetPresenter? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
 
         val actionId = intent.getStringExtra("action_id")
         val action = InFlightActions.get(actionId)
@@ -64,7 +73,16 @@ class ActionConfirmActivity : ComponentActivity() {
             AiintegratedintoandroidTheme {
                 ActionConfirmScreen(
                     presenter = sheetPresenter,
-                    onApprove = { sheetPresenter.onApprove() },
+                    onApprove = {
+                        lifecycleScope.launch {
+                            authGate(
+                                context = this@ActionConfirmActivity,
+                                verb = ScaryVerb.DEVICE_ACTION_APPROVE
+                            ) {
+                                sheetPresenter.onApprove()
+                            }
+                        }
+                    },
                     onDeny = { sheetPresenter.onDeny() },
                     onBack = { sheetPresenter.onBackPressed() }
                 )

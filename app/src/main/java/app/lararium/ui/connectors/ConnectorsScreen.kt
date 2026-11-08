@@ -173,15 +173,21 @@ fun ConnectorsScreen(
         val ep = endpoint
         if (ep != null) {
             scope.launch {
-                when (val result = ConnectorsClient(ep).reauthConnector(row.name)) {
-                    is ConnectorsClient.ReauthResult.Success -> {
-                        rows = ConnectorsLogic.applySseEvent(
-                            rows.orEmpty(),
-                            ConnectorSseEvent.State(result.row),
-                        )
-                    }
-                    is ConnectorsClient.ReauthResult.Failure -> {
-                        snackbarHostState.showSnackbar(result.message)
+                authGate(
+                    context = context,
+                    reasonTitle = "Re-authenticate Connector",
+                    destructive = false
+                ) {
+                    when (val result = ConnectorsClient(ep).reauthConnector(row.name)) {
+                        is ConnectorsClient.ReauthResult.Success -> {
+                            rows = ConnectorsLogic.applySseEvent(
+                                rows.orEmpty(),
+                                ConnectorSseEvent.State(result.row),
+                            )
+                        }
+                        is ConnectorsClient.ReauthResult.Failure -> {
+                            snackbarHostState.showSnackbar(result.message)
+                        }
                     }
                 }
             }
