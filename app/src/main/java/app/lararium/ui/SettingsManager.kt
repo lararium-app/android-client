@@ -19,6 +19,8 @@ class SettingsManager(context: Context) {
         private const val KEY_SECONDARY_LANGUAGE = "secondary_voice_language"
         private const val KEY_MULTILINGUAL_ENABLED = "multilingual_enabled"
         private const val KEY_TTS_LANGUAGE = "tts_language"
+        private const val KEY_SCREEN_CONTEXT_ENABLED = "screen_context_enabled"
+        private const val KEY_SCREEN_CONTEXT_EXCLUDED = "screen_context_excluded_packages"
         const val KEY_LOCK_ORIENTATION = "lock_orientation"
         const val DEFAULT_LOCK_ORIENTATION = true
         
@@ -73,6 +75,14 @@ class SettingsManager(context: Context) {
         get() = prefs.getString(KEY_TTS_LANGUAGE, DEFAULT_TTS_LANGUAGE) ?: DEFAULT_TTS_LANGUAGE
         set(value) = prefs.edit().putString(KEY_TTS_LANGUAGE, value).apply()
     
+    var screenContextEnabled: Boolean
+        get() = prefs.getBoolean(KEY_SCREEN_CONTEXT_ENABLED, false)
+        set(value) = prefs.edit().putBoolean(KEY_SCREEN_CONTEXT_ENABLED, value).apply()
+
+    var screenContextExcludedPackages: Set<String>
+        get() = prefs.getStringSet(KEY_SCREEN_CONTEXT_EXCLUDED, emptySet())?.toSet() ?: emptySet()
+        set(value) = prefs.edit().putStringSet(KEY_SCREEN_CONTEXT_EXCLUDED, value.toSet()).apply()
+
     fun resetToDefaults() {
         prefs.edit().clear().apply()
     }

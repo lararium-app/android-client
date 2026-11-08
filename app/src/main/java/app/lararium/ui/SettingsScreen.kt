@@ -96,6 +96,7 @@ fun SettingsScreen(
     var lockOrientation by remember { mutableStateOf(settingsManager.lockOrientation) }
     var autoSendVoice by remember { mutableStateOf(settingsManager.autoSendVoice) }
     var autoStartVoice by remember { mutableStateOf(settingsManager.autoStartVoice) }
+    var screenContextEnabled by remember { mutableStateOf(settingsManager.screenContextEnabled) }
     var multilingualEnabled by remember { mutableStateOf(settingsManager.multilingualEnabled) }
     var secondaryLanguage by remember { mutableStateOf(settingsManager.secondaryVoiceLanguage) }
 
@@ -587,6 +588,19 @@ fun SettingsScreen(
                                 lockOrientation = it
                                 settingsManager.lockOrientation = it
                                 onOrientationLockChanged?.invoke(it)
+                            }
+                        )
+                    }
+
+                    SettingsSection(title = "Notification context") {
+                        SettingsItemWithSwitch(
+                            icon = Icons.Default.Notifications,
+                            title = "Notification context",
+                            subtitle = "When you summon Lararium, recent notification titles are offered as context. You always see and can remove each one before anything is sent.",
+                            checked = screenContextEnabled,
+                            onCheckedChange = {
+                                screenContextEnabled = it
+                                settingsManager.screenContextEnabled = it
                             }
                         )
                     }
