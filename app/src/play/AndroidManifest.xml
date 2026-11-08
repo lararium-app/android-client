@@ -19,10 +19,13 @@
     <!--
         #92: the key-event accessibility service is GitHub-only. On Play the
         QS tile and assist intent are the entry points. The class stays compiled;
-        only its manifest entry is removed.
+        only its manifest entry is removed. The merger matches by tree position,
+        so the remove directive must sit under <application> like the original.
     -->
-    <service
-        android:name=".service.AssistantAccessibilityService"
-        tools:node="remove" />
+    <application>
+        <service
+            android:name=".service.AssistantAccessibilityService"
+            tools:node="remove" />
+    </application>
 
 </manifest>
