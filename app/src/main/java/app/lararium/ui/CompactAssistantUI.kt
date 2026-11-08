@@ -43,9 +43,14 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lararium.AssistantApplication
 import app.lararium.R
+import app.lararium.auth.AppLock
+import app.lararium.auth.ui.LockScreen
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
 import app.lararium.service.VoiceCaptureOrigin
@@ -56,7 +61,7 @@ import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import app.lararium.util.LinkPolicy
 
-class CompactAssistantActivity : ComponentActivity() {
+class CompactAssistantActivity : FragmentActivity() {
 
     private var assistantService: AssistantService? = null
     private var bound = false
@@ -68,12 +73,23 @@ class CompactAssistantActivity : ComponentActivity() {
             assistantService = binder.getService()
             serviceState.value = assistantService
             bound = true
+            if (AppLock.policy.canReachHearth()) {
+                assistantService?.retryConnectionNow()
+            }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             assistantService = null
             serviceState.value = null
             bound = false
+        }
+    }
+
+    private fun bindServiceIfUnlocked() {
+        if (!bound && AppLock.policy.canReachHearth()) {
+            Intent(this, AssistantService::class.java).also { intent ->
+                bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
+            }
         }
     }
 
@@ -92,75 +108,112 @@ class CompactAssistantActivity : ComponentActivity() {
         applyFlagSecure()
         enableEdgeToEdge()
 
+        lifecycle.addObserver(LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> AppLock.onForeground(System.currentTimeMillis())
+                Lifecycle.Event.ON_STOP -> AppLock.onBackground(System.currentTimeMillis())
+                else -> {}
+            }
+        })
+
         setContent {
             AiintegratedintoandroidTheme {
-                val service by serviceState
-                var isExpanded by remember { mutableStateOf(false) }
-                var showHistory by remember { mutableStateOf(false) }
+                val isUnlocked by AppLock.isUnlockedState.collectAsStateWithLifecycle()
 
-                if (service != null) {
-                    val state by service!!.assistantState.collectAsStateWithLifecycle()
-                    val response by service!!.response.collectAsStateWithLifecycle()
-                    val messages by service!!.chatMessages.collectAsStateWithLifecycle()
-                    val transcription by service!!.transcription.collectAsStateWithLifecycle()
-                    val pendingUrls by service!!.pendingUrls.collectAsStateWithLifecycle()
-
-                    if (pendingUrls.isNotEmpty()) {
-                        UrlSelectionDialog(
-                            urls = pendingUrls,
-                            onUrlSelected = { url -> service!!.openUrl(url) },
-                            onDismiss = { service!!.clearPendingUrls() }
-                        )
+                fun triggerUnlock() {
+                    AppLock.authenticator.authenticate(
+                        activity = this@CompactAssistantActivity,
+                        reasonTitle = "Unlock Lararium",
+                        reasonText = "Confirm your identity to use the assistant"
+                    ) { success ->
+                        if (success) {
+                            AppLock.unlock()
+                            bindServiceIfUnlocked()
+                        }
                     }
+                }
 
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(
-                                if (isExpanded || showHistory) MaterialTheme.colorScheme.background
-                                else Color.Black.copy(alpha = 0.4f)
+                LaunchedEffect(isUnlocked) {
+                    if (!isUnlocked) {
+                        triggerUnlock()
+                    } else {
+                        bindServiceIfUnlocked()
+                    }
+                }
+
+                if (!isUnlocked) {
+                    LockScreen(
+                        onUnlock = { triggerUnlock() }
+                    )
+                } else {
+                    val service by serviceState
+                    var isExpanded by remember { mutableStateOf(false) }
+                    var showHistory by remember { mutableStateOf(false) }
+
+                    if (service != null) {
+                        val state by service!!.assistantState.collectAsStateWithLifecycle()
+                        val response by service!!.response.collectAsStateWithLifecycle()
+                        val messages by service!!.chatMessages.collectAsStateWithLifecycle()
+                        val transcription by service!!.transcription.collectAsStateWithLifecycle()
+                        val pendingUrls by service!!.pendingUrls.collectAsStateWithLifecycle()
+
+                        if (pendingUrls.isNotEmpty()) {
+                            UrlSelectionDialog(
+                                urls = pendingUrls,
+                                onUrlSelected = { url -> service!!.openUrl(url) },
+                                onDismiss = { service!!.clearPendingUrls() }
                             )
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                enabled = !isExpanded && !showHistory,
-                                onClick = { finish() }
-                            )
-                    ) {
-                        when {
-                            showHistory -> {
-                                ChatHistoryScreen(
-                                    service = service!!,
-                                    onChatSelected = { chatId ->
-                                        service!!.loadChatFromHistory(chatId)
-                                        showHistory = false
-                                        isExpanded = true
-                                    },
-                                    onBack = { showHistory = false },
-                                    onDismiss = { finish() }
+                        }
+
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    if (isExpanded || showHistory) MaterialTheme.colorScheme.background
+                                    else Color.Black.copy(alpha = 0.4f)
                                 )
-                            }
-                            isExpanded -> {
-                                FullChatScreen(
-                                    service = service!!,
-                                    state = state,
-                                    response = response,
-                                    transcription = transcription,
-                                    messages = messages,
-                                    onCollapse = { isExpanded = false },
-                                    onDismiss = { finish() },
-                                    onShowHistory = { showHistory = true }
+                                .clickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    enabled = !isExpanded && !showHistory,
+                                    onClick = { finish() }
                                 )
-                            }
-                            else -> {
-                                CompactAssistantView(
-                                    service = service!!,
-                                    state = state,
-                                    transcription = transcription,
-                                    response = response,
-                                    onExpand = { isExpanded = true },
-                                    onDismiss = { finish() }
-                                )
+                        ) {
+                            when {
+                                showHistory -> {
+                                    ChatHistoryScreen(
+                                        service = service!!,
+                                        onChatSelected = { chatId ->
+                                            service!!.loadChatFromHistory(chatId)
+                                            showHistory = false
+                                            isExpanded = true
+                                        },
+                                        onBack = { showHistory = false },
+                                        onDismiss = { finish() }
+                                    )
+                                }
+                                isExpanded -> {
+                                    FullChatScreen(
+                                        service = service!!,
+                                        state = state,
+                                        response = response,
+                                        transcription = transcription,
+                                        messages = messages,
+                                        onCollapse = { isExpanded = false },
+                                        onDismiss = { finish() },
+                                        onShowHistory = { showHistory = true }
+                                    )
+                                }
+                                else -> {
+                                    CompactAssistantView(
+                                        service = service!!,
+                                        state = state,
+                                        transcription = transcription,
+                                        response = response,
+                                        onExpand = { isExpanded = true },
+                                        onDismiss = { finish() }
+                                    )
+                                }
                             }
                         }
                     }
@@ -171,11 +224,8 @@ class CompactAssistantActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (!bound) {
-            Intent(this, AssistantService::class.java).also { intent ->
-                bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
-            }
-        }
+        AppLock.onForeground(System.currentTimeMillis())
+        bindServiceIfUnlocked()
     }
 
     override fun onStop() {

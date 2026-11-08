@@ -1,6 +1,10 @@
 package app.lararium.auth
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -68,5 +72,48 @@ class BiometricAuthPolicyTest {
             hasDeviceCredential = false
         )
         assertEquals(BiometricAuthPolicy.AuthStrategy.NO_HARDWARE_PASSTHROUGH, strategy)
+    }
+
+    @Test
+    fun allowedAuthenticators_api26to29_deviceCredentialOnly_doesNotSilentlyBypass() {
+        val mask28 = BiometricAuthPolicy.allowedAuthenticatorsFor(
+            BiometricAuthPolicy.AuthStrategy.DEVICE_CREDENTIAL_ONLY,
+            sdkInt = 28
+        )
+        assertEquals(
+            "API 26..29 DEVICE_CREDENTIAL_ONLY must use BIOMETRIC_WEAK | DEVICE_CREDENTIAL (0x80FF)",
+            BiometricAuthPolicy.AUTH_BIOMETRIC_WEAK or BiometricAuthPolicy.AUTH_DEVICE_CREDENTIAL,
+            mask28
+        )
+
+        val mask30 = BiometricAuthPolicy.allowedAuthenticatorsFor(
+            BiometricAuthPolicy.AuthStrategy.DEVICE_CREDENTIAL_ONLY,
+            sdkInt = 30
+        )
+        assertEquals(
+            BiometricAuthPolicy.AUTH_DEVICE_CREDENTIAL,
+            mask30
+        )
+    }
+
+    @Test
+    fun strongOnly_withDeviceCredential_offersPinFallback() {
+        val strategy = BiometricAuthPolicy.AuthStrategy.BIOMETRIC_STRONG_ONLY
+        assertEquals("Use PIN", BiometricAuthPolicy.negativeButtonTextFor(strategy, hasDeviceCredential = true))
+        assertTrue(BiometricAuthPolicy.shouldFallbackToCredentialOnNegativeButton(strategy, hasDeviceCredential = true))
+
+        assertEquals("Cancel", BiometricAuthPolicy.negativeButtonTextFor(strategy, hasDeviceCredential = false))
+        assertFalse(BiometricAuthPolicy.shouldFallbackToCredentialOnNegativeButton(strategy, hasDeviceCredential = false))
+    }
+
+    @Test
+    fun passthrough_emitsExplicitWarning_neverSilent() {
+        val warning = BiometricAuthPolicy.fallbackWarningFor(BiometricAuthPolicy.AuthStrategy.NO_HARDWARE_PASSTHROUGH)
+        assertNotNull("NO_HARDWARE_PASSTHROUGH must return a non-null warning message", warning)
+        assertTrue(warning!!.isNotBlank())
+
+        assertNull(BiometricAuthPolicy.fallbackWarningFor(BiometricAuthPolicy.AuthStrategy.BIOMETRIC_AND_CREDENTIAL))
+        assertNull(BiometricAuthPolicy.fallbackWarningFor(BiometricAuthPolicy.AuthStrategy.BIOMETRIC_STRONG_ONLY))
+        assertNull(BiometricAuthPolicy.fallbackWarningFor(BiometricAuthPolicy.AuthStrategy.DEVICE_CREDENTIAL_ONLY))
     }
 }

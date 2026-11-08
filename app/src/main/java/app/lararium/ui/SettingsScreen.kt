@@ -46,6 +46,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import app.lararium.AssistantApplication
+import app.lararium.auth.ScaryVerb
+import app.lararium.auth.authGate
 import app.lararium.audio.VoskTranscriber
 import app.lararium.service.AssistantAccessibilityService
 import app.lararium.service.AssistantService
@@ -250,13 +252,20 @@ fun SettingsScreen(
                             ) {
                                 FilledTonalButton(
                                     onClick = {
-                                        app.secureKeyManager.clearHearthEndpoint()
-                                        context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
-                                            .edit()
-                                            .remove(HearthChatClient.KEY_SESSION_ID)
-                                            .apply()
-                                        hearthEndpoint = null
-                                        assistantService?.reloadSettings()
+                                        scope.launch {
+                                            authGate(
+                                                context = context,
+                                                verb = ScaryVerb.HEARTH_UNPAIR_CLEAR
+                                            ) {
+                                                app.secureKeyManager.clearHearthEndpoint()
+                                                context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                                                    .edit()
+                                                    .remove(HearthChatClient.KEY_SESSION_ID)
+                                                    .apply()
+                                                hearthEndpoint = null
+                                                assistantService?.reloadSettings()
+                                            }
+                                        }
                                     },
                                     colors = ButtonDefaults.filledTonalButtonColors(
                                         containerColor = MaterialTheme.colorScheme.errorContainer,
@@ -1308,33 +1317,40 @@ fun PairHearthDialog(
 
             isConnecting = true
             scope.launch {
+                val replacingExisting = app.secureKeyManager.hasHearthEndpoint()
                 try {
-                    val (redeemedToken, _) = LarariumClient.redeemPairingCode(
-                        cleanBaseUrl,
-                        rawLink.trim(),
-                        deviceName
-                    )
-                    val endpointName = try {
-                        java.net.URI(cleanBaseUrl).host
-                    } catch (e: Exception) {
-                        null
-                    } ?: "hearth"
-                    val ep = Endpoint(cleanBaseUrl, redeemedToken, endpointName)
+                    authGate(
+                        context = context,
+                        verb = ScaryVerb.HEARTH_PAIR_WRITE,
+                        replacingExistingSecret = replacingExisting
+                    ) {
+                        val (redeemedToken, _) = LarariumClient.redeemPairingCode(
+                            cleanBaseUrl,
+                            rawLink.trim(),
+                            deviceName
+                        )
+                        val endpointName = try {
+                            java.net.URI(cleanBaseUrl).host
+                        } catch (e: Exception) {
+                            null
+                        } ?: "hearth"
+                        val ep = Endpoint(cleanBaseUrl, redeemedToken, endpointName)
 
-                    val client = LarariumClient(ep)
-                    client.health()
-                    app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
-                    context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
-                        .edit()
-                        .remove(HearthChatClient.KEY_SESSION_ID)
-                        .apply()
-                    HearthWatchScheduler.ensurePeriodic(app)
-                    HearthWatchScheduler.refreshNow(app)
-                    // One pairing lights up rails too: the service performs
-                    // /v1/devices/register with the stored hearth token.
-                    DeviceRailService.ensureRunning(app)
-                    onPaired(ep)
-                    onDismiss()
+                        val client = LarariumClient(ep)
+                        client.health()
+                        app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                        context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                            .edit()
+                            .remove(HearthChatClient.KEY_SESSION_ID)
+                            .apply()
+                        HearthWatchScheduler.ensurePeriodic(app)
+                        HearthWatchScheduler.refreshNow(app)
+                        // One pairing lights up rails too: the service performs
+                        // /v1/devices/register with the stored hearth token.
+                        DeviceRailService.ensureRunning(app)
+                        onPaired(ep)
+                        onDismiss()
+                    }
                 } catch (e: PairError) {
                     errorMessage = context.getString(e.messageResId)
                 } catch (e: Exception) {
@@ -1371,18 +1387,25 @@ fun PairHearthDialog(
         isConnecting = true
 
         scope.launch {
+            val replacingExisting = app.secureKeyManager.hasHearthEndpoint()
             try {
-                val client = LarariumClient(ep)
-                client.health()
-                app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
-                context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
-                    .edit()
-                    .remove(HearthChatClient.KEY_SESSION_ID)
-                    .apply()
-                HearthWatchScheduler.ensurePeriodic(app)
-                HearthWatchScheduler.refreshNow(app)
-                onPaired(ep)
-                onDismiss()
+                authGate(
+                    context = context,
+                    verb = ScaryVerb.HEARTH_PAIR_WRITE,
+                    replacingExistingSecret = replacingExisting
+                ) {
+                    val client = LarariumClient(ep)
+                    client.health()
+                    app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                    context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                        .edit()
+                        .remove(HearthChatClient.KEY_SESSION_ID)
+                        .apply()
+                    HearthWatchScheduler.ensurePeriodic(app)
+                    HearthWatchScheduler.refreshNow(app)
+                    onPaired(ep)
+                    onDismiss()
+                }
             } catch (e: Exception) {
                 val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
                 errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
