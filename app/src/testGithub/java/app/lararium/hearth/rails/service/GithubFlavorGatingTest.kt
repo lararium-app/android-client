@@ -7,17 +7,18 @@ import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+/** Flavors are build-identity stubs: the github variant compiles identical rail code. */
 class GithubFlavorGatingTest {
 
     @Test
-    fun factoryReturnsDialerAndSmsInGithubVariant() {
+    fun factoryReturnsDialerAndSms() {
         val executors = ActionExecutors.forContext(mockk<Context>(relaxed = true))
         assertEquals(1, executors.count { it.canHandle("device.dialer.call") })
         assertEquals(2, executors.size)
     }
 
     @Test
-    fun githubDeclaresEveryRail() {
+    fun githubChannelDeclaresEveryRail() {
         assertEquals("github", app.lararium.BuildConfig.DIST_CHANNEL)
         assertEquals(RailsWire.RAIL_NAMES, DeclaredRails.names())
     }

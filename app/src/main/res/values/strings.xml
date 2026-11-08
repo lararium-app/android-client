@@ -87,6 +87,11 @@
     <string name="settings_default_assistant_title">Default Assistant</string>
     <string name="settings_default_assistant_set">Set as default</string>
     <string name="settings_default_assistant_not_set">Set for home button activation</string>
+    <string name="settings_assistant_role_request_title">Set Lararium as assistant</string>
+    <string name="settings_assistant_role_request_rationale">Lets the power button and hold gesture open Lararium, and lets Android grant call and SMS access for your assistant. Everything still works without it.</string>
+    <string name="settings_assistant_role_held_title">Lararium is your assistant</string>
+    <string name="settings_assistant_role_change">Change assistant</string>
+    <string name="settings_assistant_role_unsupported">Choose Lararium as your digital assistant in system settings to use the home button gesture.</string>
     <string name="settings_accessibility_title">Accessibility Service</string>
     <string name="settings_accessibility_enabled">Enabled</string>
     <string name="settings_accessibility_disabled">Required for volume key shortcuts</string>

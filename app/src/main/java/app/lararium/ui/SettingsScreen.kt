@@ -2,6 +2,7 @@ package app.lararium.ui
 
 import android.Manifest
 import android.app.role.RoleManager
+import app.lararium.assistant.AssistantRolePolicy
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -119,11 +120,35 @@ fun SettingsScreen(
     val settingsScrollState = rememberScrollState()
 
     val isAccessibilityEnabled = AssistantAccessibilityService.isServiceRunning
-    val isDefaultAssistant = remember {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val roleManager = context.getSystemService(Context.ROLE_SERVICE) as? RoleManager
-            roleManager?.isRoleHeld(RoleManager.ROLE_ASSISTANT) ?: false
-        } else false
+    // Role state is read through a guarded helper: below API 29 (or when the
+    // role is unavailable) the row degrades to today's plain explanation.
+    var roleAvailable by remember { mutableStateOf(isAssistantRoleAvailable(context)) }
+    var isDefaultAssistant by remember { mutableStateOf(isAssistantRoleHeld(context)) }
+    val assistantRow = AssistantRolePolicy.rowFor(
+        sdkInt = Build.VERSION.SDK_INT,
+        roleAvailable = roleAvailable,
+        roleHeld = isDefaultAssistant
+    )
+    val assistantRoleLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) {
+        // Re-read regardless of resultCode: the user may have changed the role
+        // and backed out, or revoked it elsewhere.
+        roleAvailable = isAssistantRoleAvailable(context)
+        isDefaultAssistant = isAssistantRoleHeld(context)
+    }
+    val launchAssistantRoleRequest: () -> Unit = {
+        val launched = createAssistantRoleRequestIntent(context)?.let { intent ->
+            try {
+                assistantRoleLauncher.launch(intent)
+                true
+            } catch (e: Exception) {
+                Log.w("SettingsScreen", "Assistant role request unavailable", e)
+                false
+            }
+        } ?: false
+        // Role request could not start: behave exactly as before the role flow.
+        if (!launched) onOpenAssistantSettings?.invoke()
     }
     var hasNotificationPermission by remember {
         mutableStateOf(
@@ -567,15 +592,26 @@ fun SettingsScreen(
                     }
 
                     SettingsSection(title = "System Integration") {
-                        SettingsItem(
-                            icon = Icons.Filled.Home,
-                            title = stringResource(R.string.settings_default_assistant_title),
-                            subtitle = stringResource(
-                                if (isDefaultAssistant) R.string.settings_default_assistant_set
-                                else R.string.settings_default_assistant_not_set
-                            ),
-                            onClick = { onOpenAssistantSettings?.invoke() }
-                        )
+                        when (assistantRow) {
+                            AssistantRolePolicy.Row.RequestRole -> SettingsItem(
+                                icon = Icons.Filled.Home,
+                                title = stringResource(R.string.settings_assistant_role_request_title),
+                                subtitle = stringResource(R.string.settings_assistant_role_request_rationale),
+                                onClick = launchAssistantRoleRequest
+                            )
+                            AssistantRolePolicy.Row.Held -> SettingsItem(
+                                icon = Icons.Filled.Home,
+                                title = stringResource(R.string.settings_assistant_role_held_title),
+                                subtitle = stringResource(R.string.settings_assistant_role_change),
+                                onClick = launchAssistantRoleRequest
+                            )
+                            AssistantRolePolicy.Row.Fallback -> SettingsItem(
+                                icon = Icons.Filled.Home,
+                                title = stringResource(R.string.settings_default_assistant_title),
+                                subtitle = stringResource(R.string.settings_assistant_role_unsupported),
+                                onClick = { onOpenAssistantSettings?.invoke() }
+                            )
+                        }
                         SettingsItem(
                             icon = Icons.Filled.TouchApp,
                             title = stringResource(R.string.settings_accessibility_title),
@@ -1579,3 +1615,21 @@ private fun ActivationRow(
         }
     }
 }
+
+/** RoleManager only exists on API 29+; every touch is guarded so API 26-28 never crash. */
+private fun assistantRoleManager(context: Context): RoleManager? =
+    if (Build.VERSION.SDK_INT >= AssistantRolePolicy.MIN_SDK_FOR_ROLE_REQUEST) {
+        runCatching { context.getSystemService(Context.ROLE_SERVICE) as? RoleManager }.getOrNull()
+    } else null
+
+private fun isAssistantRoleAvailable(context: Context): Boolean =
+    runCatching { assistantRoleManager(context)?.isRoleAvailable(RoleManager.ROLE_ASSISTANT) == true }
+        .getOrDefault(false)
+
+private fun isAssistantRoleHeld(context: Context): Boolean =
+    runCatching { assistantRoleManager(context)?.isRoleHeld(RoleManager.ROLE_ASSISTANT) == true }
+        .getOrDefault(false)
+
+private fun createAssistantRoleRequestIntent(context: Context): Intent? =
+    runCatching { assistantRoleManager(context)?.createRequestRoleIntent(RoleManager.ROLE_ASSISTANT) }
+        .getOrNull()
