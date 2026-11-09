@@ -19,7 +19,9 @@ import org.junit.Test
  * - First push sends full snapshot with seq = 1
  * - Change triggers incremental delta push with seq = acceptedSeq + 1
  * - No change triggers zero network pushes
- * - 409 stale_seq triggers SeqTracker reset and immediate snapshot recovery re-push
+ * - 409 stale_seq rebases SeqTracker onto the server counter and re-pushes a full snapshot
+ * - Legacy stale_seq bodies (number only in the error string) rebase via regex
+ * - Unparseable 409 and 401/403 back off (injected clock) without rebasing
  * - Two rails operate completely independently
  */
 class SyncEngineTest {
@@ -138,53 +140,167 @@ class SyncEngineTest {
         assertEquals("Zero network calls when snapshot is unchanged", 1, posted.size)
     }
 
-    @Test
-    fun staleSeq409_resetsAndRepushesFullSnapshot() = runBlocking {
+    private fun staleBody(withNumeric: Boolean, current: Long = 7L): String {
+        val o = JSONObject()
+        o.put("error", "stale seq for test-device/calendar: current $current, proposed 2")
+        o.put("reason", "stale_seq")
+        if (withNumeric) o.put("current_seq", current)
+        return o.toString()
+    }
+
+    private fun staleRecovery(body: String) = runBlocking {
         val rows = mutableListOf(makeRow("r1", "Initial"))
         val seqTracker = SeqTracker()
         val posted = mutableListOf<PostedPayload>()
-        var return409Once = false
+        var respond409Once = false
 
         val engine = SyncEngine(
             rail = "calendar",
             snapshotProvider = { rows },
             seqTracker = seqTracker,
             endpointProvider = { endpoint },
-            httpPoster = { url, body, headers ->
-                posted.add(PostedPayload(url, JSONObject(body), headers))
-                if (return409Once) {
-                    return409Once = false
-                    HttpResponse(409, "{\"error\":\"stale_seq\"}")
+            httpPoster = { url, b, headers ->
+                posted.add(PostedPayload(url, JSONObject(b), headers))
+                if (respond409Once) {
+                    respond409Once = false
+                    HttpResponse(409, body)
                 } else {
                     HttpResponse(200, "{\"ok\":true}")
                 }
             }
         )
 
-        // Pass 1: First sync succeeds (seq=1)
         engine.sync()
         assertEquals(1, posted.size)
-        assertEquals(1L, seqTracker.acceptedSeq("calendar"))
-
-        // Now mutate and simulate server returning 409 stale_seq on delta push
         rows.add(makeRow("r2", "Second"))
-        return409Once = true
+        respond409Once = true
 
-        val ok = engine.sync()
-        assertTrue(ok)
+        assertTrue(engine.sync())
+        // initial(1) -> 200, delta(2) -> 409, rebased full snapshot(8) -> 200
+        assertEquals(3, posted.size)
+        val recovery = posted[2].body
+        assertEquals(8L, recovery.getLong("seq"))
+        assertTrue("Recovery push must carry full snapshot", recovery.has("snapshot"))
+        assertFalse(recovery.has("deltas"))
+        assertEquals(2, recovery.getJSONArray("snapshot").length())
+        assertEquals(8L, seqTracker.acceptedSeq("calendar"))
+    }
 
-        // There should be 3 posted envelopes total:
-        // 1. Initial snapshot (seq=1) -> 200
-        // 2. Delta push (seq=2) -> 409
-        // 3. Immediate recovery full snapshot (seq=1) -> 200
+    @Test
+    fun staleSeq409_withCurrentSeq_rebasesAndPushesFullSnapshot() {
+        staleRecovery(staleBody(withNumeric = true))
+    }
+
+    @Test
+    fun staleSeq409_legacyBody_rebasesViaRegex() {
+        staleRecovery(staleBody(withNumeric = false))
+    }
+
+    @Test
+    fun unparsableStale409_backsOffWithoutTightLoop() = runBlocking {
+        var now = 1_000_000L
+        val posted = mutableListOf<PostedPayload>()
+        val seqTracker = SeqTracker()
+        val engine = SyncEngine(
+            rail = "calendar",
+            snapshotProvider = { listOf(makeRow("r1", "A")) },
+            seqTracker = seqTracker,
+            endpointProvider = { endpoint },
+            httpPoster = { url, b, headers ->
+                posted.add(PostedPayload(url, JSONObject(b), headers))
+                HttpResponse(409, "{\"error\":\"stale_seq\"}")
+            },
+            clock = { now }
+        )
+
+        assertFalse(engine.sync())
+        assertEquals(1, posted.size)
+        // Hammering inside the window sends nothing
+        repeat(50) { assertFalse(engine.sync()) }
+        assertEquals(1, posted.size)
+
+        now += 1_999L
+        assertFalse(engine.sync())
+        assertEquals(1, posted.size)
+
+        // 2s elapsed: one more attempt, then window doubles to 4s
+        now += 1L
+        engine.sync()
+        assertEquals(2, posted.size)
+        now += 3_999L
+        engine.sync()
+        assertEquals(2, posted.size)
+        now += 1L
+        engine.sync()
         assertEquals(3, posted.size)
 
-        val recoveryEnvelope = posted[2].body
-        assertEquals("calendar", recoveryEnvelope.getString("rail"))
-        assertEquals(1L, recoveryEnvelope.getLong("seq"))
-        assertTrue("Recovery push must carry full snapshot", recoveryEnvelope.has("snapshot"))
-        assertEquals(2, recoveryEnvelope.getJSONArray("snapshot").length())
-        assertEquals(1L, seqTracker.acceptedSeq("calendar"))
+        // Cap at 30s: after many failures the window never exceeds 30s
+        repeat(10) { now += 30_000L; engine.sync() }
+        val before = posted.size
+        now += 29_999L
+        engine.sync()
+        assertEquals(before, posted.size)
+        now += 1L
+        engine.sync()
+        assertEquals(before + 1, posted.size)
+        assertEquals(0L, seqTracker.acceptedSeq("calendar"))
+    }
+
+    @Test
+    fun backoffResetsAfterSuccess() = runBlocking {
+        var now = 0L
+        var status = 409
+        var calls = 0
+        var rev = 0
+        val engine = SyncEngine(
+            rail = "calendar",
+            snapshotProvider = { listOf(makeRow("r1", "A$rev")) },
+            seqTracker = SeqTracker(),
+            endpointProvider = { endpoint },
+            httpPoster = { _, _, _ ->
+                calls++
+                HttpResponse(status, "{\"ok\":true}")
+            },
+            clock = { now }
+        )
+        engine.sync(); now += 2_000L
+        engine.sync(); now += 4_000L
+        status = 200
+        assertTrue(engine.sync())
+        // After success the next failure starts again at the 2s base.
+        status = 401
+        rev++
+        engine.sync()
+        val c = calls
+        now += 1_999L
+        engine.sync()
+        assertEquals(c, calls)
+        now += 1L
+        engine.sync()
+        assertEquals(c + 1, calls)
+    }
+
+    @Test
+    fun auth4xx_doNotRebase() = runBlocking {
+        for (status in listOf(401, 403)) {
+            val seqTracker = SeqTracker()
+            seqTracker.accept("calendar", 4L)
+            val posted = mutableListOf<PostedPayload>()
+            val engine = SyncEngine(
+                rail = "calendar",
+                snapshotProvider = { listOf(makeRow("r1", "A")) },
+                seqTracker = seqTracker,
+                endpointProvider = { endpoint },
+                httpPoster = { url, b, headers ->
+                    posted.add(PostedPayload(url, JSONObject(b), headers))
+                    HttpResponse(status, staleBody(withNumeric = true, current = 99L))
+                },
+                clock = { 0L }
+            )
+            assertFalse(engine.sync())
+            assertEquals(1, posted.size)
+            assertEquals("status $status must not rebase", 4L, seqTracker.acceptedSeq("calendar"))
+        }
     }
 
     @Test
