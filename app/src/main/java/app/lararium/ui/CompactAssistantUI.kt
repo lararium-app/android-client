@@ -135,13 +135,27 @@ class CompactAssistantActivity : FragmentActivity() {
     }
 
     /**
-     * Prevents screen capture of the assistant overlay popup (L-10).
+     * Prevents screen capture of the assistant overlay popup (L-10), unless
+     * the user opted into allowing screenshots in settings.
      */
     private fun applyFlagSecure() {
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
+        val allowScreenshots = runCatching {
+            SettingsManager(this).allowScreenshots
+        }.getOrDefault(false)
+
+        if (!allowScreenshots) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        applyFlagSecure()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
