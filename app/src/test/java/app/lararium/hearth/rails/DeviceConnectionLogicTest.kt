@@ -56,6 +56,30 @@ class DeviceConnectionLogicTest {
         assertEquals(2074L, recon2.nextDelayMs) // 2000 + (2 * 37) % 251 = 2074
     }
 
+    @Test
+    fun onStateChanged_firesOnEveryStateTransition() {
+        val observed = mutableListOf<DeviceStreamState>()
+        val sm = DeviceStreamStateMachine()
+        sm.onStateChanged = { observed.add(it) }
+
+        sm.onConnecting()
+        sm.onStreamOpen()
+        sm.onStreamClosed()
+        sm.onFailure(OfflineCause.Unauthorized)
+        sm.repair(tokenCleared = true)
+
+        assertEquals(
+            listOf(
+                DeviceStreamState.Connecting,
+                DeviceStreamState.Live,
+                DeviceStreamState.Reconnecting(1, sm.calculateBackoff(1)),
+                DeviceStreamState.RepairRequired,
+                DeviceStreamState.Idle
+            ),
+            observed
+        )
+    }
+
     // -----------------------------------------------------------------------
     // Terminal 401/403-class failures & RepairRequired gate
     // -----------------------------------------------------------------------
