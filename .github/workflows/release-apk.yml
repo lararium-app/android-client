@@ -99,6 +99,20 @@ jobs:
           fi
           echo "APK is not debuggable."
 
+      - name: Refuse version mismatch
+        run: |
+          set -euo pipefail
+          AAPT2=$(ls "$ANDROID_HOME"/build-tools/*/aapt2 2>/dev/null | sort -V | tail -1)
+          BUILT=$("$AAPT2" dump badging "${{ steps.stage.outputs.apk }}" \
+            | sed -n "s/^package: name='[^']*' versionCode='[0-9]*' versionName='\([^']*\)'.*/\1/p" | head -1)
+          EXPECTED="${TAG#v}"   # tag carries a conventional v-prefix; versionName does not
+          if [ "$BUILT" != "$EXPECTED" ]; then
+            echo "Refusing to publish: tag is $TAG but the APK reports versionName '$BUILT'."
+            echo "Fix app/build.gradle.kts versionName on the tagged commit before releasing."
+            exit 1
+          fi
+          echo "Version gate passed: APK versionName == $TAG."
+
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
