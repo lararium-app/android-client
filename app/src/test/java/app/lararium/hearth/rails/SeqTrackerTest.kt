@@ -51,19 +51,29 @@ class SeqTrackerTest {
     }
 
     @Test
-    fun resetRestartsSequenceCustody() {
+    fun rebaseSetsFloorSoNextPushIsCurrentPlusOne() {
         val tracker = SeqTracker()
 
-        assertTrue(tracker.accept("calllog", 42L))
+        tracker.rebase("calllog", 42L)
         assertEquals(42L, tracker.acceptedSeq("calllog"))
 
-        // Reset after 409 stale_seq round-trip
-        tracker.reset("calllog")
-        assertEquals(0L, tracker.acceptedSeq("calllog"))
+        // Equal to the rebased floor is stale; floor + 1 is accepted.
+        assertFalse(tracker.accept("calllog", 42L))
+        assertTrue(tracker.accept("calllog", 43L))
+        assertEquals(43L, tracker.acceptedSeq("calllog"))
+    }
 
-        // Next accepted seq restarts at 1 with fresh snapshot
-        assertTrue(tracker.accept("calllog", 1L))
-        assertEquals(1L, tracker.acceptedSeq("calllog"))
+    @Test
+    fun rebaseIsLastWriterWinsUnlikeAccept() {
+        val tracker = SeqTracker()
+
+        tracker.rebase("calendar", 5L)
+        tracker.rebase("calendar", 3L)
+        assertEquals("rebase mirrors the server, so it may move downward", 3L, tracker.acceptedSeq("calendar"))
+
+        tracker.accept("calendar", 10L)
+        tracker.rebase("calendar", 7L)
+        assertEquals(7L, tracker.acceptedSeq("calendar"))
     }
 
     @Test
@@ -78,8 +88,8 @@ class SeqTrackerTest {
         assertEquals(20L, tracker.acceptedSeq("contacts"))
         assertEquals(1L, tracker.acceptedSeq("sms"))
 
-        // Resetting calendar leaves contacts and sms intact
-        tracker.reset("calendar")
+        // Rebasing calendar leaves contacts and sms intact
+        tracker.rebase("calendar", 0L)
         assertEquals(0L, tracker.acceptedSeq("calendar"))
         assertEquals(20L, tracker.acceptedSeq("contacts"))
         assertEquals(1L, tracker.acceptedSeq("sms"))
