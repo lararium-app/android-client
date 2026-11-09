@@ -99,6 +99,7 @@ fun SettingsScreen(
     var screenContextEnabled by remember { mutableStateOf(settingsManager.screenContextEnabled) }
     var multilingualEnabled by remember { mutableStateOf(settingsManager.multilingualEnabled) }
     var secondaryLanguage by remember { mutableStateOf(settingsManager.secondaryVoiceLanguage) }
+    var allowScreenshots by remember { mutableStateOf(settingsManager.allowScreenshots) }
 
     var showPairHearthDialog by remember { mutableStateOf(false) }
     var showAccessibilityDisclosureDialog by remember { mutableStateOf(false) }
@@ -693,6 +694,17 @@ fun SettingsScreen(
                         var showClearHistoryDialog by remember { mutableStateOf(false) }
                         var showResetDialog by remember { mutableStateOf(false) }
 
+                        SettingsItemWithSwitch(
+                            icon = Icons.Default.Security,
+                            title = "Allow Screenshots",
+                            subtitle = "Allow screen captures of the assistant overlay and chat (disables FLAG_SECURE)",
+                            checked = allowScreenshots,
+                            onCheckedChange = {
+                                allowScreenshots = it
+                                settingsManager.allowScreenshots = it
+                            }
+                        )
+
                         SettingsItem(
                             icon = Icons.Default.Delete,
                             title = "Clear Chat History",
@@ -739,6 +751,7 @@ fun SettingsScreen(
                                         selectedLanguage = settingsManager.voiceLanguage
                                         secondaryLanguage = settingsManager.secondaryVoiceLanguage
                                         multilingualEnabled = settingsManager.multilingualEnabled
+                                        allowScreenshots = settingsManager.allowScreenshots
                                         assistantService?.reloadSettings()
                                         showResetDialog = false
                                     }) { Text("Reset", color = MaterialTheme.colorScheme.error) }

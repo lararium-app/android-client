@@ -34,4 +34,9 @@ class OrientationLogicTest {
         assertTrue(SettingsManager.DEFAULT_LOCK_ORIENTATION)
         assertEquals("lock_orientation", SettingsManager.KEY_LOCK_ORIENTATION)
     }
+
+    @Test
+    fun settingsManager_pinsAllowScreenshotsDefault() {
+        org.junit.Assert.assertFalse(SettingsManager.DEFAULT_ALLOW_SCREENSHOTS)
+    }
 }

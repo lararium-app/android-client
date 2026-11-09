@@ -33,7 +33,20 @@ class LarariumVoiceSession(context: Context) : VoiceInteractionSession(context) 
                 putExtra(AssistantService.EXTRA_LAUNCH_OVERLAY, false)
             }
             context.startForegroundService(serviceIntent)
-            startVoiceActivity(Intent(context, CompactAssistantActivity::class.java))
+
+            val overlayIntent = Intent(context, CompactAssistantActivity::class.java).apply {
+                action = Intent.ACTION_ASSIST
+                addCategory(Intent.CATEGORY_DEFAULT)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            }
+            try {
+                context.startActivity(overlayIntent)
+            } catch (e: Exception) {
+                Log.w(TAG, "context.startActivity failed, trying startVoiceActivity", e)
+                startVoiceActivity(overlayIntent)
+            }
         } catch (error: RuntimeException) {
             // Never let a system-assistant callback crash the process; the
             // error stays in logcat for device-specific policy diagnosis.
