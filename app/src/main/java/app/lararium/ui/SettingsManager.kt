@@ -21,6 +21,8 @@ class SettingsManager(context: Context) {
         private const val KEY_TTS_LANGUAGE = "tts_language"
         private const val KEY_SCREEN_CONTEXT_ENABLED = "screen_context_enabled"
         private const val KEY_SCREEN_CONTEXT_EXCLUDED = "screen_context_excluded_packages"
+        private const val KEY_ALLOW_SCREENSHOTS = "allow_screenshots"
+        const val DEFAULT_ALLOW_SCREENSHOTS = false
         const val KEY_LOCK_ORIENTATION = "lock_orientation"
         const val DEFAULT_LOCK_ORIENTATION = true
         
@@ -82,6 +84,10 @@ class SettingsManager(context: Context) {
     var screenContextExcludedPackages: Set<String>
         get() = prefs.getStringSet(KEY_SCREEN_CONTEXT_EXCLUDED, emptySet())?.toSet() ?: emptySet()
         set(value) = prefs.edit().putStringSet(KEY_SCREEN_CONTEXT_EXCLUDED, value.toSet()).apply()
+
+    var allowScreenshots: Boolean
+        get() = prefs.getBoolean(KEY_ALLOW_SCREENSHOTS, DEFAULT_ALLOW_SCREENSHOTS)
+        set(value) = prefs.edit().putBoolean(KEY_ALLOW_SCREENSHOTS, value).apply()
 
     fun resetToDefaults() {
         prefs.edit().clear().apply()
