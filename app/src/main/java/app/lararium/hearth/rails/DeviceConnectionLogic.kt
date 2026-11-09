@@ -23,8 +23,16 @@ enum class OfflineCause {
 class DeviceStreamStateMachine(
     val clock: () -> Long = { System.currentTimeMillis() }
 ) {
+    var onStateChanged: ((DeviceStreamState) -> Unit)? = null
+
     var state: DeviceStreamState = DeviceStreamState.Idle
-        private set
+        private set(value) {
+            val changed = field != value
+            field = value
+            if (changed) {
+                onStateChanged?.invoke(value)
+            }
+        }
 
     private var currentEpoch: Long = 0L
     private var attempt: Int = 0
