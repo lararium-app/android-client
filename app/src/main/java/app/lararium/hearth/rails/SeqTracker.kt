@@ -26,11 +26,15 @@ class SeqTracker {
     }
 
     /**
-     * Resets the tracked sequence number for the specified rail to 0.
-     * Called after a 409 stale_seq round-trip so the next sequence restarts at 1 with a fresh snapshot.
+     * Rebases the tracked sequence for [rail] onto the server's counter after a 409 stale_seq.
+     * The next push will use `serverCurrent + 1`.
+     *
+     * Unlike [accept], this is deliberately NOT monotonic: it mirrors the server, so the
+     * last writer wins and a lower value overwrites a higher one (rebase(5) then rebase(3)
+     * leaves 3). The server is the source of truth for its own counter.
      */
     @Synchronized
-    fun reset(rail: String) {
-        seqs[rail] = 0L
+    fun rebase(rail: String, serverCurrent: Long) {
+        seqs[rail] = serverCurrent
     }
 }
