@@ -109,6 +109,10 @@ class DeviceRailService : Service() {
         pairingStore = DevicePairingStore(this)
         createNotificationChannel()
 
+        stateMachine.onStateChanged = { newState ->
+            updateNotification(newState)
+        }
+
         streamClient = DeviceStreamClient(
             endpointProvider = { pairingStore.getEndpoint() },
             stateMachine = stateMachine
@@ -181,6 +185,7 @@ class DeviceRailService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRunning = false
+        streamState.value = DeviceStreamState.Idle
         unregisterNetworkCallback()
         dataSources.forEach { it.unregisterObserver() }
         serviceScope.cancel()
