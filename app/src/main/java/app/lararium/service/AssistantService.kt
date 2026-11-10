@@ -122,6 +122,7 @@ class AssistantService : Service() {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var probeJob: Job? = null
     private var endpointPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private var roleActivated: Boolean = false
     
     // Currently loaded chat ID (null = new chat)
     private var _currentChatId: String? = null
@@ -255,11 +256,18 @@ class AssistantService : Service() {
         }
         (application as? AssistantApplication)?.secureKeyManager
             ?.addEndpointChangeListener(endpointPrefListener!!)
+
+        try {
+            startAssistantForeground()
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Early startForeground failed", e)
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_ACTIVATE -> {
+                roleActivated = true
                 startAssistantForeground()
                 // Clear session on each activation for fresh start
                 clearSession()
@@ -386,6 +394,21 @@ class AssistantService : Service() {
                 this, NOTIFICATION_ID, notification, FgsTypes.assistant(micGranted = false)
             )
         }
+    }
+
+    /**
+     * Stop the persistent foreground shield if permitted by [AssistantFgsPolicy].
+     * Non-shutdown stops are gated so the shield remains while an endpoint is configured
+     * or role activation has occurred.
+     */
+    fun stopAssistantForeground(isFullShutdown: Boolean = false) {
+        val app = application as? AssistantApplication
+        val endpointConfigured = app?.secureKeyManager?.getHearthEndpoint() != null
+        if (!isFullShutdown && AssistantFgsPolicy.shouldKeepShieldUp(roleActivated, endpointConfigured)) {
+            Log.i(TAG, "Persistent FGS shield maintained; ignoring non-shutdown stop")
+            return
+        }
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     }
 
     private val voiceCaptureGate = VoiceCaptureGate(log = { Log.w(TAG, it) })
