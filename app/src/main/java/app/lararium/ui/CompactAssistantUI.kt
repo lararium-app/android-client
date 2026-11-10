@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
 import android.util.Base64
+import android.util.Log
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -47,10 +48,11 @@ import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import app.lararium.AssistantApplication
+import app.lararium.MainActivity
 import app.lararium.R
 import app.lararium.auth.AppLock
 import app.lararium.auth.ui.LockScreen
+import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
 import app.lararium.service.VoiceCaptureOrigin
@@ -204,13 +206,11 @@ class CompactAssistantActivity : FragmentActivity() {
                     )
                 } else {
                     val service by serviceState
-                    var isExpanded by remember { mutableStateOf(false) }
                     var showHistory by remember { mutableStateOf(false) }
 
                     if (service != null) {
                         val state by service!!.assistantState.collectAsStateWithLifecycle()
                         val response by service!!.response.collectAsStateWithLifecycle()
-                        val messages by service!!.chatMessages.collectAsStateWithLifecycle()
                         val transcription by service!!.transcription.collectAsStateWithLifecycle()
                         val pendingUrls by service!!.pendingUrls.collectAsStateWithLifecycle()
 
@@ -226,63 +226,62 @@ class CompactAssistantActivity : FragmentActivity() {
                             modifier = Modifier
                                 .fillMaxSize()
                                 .background(
-                                    if (isExpanded || showHistory) MaterialTheme.colorScheme.background
+                                    if (showHistory) MaterialTheme.colorScheme.background
                                     else Color.Black.copy(alpha = 0.4f)
                                 )
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                    enabled = !isExpanded && !showHistory,
+                                    enabled = !showHistory,
                                     onClick = { finish() }
                                 )
                         ) {
-                            when {
-                                showHistory -> {
-                                    ChatHistoryScreen(
-                                        service = service!!,
-                                        onChatSelected = { chatId ->
-                                            service!!.loadChatFromHistory(chatId)
-                                            showHistory = false
-                                            isExpanded = true
-                                        },
-                                        onBack = { showHistory = false },
-                                        onDismiss = { finish() }
-                                    )
-                                }
-                                isExpanded -> {
-                                    FullChatScreen(
-                                        service = service!!,
-                                        state = state,
-                                        response = response,
-                                        transcription = transcription,
-                                        messages = messages,
-                                        onCollapse = { isExpanded = false },
-                                        onDismiss = { finish() },
-                                        onShowHistory = { showHistory = true },
-                                        contextEntries = contextEntries,
-                                        onExcludePackage = { excludePackage(it) },
-                                        initialText = sharedText.value
-                                    )
-                                }
-                                else -> {
-                                    CompactAssistantView(
-                                        service = service!!,
-                                        state = state,
-                                        transcription = transcription,
-                                        response = response,
-                                        onExpand = { isExpanded = true },
-                                        onDismiss = { finish() },
-                                        contextEntries = contextEntries,
-                                        onExcludePackage = { excludePackage(it) },
-                                        initialText = sharedText.value
-                                    )
-                                }
+                            if (showHistory) {
+                                ChatHistoryScreen(
+                                    service = service!!,
+                                    onChatSelected = { chatId ->
+                                        service!!.loadChatFromHistory(chatId)
+                                        openFullAppOnCurrentSession()
+                                    },
+                                    onBack = { showHistory = false },
+                                    onDismiss = { finish() }
+                                )
+                            } else {
+                                CompactAssistantView(
+                                    service = service!!,
+                                    state = state,
+                                    transcription = transcription,
+                                    response = response,
+                                    onExpand = { openFullAppOnCurrentSession() },
+                                    onDismiss = { finish() },
+                                    contextEntries = contextEntries,
+                                    onExcludePackage = { excludePackage(it) },
+                                    initialText = sharedText.value
+                                )
                             }
                         }
                     }
                 }
             }
         }
+    }
+
+    /** Expand = hand off to the full app on the same hearth session (#T4 polish). */
+    private fun openFullAppOnCurrentSession() {
+        val sessionId = assistantService?.activeSessionId
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+            if (!sessionId.isNullOrBlank()) {
+                putExtra(HearthNotifier.EXTRA_SESSION_ID, sessionId)
+            }
+        }
+        try {
+            startActivity(intent)
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Could not open main app; staying in overlay", e)
+            return
+        }
+        finish()
     }
 
     override fun onStart() {
@@ -298,7 +297,14 @@ class CompactAssistantActivity : FragmentActivity() {
             bound = false
         }
     }
+
+    companion object {
+        private const val TAG = "CompactAssistantActivity"
+    }
 }
+
+private val AssistantService.activeSessionId: String?
+    get() = AssistantService.activeSessionId
 
 @Composable
 fun CompactAssistantView(
@@ -716,495 +722,6 @@ fun CompactAssistantView(
                         }
                     }
                 }
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun FullChatScreen(
-    service: AssistantService,
-    state: AssistantState,
-    response: String,
-    transcription: String,
-    messages: List<app.lararium.llm.ChatSession.Message>,
-    onCollapse: () -> Unit,
-    onDismiss: () -> Unit,
-    onShowHistory: () -> Unit = {},
-    contextEntries: MutableList<ContextEntry> = mutableListOf(),
-    onExcludePackage: (String) -> Unit = {},
-    initialText: String = ""
-) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var textInput by remember(initialText) { mutableStateOf(initialText) }
-    val scrollState = rememberScrollState()
-
-    var selectedImageBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var selectedImageBase64 by remember { mutableStateOf<String?>(null) }
-
-    var pdfText by remember { mutableStateOf<String?>(null) }
-    var pdfSummary by remember { mutableStateOf<String?>(null) }
-    var pdfLoading by remember { mutableStateOf(false) }
-    var pdfError by remember { mutableStateOf<String?>(null) }
-
-    val isGenerating = state is AssistantState.Processing ||
-        state is AssistantState.Searching ||
-        state is AssistantState.Responding ||
-        state is AssistantState.Speaking
-
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            pdfLoading = true
-            pdfError = null
-            scope.launch {
-                when (val result = PdfExtractor.extractText(context, it)) {
-                    is PdfResult.Success -> {
-                        pdfText = result.text
-                        pdfSummary = result.summary
-                        pdfError = null
-                    }
-                    is PdfResult.Error -> {
-                        pdfError = result.message
-                        pdfText = null
-                        pdfSummary = null
-                    }
-                }
-                pdfLoading = false
-            }
-        }
-    }
-
-    val imagePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri: Uri? ->
-        uri?.let {
-            try {
-                val inputStream = context.contentResolver.openInputStream(it)
-                val bitmap = BitmapFactory.decodeStream(inputStream)
-                inputStream?.close()
-                if (bitmap == null) return@let
-
-                val maxSize = 1024
-                val scaledBitmap = if (bitmap.width > maxSize || bitmap.height > maxSize) {
-                    val ratio = minOf(maxSize.toFloat() / bitmap.width, maxSize.toFloat() / bitmap.height)
-                    Bitmap.createScaledBitmap(bitmap, (bitmap.width * ratio).toInt(), (bitmap.height * ratio).toInt(), true)
-                } else bitmap
-
-                selectedImageBitmap = scaledBitmap
-                val outputStream = ByteArrayOutputStream()
-                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
-                val base64Data = Base64.encodeToString(outputStream.toByteArray(), Base64.NO_WRAP)
-                selectedImageBase64 = base64Data
-            } catch (e: Exception) { }
-        }
-    }
-
-    val currentUserInput = if (transcription.isNotEmpty() &&
-        (state is AssistantState.Listening || state is AssistantState.Processing || state is AssistantState.Searching)) {
-        transcription
-    } else null
-
-    Scaffold(
-        topBar = {
-            val app = context.applicationContext as AssistantApplication
-            val endpoint = app.secureKeyManager.getHearthEndpoint()
-            val topBarTitle = DrawerLogic.formatTopBarTitle(endpoint, stringResource(R.string.app_name))
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            topBarTitle,
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            when (state) {
-                                AssistantState.Idle -> "Ready"
-                                AssistantState.Listening -> "Listening..."
-                                AssistantState.Processing -> "Thinking..."
-                                AssistantState.Searching -> "Searching..."
-                                AssistantState.Responding -> "Typing..."
-                                AssistantState.Speaking -> "Speaking..."
-                                AssistantState.Complete -> "Done"
-                                is AssistantState.Error -> "Error"
-                            },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                navigationIcon = {
-                    IconButton(onClick = onCollapse) {
-                        Icon(Icons.Default.KeyboardArrowDown, "Collapse")
-                    }
-                },
-                actions = {
-                    if (isGenerating) {
-                        FilledTonalIconButton(onClick = { service.stopResponse() }) {
-                            Icon(
-                                Icons.Default.Stop,
-                                contentDescription = "Stop response",
-                                tint = MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                    IconButton(onClick = onShowHistory) {
-                        Icon(Icons.Default.History, "Chat History")
-                    }
-                    IconButton(onClick = { service.clearSession() }) {
-                        Icon(Icons.Default.Refresh, "New Chat")
-                    }
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, "Close")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        },
-        bottomBar = {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shadowElevation = 8.dp,
-                color = MaterialTheme.colorScheme.surfaceContainer
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(12.dp)
-                        .imePadding()
-                        .navigationBarsPadding()
-                ) {
-                    selectedImageBitmap?.let { bitmap ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "Selected image",
-                                modifier = Modifier.size(60.dp).clip(RoundedCornerShape(10.dp))
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Image attached",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.weight(1f))
-                            IconButton(onClick = {
-                                selectedImageBitmap = null
-                                selectedImageBase64 = null
-                            }) {
-                                Icon(Icons.Default.Close, "Remove image", modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-
-                    if (pdfLoading) {
-                        Row(modifier = Modifier.padding(bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Loading PDF...",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-
-                    pdfError?.let { error ->
-                        Text(error, style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            modifier = Modifier.padding(bottom = 8.dp))
-                    }
-
-                    pdfSummary?.let { summary ->
-                        Row(modifier = Modifier.padding(bottom = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.PictureAsPdf, "PDF",
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(summary, style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.weight(1f))
-                            IconButton(onClick = {
-                                pdfText = null; pdfSummary = null; pdfError = null
-                            }) {
-                                Icon(Icons.Default.Close, "Remove PDF", modifier = Modifier.size(20.dp))
-                            }
-                        }
-                    }
-
-                    NotificationContextSection(contextEntries, onExcludePackage)
-
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        IconButton(
-                            onClick = { pdfPickerLauncher.launch("application/pdf") },
-                            enabled = !isGenerating
-                        ) {
-                            Icon(Icons.Default.PictureAsPdf, "Attach PDF",
-                                tint = if (pdfText != null) MaterialTheme.colorScheme.primary
-                                else MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-
-                        OutlinedTextField(
-                            value = textInput,
-                            onValueChange = { textInput = it },
-                            modifier = Modifier.weight(1f),
-                            placeholder = { Text(if (isGenerating) "Generating..." else "Ask anything...") },
-                            shape = RoundedCornerShape(24.dp),
-                            singleLine = true,
-                            enabled = !isGenerating
-                        )
-
-                        FilledIconButton(
-                            onClick = {
-                                when {
-                                    isGenerating -> service.stopResponse()
-                                    state is AssistantState.Listening -> service.stopVoiceCapture()
-                                    else -> service.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
-                                }
-                            },
-                            modifier = Modifier.size(48.dp),
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = if (isGenerating || state is AssistantState.Listening)
-                                    MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Icon(
-                                if (isGenerating || state is AssistantState.Listening) Icons.Default.Stop else Icons.Default.Mic,
-                                if (isGenerating) "Stop response" else "Voice",
-                                tint = if (isGenerating || state is AssistantState.Listening)
-                                    MaterialTheme.colorScheme.onError
-                                else MaterialTheme.colorScheme.onPrimary)
-                        }
-
-                        AnimatedVisibility(visible = !isGenerating && (textInput.isNotEmpty() || selectedImageBase64 != null || pdfText != null)) {
-                            FilledIconButton(
-                                onClick = {
-                                    val currentText = textInput
-                                    val currentImageBase64 = selectedImageBase64
-                                    val currentPdfText = pdfText
-
-                                    val queryText = if (currentPdfText != null) {
-                                        val userQuery = currentText.ifBlank { "Summarize this document" }
-                                        "Document content:\n---\n$currentPdfText\n---\n\nUser question: $userQuery"
-                                    } else {
-                                        currentText.ifBlank { "What's in this image?" }
-                                    }
-
-                                    val outgoing = ScreenContextPolicy.prependContext(
-                                        contextEntries.filter { it.checked }.map { it.summary }, queryText)
-                                    service.processTextQuery(outgoing, currentImageBase64)
-                                    contextEntries.clear()
-                                    textInput = ""
-                                    selectedImageBitmap = null
-                                    selectedImageBase64 = null
-                                    pdfText = null
-                                    pdfSummary = null
-                                },
-                                modifier = Modifier.size(48.dp)
-                            ) {
-                                Icon(Icons.AutoMirrored.Filled.Send, "Send",
-                                    tint = MaterialTheme.colorScheme.onPrimary)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .verticalScroll(scrollState)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            if (messages.isEmpty() && response.isEmpty() && currentUserInput == null) {
-                WelcomeMessage()
-            }
-
-            messages.forEach { message ->
-                MessageBubble(
-                    isUser = message.role == "user",
-                    content = message.content,
-                    imageBase64 = message.imageBase64
-                )
-            }
-
-            if (currentUserInput != null) {
-                MessageBubble(isUser = true, content = currentUserInput)
-            }
-
-            if (state is AssistantState.Processing || state is AssistantState.Searching) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Start
-                ) {
-                    Surface(
-                        shape = RoundedCornerShape(20.dp),
-                        tonalElevation = 1.dp,
-                        color = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text(
-                                if (state is AssistantState.Searching) "Searching..." else "Thinking...",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-
-            if (response.isNotEmpty() && state is AssistantState.Responding) {
-                MessageBubble(isUser = false, content = response, isStreaming = true)
-            }
-        }
-
-        LaunchedEffect(messages.size, response, currentUserInput) {
-            scrollState.animateScrollTo(scrollState.maxValue)
-        }
-    }
-}
-
-@Composable
-fun WelcomeMessage() {
-    Box(
-        modifier = Modifier.fillMaxWidth(),
-        contentAlignment = Alignment.Center
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(24.dp),
-            tonalElevation = 1.dp,
-            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().padding(32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.AutoAwesome,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                Spacer(modifier = Modifier.height(20.dp))
-                Text(
-                    "How can I help you?",
-                    style = MaterialTheme.typography.headlineSmall,
-                    textAlign = TextAlign.Center
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    "Ask anything or use voice input",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun MessageBubble(
-    isUser: Boolean,
-    content: String,
-    isStreaming: Boolean = false,
-    imageBase64: String? = null
-) {
-    val context = LocalContext.current
-
-    val imageBitmap = remember(imageBase64) {
-        imageBase64?.let {
-            try {
-                val bytes = Base64.decode(it, Base64.DEFAULT)
-                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-            } catch (e: Exception) { null }
-        }
-    }
-
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
-    ) {
-        Surface(
-            modifier = Modifier.widthIn(max = 320.dp),
-            shape = RoundedCornerShape(
-                topStart = if (isUser) 20.dp else 4.dp,
-                topEnd = if (isUser) 4.dp else 20.dp,
-                bottomStart = 20.dp,
-                bottomEnd = 20.dp
-            ),
-            tonalElevation = if (isUser) 0.dp else 1.dp,
-            color = if (isUser) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.surfaceVariant
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                imageBitmap?.let { bitmap ->
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Attached image",
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 200.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                    )
-                    if (content.isNotBlank()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                    }
-                }
-
-                Row(verticalAlignment = Alignment.Top) {
-                    if (isUser) {
-                        Text(
-                            text = content,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimary
-                        )
-                    } else {
-                        MarkdownText(
-                            text = content,
-                            color = MaterialTheme.colorScheme.onSurface,
-                            linkColor = MaterialTheme.colorScheme.primary,
-                            onLinkClick = { url ->
-                                if (LinkPolicy.isSafeExternal(url)) {
-                                    try {
-                                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                            context.startActivity(intent)
-                                    } catch (e: Exception) { }
-                                }
-                            }
-                        )
-                    }
-                    if (isStreaming) {
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("▌", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
                 }
             }
         }
