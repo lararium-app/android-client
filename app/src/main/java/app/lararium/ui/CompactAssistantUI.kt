@@ -64,6 +64,7 @@ import app.lararium.auth.ui.LockScreen
 import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
+import app.lararium.util.BalLaunch
 import app.lararium.service.VoiceCaptureOrigin
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import app.lararium.util.PdfExtractor
@@ -278,15 +279,11 @@ class CompactAssistantActivity : FragmentActivity() {
                 putExtra(HearthNotifier.EXTRA_SESSION_ID, sessionId)
             }
         }
-        try {
-            startActivity(intent)
-            @Suppress("DEPRECATION")
-            overridePendingTransition(0, 0)
+        if (BalLaunch.launch(this, intent, REQ_EXPAND_MAIN)) {
             finish()
             return
-        } catch (e: RuntimeException) {
-            Log.e(TAG, "expand attempt 1 failed", e)
         }
+        Log.w(TAG, "expand attempt 1 failed; retrying minimal intent")
 
         val fallbackIntent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -321,6 +318,7 @@ class CompactAssistantActivity : FragmentActivity() {
 
     companion object {
         private const val TAG = "CompactAssistantActivity"
+        private const val REQ_EXPAND_MAIN = 4102
     }
 }
 
