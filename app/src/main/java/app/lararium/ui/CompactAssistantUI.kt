@@ -22,6 +22,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -41,7 +42,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -61,6 +64,7 @@ import app.lararium.auth.ui.LockScreen
 import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.service.AssistantService
 import app.lararium.service.AssistantState
+import app.lararium.util.BalLaunch
 import app.lararium.service.VoiceCaptureOrigin
 import app.lararium.ui.theme.AiintegratedintoandroidTheme
 import app.lararium.util.PdfExtractor
@@ -275,13 +279,27 @@ class CompactAssistantActivity : FragmentActivity() {
                 putExtra(HearthNotifier.EXTRA_SESSION_ID, sessionId)
             }
         }
-        try {
-            startActivity(intent)
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "Could not open main app; staying in overlay", e)
+        if (BalLaunch.launch(this, intent, REQ_EXPAND_MAIN)) {
+            finish()
             return
         }
-        finish()
+        Log.w(TAG, "expand attempt 1 failed; retrying minimal intent")
+
+        val fallbackIntent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (!sessionId.isNullOrBlank()) {
+                putExtra(HearthNotifier.EXTRA_SESSION_ID, sessionId)
+            }
+        }
+        try {
+            startActivity(fallbackIntent)
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+            finish()
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "expand attempt 2 failed", e)
+            return
+        }
     }
 
     override fun onStart() {
@@ -300,6 +318,7 @@ class CompactAssistantActivity : FragmentActivity() {
 
     companion object {
         private const val TAG = "CompactAssistantActivity"
+        private const val REQ_EXPAND_MAIN = 4102
     }
 }
 
@@ -454,8 +473,37 @@ fun CompactAssistantView(
                 }
 
                 Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                val density = LocalDensity.current
+                val swipeUpThresholdPx = with(density) { 80.dp.toPx() }
+
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .pointerInput(onExpand, swipeUpThresholdPx) {
+                            var cumulativeUpwardDrag = 0f
+                            var expandTriggered = false
+                            detectVerticalDragGestures(
+                                onDragStart = {
+                                    cumulativeUpwardDrag = 0f
+                                    expandTriggered = false
+                                },
+                                onDragEnd = {
+                                    cumulativeUpwardDrag = 0f
+                                    expandTriggered = false
+                                },
+                                onDragCancel = {
+                                    cumulativeUpwardDrag = 0f
+                                    expandTriggered = false
+                                },
+                                onVerticalDrag = { _, dragAmount ->
+                                    cumulativeUpwardDrag = maxOf(0f, cumulativeUpwardDrag - dragAmount)
+                                    if (cumulativeUpwardDrag >= swipeUpThresholdPx && !expandTriggered) {
+                                        expandTriggered = true
+                                        onExpand()
+                                    }
+                                }
+                            )
+                        },
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
