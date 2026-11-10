@@ -300,7 +300,6 @@ class CompactAssistantActivity : FragmentActivity() {
 
     companion object {
         private const val TAG = "CompactAssistantActivity"
-        private const val SCRIM_DISMISS_DEBOUNCE_MS = ScrimDismissPolicy.DEBOUNCE_MS
     }
 }
 
