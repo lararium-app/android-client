@@ -173,6 +173,16 @@
             </intent-filter>
         </service>
 
+        <!-- Minimal recognizer required by the voice-interaction metadata contract -->
+        <service
+            android:name=".assistant.LarariumRecognitionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_SPEECH_RECOGNITION">
+            <intent-filter>
+                <action android:name="android.speech.RecognitionService" />
+            </intent-filter>
+        </service>
+
         <!-- Voice interaction session (bound internally by framework) -->
         <service
             android:name=".assistant.LarariumVoiceSessionService"
