@@ -1,5 +1,6 @@
 package app.lararium.service
 
+import android.app.AlarmManager
 import android.app.Notification
 import android.app.PendingIntent
 import android.app.Service
@@ -307,6 +308,35 @@ class AssistantService : Service() {
                 ?.removeEndpointChangeListener(it)
         }
         endpointPrefListener = null
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        super.onTaskRemoved(rootIntent)
+        val app = application as? AssistantApplication ?: return
+        if (!TaskRemovalPolicy().shouldReschedule(app.secureKeyManager.getHearthEndpoint() != null)) {
+            return
+        }
+
+        val restartIntent = Intent(this, AssistantService::class.java).apply {
+            action = ACTION_ACTIVATE
+            // Silent resurrection: process + notification only. Launching the
+            // overlay here would pop UI over whatever the user is doing right
+            // after they deliberately dismissed the app.
+            putExtra(EXTRA_LAUNCH_OVERLAY, false)
+        }
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val pi = PendingIntent.getForegroundService(this, 0, restartIntent, flags)
+
+        val alarmManager = getSystemService(Context.ALARM_SERVICE) as? AlarmManager
+        if (alarmManager != null) {
+            val triggerAtMs = System.currentTimeMillis() + TaskRemovalPolicy.RESCHEDULE_DELAY_MS
+            try {
+                alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pi)
+            } catch (e: SecurityException) {
+                alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pi)
+            }
+            Log.i(TAG, "assistant service rescheduled after task removal")
+        }
     }
 
     private fun launchOverlay() {
