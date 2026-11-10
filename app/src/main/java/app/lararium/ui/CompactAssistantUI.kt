@@ -206,7 +206,6 @@ class CompactAssistantActivity : FragmentActivity() {
                     )
                 } else {
                     val service by serviceState
-                    var showHistory by remember { mutableStateOf(false) }
 
                     if (service != null) {
                         val state by service!!.assistantState.collectAsStateWithLifecycle()
@@ -225,40 +224,24 @@ class CompactAssistantActivity : FragmentActivity() {
                         Box(
                             modifier = Modifier
                                 .fillMaxSize()
-                                .background(
-                                    if (showHistory) MaterialTheme.colorScheme.background
-                                    else Color.Black.copy(alpha = 0.4f)
-                                )
+                                .background(Color.Black.copy(alpha = 0.4f))
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                    enabled = !showHistory,
                                     onClick = { finish() }
                                 )
                         ) {
-                            if (showHistory) {
-                                ChatHistoryScreen(
-                                    service = service!!,
-                                    onChatSelected = { chatId ->
-                                        service!!.loadChatFromHistory(chatId)
-                                        openFullAppOnCurrentSession()
-                                    },
-                                    onBack = { showHistory = false },
-                                    onDismiss = { finish() }
-                                )
-                            } else {
-                                CompactAssistantView(
-                                    service = service!!,
-                                    state = state,
-                                    transcription = transcription,
-                                    response = response,
-                                    onExpand = { openFullAppOnCurrentSession() },
-                                    onDismiss = { finish() },
-                                    contextEntries = contextEntries,
-                                    onExcludePackage = { excludePackage(it) },
-                                    initialText = sharedText.value
-                                )
-                            }
+                            CompactAssistantView(
+                                service = service!!,
+                                state = state,
+                                transcription = transcription,
+                                response = response,
+                                onExpand = { openFullAppOnCurrentSession() },
+                                onDismiss = { finish() },
+                                contextEntries = contextEntries,
+                                onExcludePackage = { excludePackage(it) },
+                                initialText = sharedText.value
+                            )
                         }
                     }
                 }
@@ -268,7 +251,7 @@ class CompactAssistantActivity : FragmentActivity() {
 
     /** Expand = hand off to the full app on the same hearth session (#T4 polish). */
     private fun openFullAppOnCurrentSession() {
-        val sessionId = assistantService?.activeSessionId
+        val sessionId = AssistantService.activeSessionId
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             if (!sessionId.isNullOrBlank()) {
@@ -303,8 +286,6 @@ class CompactAssistantActivity : FragmentActivity() {
     }
 }
 
-private val AssistantService.activeSessionId: String?
-    get() = AssistantService.activeSessionId
 
 @Composable
 fun CompactAssistantView(
@@ -775,146 +756,6 @@ fun UrlSelectionDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ChatHistoryScreen(
-    service: AssistantService,
-    onChatSelected: (String) -> Unit,
-    onBack: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    var chats by remember { mutableStateOf(service.chatHistoryManager.getSavedChats()) }
-    var chatToDelete by remember { mutableStateOf<String?>(null) }
-
-    chatToDelete?.let { chatId ->
-        AlertDialog(
-            onDismissRequest = { chatToDelete = null },
-            title = { Text("Delete Chat?") },
-            text = { Text("This chat will be permanently deleted.") },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        service.chatHistoryManager.deleteChat(chatId)
-                        chats = service.chatHistoryManager.getSavedChats()
-                        chatToDelete = null
-                    }
-                ) { Text("Delete", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = {
-                TextButton(onClick = { chatToDelete = null }) { Text("Cancel") }
-            }
-        )
-    }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Chat History") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
-                    }
-                },
-                actions = {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Close, "Close")
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                )
-            )
-        }
-    ) { padding ->
-        if (chats.isEmpty()) {
-            Box(
-                modifier = Modifier.fillMaxSize().padding(padding),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.History, contentDescription = null,
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    Text("No saved chats",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Your chat history will appear here",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        } else {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                chats.forEach { chat ->
-                    ChatHistoryItem(
-                        chat = chat,
-                        onClick = { onChatSelected(chat.id) },
-                        onDelete = { chatToDelete = chat.id }
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun ChatHistoryItem(
-    chat: app.lararium.storage.ChatHistoryManager.ChatSummary,
-    onClick: () -> Unit,
-    onDelete: () -> Unit
-) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        tonalElevation = 1.dp,
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-    ) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalAlignment = Alignment.Top
-        ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text(chat.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1)
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(chat.preview.ifEmpty { "No preview available" },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2)
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("${chat.messageCount} messages",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        java.text.SimpleDateFormat("MMM d, HH:mm", java.util.Locale.getDefault())
-                            .format(java.util.Date(chat.timestamp)),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-
-            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                Icon(Icons.Default.Delete, "Delete",
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(18.dp))
-            }
-        }
-    }
 }
 
 @OptIn(ExperimentalFoundationApi::class)
