@@ -18,6 +18,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import android.os.Build
 import androidx.core.content.ContextCompat
 import app.lararium.AssistantApplication
 import app.lararium.MainActivity
@@ -45,6 +46,7 @@ import app.lararium.security.SecureKeyManager
 import app.lararium.storage.ChatHistoryManager
 import app.lararium.tts.TTSManager
 import app.lararium.ui.CompactAssistantActivity
+import app.lararium.util.BalLaunch
 import app.lararium.ui.DrawerLogic
 import app.lararium.ui.FailedSend
 import app.lararium.ui.SettingsManager
@@ -257,10 +259,20 @@ class AssistantService : Service() {
         (application as? AssistantApplication)?.secureKeyManager
             ?.addEndpointChangeListener(endpointPrefListener!!)
 
-        try {
-            startAssistantForeground()
-        } catch (e: RuntimeException) {
-            Log.w(TAG, "Early startForeground failed", e)
+        // Persistent shield only where the user opted in by function: assistant
+        // role held or a hearth endpoint configured. Fresh installs stay silent.
+        val endpointConfigured = (application as? AssistantApplication)?.secureKeyManager
+            ?.getHearthEndpoint() != null
+        val roleHeld = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && runCatching {
+            (getSystemService(Context.ROLE_SERVICE) as? android.app.role.RoleManager)
+                ?.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) == true
+        }.getOrDefault(false)
+        if (AssistantFgsPolicy.shouldKeepShieldUp(roleHeld, endpointConfigured)) {
+            try {
+                startAssistantForeground()
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "Early startForeground failed", e)
+            }
         }
     }
 
@@ -353,7 +365,9 @@ class AssistantService : Service() {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
-        startActivity(overlayIntent)
+        if (!BalLaunch.launch(this, overlayIntent, 4101)) {
+            Log.e(TAG, "overlay launch failed on every path")
+        }
     }
 
     private fun createNotification(status: String): Notification {
@@ -394,21 +408,6 @@ class AssistantService : Service() {
                 this, NOTIFICATION_ID, notification, FgsTypes.assistant(micGranted = false)
             )
         }
-    }
-
-    /**
-     * Stop the persistent foreground shield if permitted by [AssistantFgsPolicy].
-     * Non-shutdown stops are gated so the shield remains while an endpoint is configured
-     * or role activation has occurred.
-     */
-    fun stopAssistantForeground(isFullShutdown: Boolean = false) {
-        val app = application as? AssistantApplication
-        val endpointConfigured = app?.secureKeyManager?.getHearthEndpoint() != null
-        if (!isFullShutdown && AssistantFgsPolicy.shouldKeepShieldUp(roleActivated, endpointConfigured)) {
-            Log.i(TAG, "Persistent FGS shield maintained; ignoring non-shutdown stop")
-            return
-        }
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
     }
 
     private val voiceCaptureGate = VoiceCaptureGate(log = { Log.w(TAG, it) })

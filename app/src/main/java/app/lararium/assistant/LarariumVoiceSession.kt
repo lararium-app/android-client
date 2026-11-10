@@ -7,6 +7,7 @@ import android.service.voice.VoiceInteractionSession
 import android.util.Log
 import app.lararium.service.AssistantService
 import app.lararium.ui.CompactAssistantActivity
+import app.lararium.util.BalLaunch
 
 /**
  * Thin session: a system summon routes into the same entry the QS tile uses
@@ -17,6 +18,7 @@ class LarariumVoiceSession(context: Context) : VoiceInteractionSession(context) 
 
     companion object {
         private const val TAG = "LarariumVoiceSession"
+        internal const val REQ_SUMMON_OVERLAY = 4100
     }
 
     override fun onShow(args: Bundle?, showFlags: Int) {
@@ -42,10 +44,12 @@ class LarariumVoiceSession(context: Context) : VoiceInteractionSession(context) 
                 addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
             }
             try {
-                context.startActivity(overlayIntent)
+                if (!BalLaunch.launch(context, overlayIntent, REQ_SUMMON_OVERLAY)) {
+                    Log.w(TAG, "BAL-safe launch failed, trying startVoiceActivity")
+                    startVoiceActivity(overlayIntent)
+                }
             } catch (e: Exception) {
-                Log.w(TAG, "context.startActivity failed, trying startVoiceActivity", e)
-                startVoiceActivity(overlayIntent)
+                Log.e(TAG, "both overlay launch paths failed", e)
             }
         } catch (error: RuntimeException) {
             // Never let a system-assistant callback crash the process; the
