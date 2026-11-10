@@ -18,6 +18,7 @@ import android.Manifest
 import android.content.pm.PackageManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
+import android.os.Build
 import androidx.core.content.ContextCompat
 import app.lararium.AssistantApplication
 import app.lararium.MainActivity
@@ -45,6 +46,7 @@ import app.lararium.security.SecureKeyManager
 import app.lararium.storage.ChatHistoryManager
 import app.lararium.tts.TTSManager
 import app.lararium.ui.CompactAssistantActivity
+import app.lararium.util.BalLaunch
 import app.lararium.ui.DrawerLogic
 import app.lararium.ui.FailedSend
 import app.lararium.ui.SettingsManager
@@ -122,6 +124,7 @@ class AssistantService : Service() {
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private var probeJob: Job? = null
     private var endpointPrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+    private var roleActivated: Boolean = false
     
     // Currently loaded chat ID (null = new chat)
     private var _currentChatId: String? = null
@@ -255,11 +258,28 @@ class AssistantService : Service() {
         }
         (application as? AssistantApplication)?.secureKeyManager
             ?.addEndpointChangeListener(endpointPrefListener!!)
+
+        // Persistent shield only where the user opted in by function: assistant
+        // role held or a hearth endpoint configured. Fresh installs stay silent.
+        val endpointConfigured = (application as? AssistantApplication)?.secureKeyManager
+            ?.getHearthEndpoint() != null
+        val roleHeld = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && runCatching {
+            (getSystemService(Context.ROLE_SERVICE) as? android.app.role.RoleManager)
+                ?.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) == true
+        }.getOrDefault(false)
+        if (AssistantFgsPolicy.shouldKeepShieldUp(roleHeld, endpointConfigured)) {
+            try {
+                startAssistantForeground()
+            } catch (e: RuntimeException) {
+                Log.w(TAG, "Early startForeground failed", e)
+            }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_ACTIVATE -> {
+                roleActivated = true
                 startAssistantForeground()
                 // Clear session on each activation for fresh start
                 clearSession()
@@ -345,7 +365,9 @@ class AssistantService : Service() {
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
         }
-        startActivity(overlayIntent)
+        if (!BalLaunch.launch(this, overlayIntent, 4101)) {
+            Log.e(TAG, "overlay launch failed on every path")
+        }
     }
 
     private fun createNotification(status: String): Notification {
