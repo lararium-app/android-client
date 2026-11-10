@@ -319,6 +319,10 @@ class AssistantService : Service() {
 
         val restartIntent = Intent(this, AssistantService::class.java).apply {
             action = ACTION_ACTIVATE
+            // Silent resurrection: process + notification only. Launching the
+            // overlay here would pop UI over whatever the user is doing right
+            // after they deliberately dismissed the app.
+            putExtra(EXTRA_LAUNCH_OVERLAY, false)
         }
         val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         val pi = PendingIntent.getForegroundService(this, 0, restartIntent, flags)
