@@ -1,7 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Voice interaction service configuration for ROLE_ASSISTANT (T4 stage 1) -->
+<!-- Voice interaction service configuration for ROLE_ASSISTANT (T4 stage 1).
+     Contract per AOSP VoiceInteractionServiceInfo: root tag
+     voice-interaction-service with REQUIRED sessionService and
+     recognitionService attributes. -->
 <voice-interaction-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:sessionService="app.lararium.assistant.LarariumVoiceSessionService"
+    android:recognitionService="app.lararium.assistant.LarariumRecognitionService"
     android:settingsActivity="app.lararium.MainActivity"
     android:supportsAssist="true"
     android:supportsLaunchVoiceAssistFromKeyguard="true"
