@@ -9,6 +9,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Base64
 import android.util.Log
 import android.view.WindowManager
@@ -42,6 +43,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
@@ -69,6 +75,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.text.style.TextOverflow
 
+internal object ScrimDismissPolicy {
+    const val DEBOUNCE_MS = 300L
+    fun shouldDismiss(shownAtMs: Long, nowMs: Long): Boolean = nowMs - shownAtMs >= DEBOUNCE_MS
+}
+
 /** One offered notification line; [checked] defaults to true and is user-controlled. */
 class ContextEntry(val summary: NotificationSummary) {
     var checked by mutableStateOf(true)
@@ -81,6 +92,7 @@ class CompactAssistantActivity : FragmentActivity() {
     private val serviceState = mutableStateOf<AssistantService?>(null)
     private val contextEntries = mutableStateListOf<ContextEntry>()
     private val sharedText = mutableStateOf("")
+    private var overlayShownAtMs = 0L
 
     private fun loadContext() {
         runCatching {
@@ -157,6 +169,7 @@ class CompactAssistantActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        overlayShownAtMs = SystemClock.elapsedRealtime()
         applyFlagSecure()
     }
 
@@ -228,7 +241,11 @@ class CompactAssistantActivity : FragmentActivity() {
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                    onClick = { finish() }
+                                    onClick = {
+                                        if (ScrimDismissPolicy.shouldDismiss(overlayShownAtMs, SystemClock.elapsedRealtime())) {
+                                            finish()
+                                        }
+                                    }
                                 )
                         ) {
                             CompactAssistantView(
@@ -283,6 +300,7 @@ class CompactAssistantActivity : FragmentActivity() {
 
     companion object {
         private const val TAG = "CompactAssistantActivity"
+        private const val SCRIM_DISMISS_DEBOUNCE_MS = ScrimDismissPolicy.DEBOUNCE_MS
     }
 }
 
@@ -466,12 +484,28 @@ fun CompactAssistantView(
                     }
 
                     Row {
-                        IconButton(onClick = onExpand) {
-                            Icon(Icons.Default.OpenInFull, "Expand",
+                        IconButton(
+                            onClick = onExpand,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clearAndSetSemantics {
+                                    contentDescription = "Expand"
+                                    role = Role.Button
+                                }
+                        ) {
+                            Icon(Icons.Default.OpenInFull, contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        IconButton(onClick = onDismiss) {
-                            Icon(Icons.Default.Close, "Close",
+                        IconButton(
+                            onClick = onDismiss,
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clearAndSetSemantics {
+                                    contentDescription = "Close"
+                                    role = Role.Button
+                                }
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -563,11 +597,19 @@ fun CompactAssistantView(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f))
-                        IconButton(onClick = {
-                            selectedImageBitmap = null
-                            selectedImageBase64 = null
-                        }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Close, "Remove", modifier = Modifier.size(16.dp))
+                        IconButton(
+                            onClick = {
+                                selectedImageBitmap = null
+                                selectedImageBase64 = null
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clearAndSetSemantics {
+                                    contentDescription = "Remove"
+                                    role = Role.Button
+                                }
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -603,10 +645,18 @@ fun CompactAssistantView(
                         Text(summary, style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary,
                             modifier = Modifier.weight(1f))
-                        IconButton(onClick = {
-                            pdfText = null; pdfSummary = null; pdfError = null
-                        }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Close, "Remove", modifier = Modifier.size(16.dp))
+                        IconButton(
+                            onClick = {
+                                pdfText = null; pdfSummary = null; pdfError = null
+                            },
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clearAndSetSemantics {
+                                    contentDescription = "Remove"
+                                    role = Role.Button
+                                }
+                        ) {
+                            Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
@@ -621,9 +671,14 @@ fun CompactAssistantView(
                     IconButton(
                         onClick = { pdfPickerLauncher.launch("application/pdf") },
                         enabled = !isGenerating,
-                        modifier = Modifier.size(40.dp)
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clearAndSetSemantics {
+                                contentDescription = "Attach PDF"
+                                role = Role.Button
+                            }
                     ) {
-                        Icon(Icons.Default.PictureAsPdf, "Attach PDF",
+                        Icon(Icons.Default.PictureAsPdf, contentDescription = null,
                             tint = if (pdfText != null) MaterialTheme.colorScheme.primary
                             else MaterialTheme.colorScheme.onSurfaceVariant)
                     }
@@ -644,32 +699,46 @@ fun CompactAssistantView(
                         )
                     )
 
-                    FilledIconButton(
-                        onClick = {
-                            when {
-                                isGenerating -> service.stopResponse()
-                                state is AssistantState.Listening -> service.stopVoiceCapture()
-                                else -> service.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
-                            }
-                        },
-                        modifier = Modifier.size(48.dp),
-                        colors = IconButtonDefaults.filledIconButtonColors(
-                            containerColor = if (isGenerating || state is AssistantState.Listening)
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clickable(
+                                role = Role.Button,
+                                onClick = {
+                                    when {
+                                        isGenerating -> service.stopResponse()
+                                        state is AssistantState.Listening -> service.stopVoiceCapture()
+                                        else -> service.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
+                                    }
+                                }
+                            )
+                            .clearAndSetSemantics {
+                                contentDescription = if (isGenerating) "Stop response" else "Voice"
+                                role = Role.Button
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(48.dp),
+                            shape = CircleShape,
+                            color = if (isGenerating || state is AssistantState.Listening)
                                 MaterialTheme.colorScheme.error
                             else MaterialTheme.colorScheme.primary
-                        )
-                    ) {
-                        Icon(
-                            when {
-                                isGenerating || state is AssistantState.Listening -> Icons.Default.Stop
-                                else -> Icons.Default.Mic
-                            },
-                            if (isGenerating) "Stop response" else "Voice",
-                            tint = if (isGenerating || state is AssistantState.Listening)
-                                MaterialTheme.colorScheme.onError
-                            else MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(22.dp)
-                        )
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    when {
+                                        isGenerating || state is AssistantState.Listening -> Icons.Default.Stop
+                                        else -> Icons.Default.Mic
+                                    },
+                                    contentDescription = null,
+                                    tint = if (isGenerating || state is AssistantState.Listening)
+                                        MaterialTheme.colorScheme.onError
+                                    else MaterialTheme.colorScheme.onPrimary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+                        }
                     }
 
                     AnimatedVisibility(visible = !isGenerating && (textInput.isNotEmpty() || selectedImageBase64 != null || pdfText != null)) {
@@ -696,9 +765,14 @@ fun CompactAssistantView(
                                 pdfText = null
                                 pdfSummary = null
                             },
-                            modifier = Modifier.size(48.dp)
+                            modifier = Modifier
+                                .size(48.dp)
+                                .clearAndSetSemantics {
+                                    contentDescription = "Send"
+                                    role = Role.Button
+                                }
                         ) {
-                            Icon(Icons.AutoMirrored.Filled.Send, "Send",
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null,
                                 tint = MaterialTheme.colorScheme.onPrimary)
                         }
                     }
