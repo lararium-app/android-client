@@ -175,6 +175,7 @@ class CompactAssistantActivity : FragmentActivity() {
         super.onResume()
         overlayShownAtMs = SystemClock.elapsedRealtime()
         applyFlagSecure()
+        loadContext()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
