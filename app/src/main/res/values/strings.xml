@@ -134,4 +134,5 @@
     <!-- Settings: Device Rails (Lane G) -->
     <string name="settings_devices_title">Device Rails</string>
     <string name="settings_devices_desc">On-device capabilities and remote action controls</string>
+    <string name="process_text_label">Ask Lararium</string>
 </resources>

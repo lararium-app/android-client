@@ -137,6 +137,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Text-selection toolbar intake ("Ask Lararium"); no UI, forwards to overlay -->
+        <activity
+            android:name=".ui.ShareTextGatewayActivity"
+            android:exported="true"
+            android:label="@string/process_text_label"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
         <!-- Foreground service for assistant processing -->
         <service
             android:name=".service.AssistantService"
