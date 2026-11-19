@@ -179,7 +179,7 @@ class TurnRetryPolicy(
     /**
      * Evaluates the watchdog after [elapsedMs] from send start.
      * If [elapsedMs] >= [watchdogTimeoutMs] with no first token and no commit,
-     * treats the attempt as failed (retry once, then show failure).
+     * fails the attempt without resending (the user may retry in the same session).
      */
     fun onWatchdogTick(
         elapsedMs: Long,
@@ -200,7 +200,10 @@ class TurnRetryPolicy(
             return Action.Complete(alreadyCommitted)
         }
 
-        return onFailure("Turn watchdog timed out after ${watchdogTimeoutMs}ms")
+        // Never auto-resend after a watchdog fire: the slow reply may still land in this
+        // session. Fail visibly; the user's retry continues in the same session.
+        phase = Phase.FAILED
+        return Action.Fail("Turn watchdog timed out after ${watchdogTimeoutMs}ms")
     }
 
     /**

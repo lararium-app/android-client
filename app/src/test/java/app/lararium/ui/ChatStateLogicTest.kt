@@ -2,6 +2,7 @@ package app.lararium.ui
 
 import app.lararium.llm.ChatSession
 import app.lararium.service.AssistantState
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -67,5 +68,14 @@ class ChatStateLogicTest {
         assertFalse(ChatStateLogic.shouldRehydrate(emptyList(), AssistantState.Processing, ""))
         assertFalse(ChatStateLogic.shouldRehydrate(emptyList(), AssistantState.Searching, ""))
         assertFalse(ChatStateLogic.shouldRehydrate(emptyList(), AssistantState.Responding, "partial"))
+    }
+
+    @Test
+    fun finishedReplyIsHiddenFromTranscriptButKeptWhileInFlight() {
+        assertEquals("", ChatStateLogic.streamingForTranscript(AssistantState.Complete, "done"))
+        assertEquals("", ChatStateLogic.streamingForTranscript(AssistantState.Speaking, "done"))
+        // Idle with a retained reply (e.g. after a hard stop) must not re-open a turn in the transcript.
+        assertEquals("", ChatStateLogic.streamingForTranscript(AssistantState.Idle, "done"))
+        assertEquals("part", ChatStateLogic.streamingForTranscript(AssistantState.Responding, "part"))
     }
 }

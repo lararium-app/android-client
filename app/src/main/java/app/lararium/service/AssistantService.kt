@@ -901,6 +901,8 @@ class AssistantService : Service() {
 
             val stepAction: TurnRetryPolicy.Action = when {
                 watchdogFired -> {
+                    // Stop the stalled request server-side; a retry reuses this session.
+                    hearthChatClient.cancel()
                     val rawEvents = hearthChatClient.replayStoredSession()
                     policy.onWatchdogTick(policy.watchdogTimeoutMs, rawEvents, query)
                 }
@@ -940,7 +942,7 @@ class AssistantService : Service() {
                         _failedSend.value = sendGate.fail(query)
                         _response.value = ""
                         val err = resolved.reason ?: lastErrorMsg
-                        _assistantState.value = if (err != null && !isStaleEpoch && attemptError != null) {
+                        _assistantState.value = if (err != null && !isStaleEpoch && (attemptError != null || watchdogFired)) {
                             AssistantState.Error(err)
                         } else {
                             AssistantState.Idle
@@ -1010,7 +1012,6 @@ class AssistantService : Service() {
 
         withContext(Dispatchers.Main) {
             _chatMessages.value = hearthChatClient.chatSession.getAllMessages()
-            _response.value = ""
         }
 
         if (settingsManager.ttsEnabled) {
