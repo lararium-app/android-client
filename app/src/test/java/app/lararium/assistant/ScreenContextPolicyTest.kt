@@ -61,4 +61,22 @@ class ScreenContextPolicyTest {
         assertEquals(2000, ScreenContextPolicy.sanitizeShared("a".repeat(5000)).length)
         assertEquals("ab", ScreenContextPolicy.sanitizeShared("abcdef", 2))
     }
+
+    @Test fun chipLabelFallsBackToLastSegment() {
+        assertEquals("groupon", ScreenContextPolicy.chipLabel("com.groupon", null))
+        assertEquals("groupon", ScreenContextPolicy.chipLabel("com.groupon", " "))
+        assertEquals("Groupon", ScreenContextPolicy.chipLabel("com.groupon", "Groupon"))
+    }
+
+    @Test fun chipRowsDedupesPackageAndTitle() {
+        val rows = listOf(item("1", 1), item("2", 2), item("3", 1, title = "Other"), item("4", 1, "pkg.b"))
+        val r = ScreenContextPolicy.chipRows(rows) { ScreenContextPolicy.chipLabel(it, null) }
+        assertEquals(listOf("1", "3", "4"), r.map { it.id })
+    }
+
+    @Test fun chipRowsDropsBlankTitleAndBlankLabel() {
+        val rows = listOf(item("1", 1, pkg = "", title = ""), item("2", 1, title = ""), item("3", 1, pkg = "", title = "T"))
+        val r = ScreenContextPolicy.chipRows(rows) { ScreenContextPolicy.chipLabel(it, null) }
+        assertEquals(listOf("2", "3"), r.map { it.id })
+    }
 }
