@@ -105,6 +105,17 @@ class CompactAssistantActivity : FragmentActivity() {
                 ScreenContextProvider.appLabel(this, it)
             }.forEach { contextEntries.add(ContextEntry(it)) }
         }
+        syncContextToService()
+    }
+
+    /**
+     * Publish the live chip list to the bound service so a voice send can
+     * attach the same context as a typed send (issue #132). Entries are
+     * shared by reference, so checks made after this call are still seen at
+     * capture end; membership only changes with these sync points.
+     */
+    private fun syncContextToService() {
+        assistantService?.updateContextEntries(contextEntries.toList())
     }
 
     private fun excludePackage(pkg: String) {
@@ -113,6 +124,7 @@ class CompactAssistantActivity : FragmentActivity() {
             manager.screenContextExcludedPackages = manager.screenContextExcludedPackages + pkg
             contextEntries.removeAll { it.summary.packageName == pkg }
         }
+        syncContextToService()
     }
 
     private fun readSharedText(source: Intent?): String = runCatching {
@@ -134,6 +146,9 @@ class CompactAssistantActivity : FragmentActivity() {
             assistantService = binder.getService()
             serviceState.value = assistantService
             bound = true
+            // The binding may land after onCreate/onResume published the chips
+            // (issue #132): republish so the very first voice turn has them.
+            syncContextToService()
             if (AppLock.policy.canReachHearth()) {
                 assistantService?.retryConnectionNow()
             }
@@ -314,6 +329,10 @@ class CompactAssistantActivity : FragmentActivity() {
     override fun onStop() {
         super.onStop()
         if (bound) {
+            // Chips live with the overlay: drop the service copy so voice
+            // lanes without the overlay (e.g. the app shortcut) can never
+            // attach stale notification context (issue #132).
+            assistantService?.updateContextEntries(emptyList())
             unbindService(serviceConnection)
             bound = false
         }
@@ -809,6 +828,9 @@ fun CompactAssistantView(
                                     contextEntries.filter { it.checked }.map { it.summary }, queryText)
                                 service.processTextQuery(outgoing, currentImageBase64)
                                 contextEntries.clear()
+                                // Chips are consumed with this send; keep the
+                                // service copy in lockstep (issue #132).
+                                service.updateContextEntries(contextEntries.toList())
                                 textInput = ""
                                 selectedImageBitmap = null
                                 selectedImageBase64 = null
