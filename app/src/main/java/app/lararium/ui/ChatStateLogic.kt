@@ -14,6 +14,9 @@ object ChatStateLogic {
     /**
      * Determines whether an in-flight streaming turn is currently active.
      */
+    fun streamingForTranscript(state: AssistantState, response: String): String =
+        if (state is AssistantState.Complete || state is AssistantState.Speaking) "" else response
+
     fun isInFlight(state: AssistantState, streamingResponse: String): Boolean {
         val isTurnState = state is AssistantState.Processing ||
                 state is AssistantState.Searching ||
