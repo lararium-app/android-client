@@ -16,6 +16,17 @@ object DrawerLogic {
         object Unpaired : ConnectionState()
     }
 
+    /**
+     * Hearth display name from a GET /v1/health payload (daemon lararium#275).
+     * Returns null when the `name` field is missing, JSON-null, or blank, so
+     * callers keep their existing name and older daemons never blank the
+     * header (issue #130).
+     */
+    fun hearthNameFromHealth(json: JSONObject): String? {
+        if (json.isNull("name")) return null
+        return json.optString("name", "").trim().takeIf { it.isNotEmpty() }
+    }
+
     data class SessionSummary(
         val id: String,
         val title: String,
