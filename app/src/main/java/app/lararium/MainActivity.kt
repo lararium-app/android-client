@@ -185,11 +185,12 @@ class MainActivity : FragmentActivity() {
                 val app = applicationContext as AssistantApplication
                 try {
                     val client = LarariumClient(ep)
-                    client.health() // verify reachability
-                    app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                    val healthJson = client.health() // verify reachability; lararium#275 carries the hearth name
+                    val hearthName = DrawerLogic.hearthNameFromHealth(healthJson) ?: ep.name
+                    app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, hearthName)
                     HearthWatchScheduler.ensurePeriodic(app)
                     HearthWatchScheduler.refreshNow(app)
-                    pairingStatus.value = "Paired with ${ep.name} ✓"
+                    pairingStatus.value = "Paired with $hearthName ✓"
                     try {
                         DevicePairingController.autoRegister(app)
                     } catch (e: Exception) {
@@ -418,6 +419,28 @@ class MainActivity : FragmentActivity() {
                     snackbarHostState.showSnackbar(msg)
                     pairingStatus.value = null
                     hearthEndpoint = app.secureKeyManager.getHearthEndpoint()
+                }
+
+                // Identify the hearth from the daemon itself, not the label pairing
+                // happened to leave (issue #130 / lararium#275). Refetches when the
+                // paired base URL changes; a health name equal to the stored name is
+                // a no-op, so refreshes never loop. Older daemons without `name`
+                // keep the stored header (hearthNameFromHealth returns null).
+                LaunchedEffect(hearthEndpoint?.first) {
+                    val paired = hearthEndpoint
+                    if (paired == null || paired.first.isBlank()) return@LaunchedEffect
+                    try {
+                        val health = LarariumClient(
+                            Endpoint(paired.first, paired.second, paired.third)
+                        ).health()
+                        val healthName = DrawerLogic.hearthNameFromHealth(health)
+                        if (healthName != null && healthName != paired.third.trim()) {
+                            app.secureKeyManager.setHearthEndpoint(paired.first, paired.second, healthName)
+                            hearthEndpoint = app.secureKeyManager.getHearthEndpoint()
+                        }
+                    } catch (e: Exception) {
+                        android.util.Log.w("MainActivity", "Health name refresh deferred: ${e.message}")
+                    }
                 }
 
                 BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
