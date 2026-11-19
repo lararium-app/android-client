@@ -74,6 +74,8 @@ class ChatStateLogicTest {
     fun finishedReplyIsHiddenFromTranscriptButKeptWhileInFlight() {
         assertEquals("", ChatStateLogic.streamingForTranscript(AssistantState.Complete, "done"))
         assertEquals("", ChatStateLogic.streamingForTranscript(AssistantState.Speaking, "done"))
+        // Idle with a retained reply (e.g. after a hard stop) must not re-open a turn in the transcript.
+        assertEquals("", ChatStateLogic.streamingForTranscript(AssistantState.Idle, "done"))
         assertEquals("part", ChatStateLogic.streamingForTranscript(AssistantState.Responding, "part"))
     }
 }
