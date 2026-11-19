@@ -50,6 +50,7 @@
     <string name="empty_chat_hearth_warm">The hearth is warm. Say something.</string>
     <string name="no_conversations_yet">No conversations yet</string>
     <string name="chat_composer_placeholder">Ask anything…</string>
+    <string name="chat_message_copied">Copied</string>
     <string name="chat_composer_generating">Generating…</string>
     <string name="chat_composer_send">Send message</string>
     <string name="chat_composer_voice">Voice input</string>
