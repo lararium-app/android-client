@@ -134,20 +134,10 @@ class TurnRetryPolicyTest {
         // Before 45 s -> NoOp
         assertEquals(TurnRetryPolicy.Action.NoOp, policy.onWatchdogTick(44_999L, emptyEvents, "ping"))
 
-        // At 45 s with 0 tokens and no commit -> triggers single retry check
-        val firstTimeout = policy.onWatchdogTick(45_000L, emptyEvents, "ping")
-        assertEquals(TurnRetryPolicy.Action.CheckEventLogBeforeRetry(1_500L), firstTimeout)
-        assertEquals(1, policy.retriesUsed)
-
-        // Event log has no message -> Resend
-        val retryAction = policy.onEventLogFetched(emptyEvents, "ping")
-        assertEquals(TurnRetryPolicy.Action.Resend, retryAction)
-
-        // Retry send starts; 45 s elapses again with 0 tokens and no commit -> Fail
-        policy.onSendStart()
-        val secondTimeout = policy.onWatchdogTick(45_000L, emptyEvents, "ping")
-        assertTrue(secondTimeout is TurnRetryPolicy.Action.Fail)
-        assertEquals(1, policy.retriesUsed)
+        // At 45 s with 0 tokens and no commit -> Fail immediately, never a silent resend
+        val timeout = policy.onWatchdogTick(45_000L, emptyEvents, "ping")
+        assertTrue(timeout is TurnRetryPolicy.Action.Fail)
+        assertEquals(0, policy.retriesUsed)
         assertEquals(TurnRetryPolicy.Phase.FAILED, policy.phase)
     }
 }

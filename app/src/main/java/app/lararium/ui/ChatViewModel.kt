@@ -17,6 +17,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 
 /**
@@ -92,7 +93,7 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
         // Immediately sync current service values so state is instantly available upon attach
         _chatMessages.value = svc.chatMessages.value
         _assistantState.value = svc.assistantState.value
-        _streamingResponse.value = svc.response.value
+        _streamingResponse.value = ChatStateLogic.streamingForTranscript(svc.assistantState.value, svc.response.value)
         _connectionState.value = svc.connectionState.value
         _failedSend.value = svc.failedSend.value
 
@@ -108,9 +109,11 @@ class ChatViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             launch {
-                svc.response.collect { resp ->
-                    _streamingResponse.value = resp
-                }
+                // The overlay renders the service response slot until the next turn; the
+                // full app already shows a finished reply from its transcript.
+                svc.response.combine(svc.assistantState) { resp, st ->
+                    ChatStateLogic.streamingForTranscript(st, resp)
+                }.collect { _streamingResponse.value = it }
             }
             launch {
                 svc.connectionState.collect { state ->
