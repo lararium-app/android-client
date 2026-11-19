@@ -84,9 +84,9 @@ internal object ScrimDismissPolicy {
     fun shouldDismiss(shownAtMs: Long, nowMs: Long): Boolean = nowMs - shownAtMs >= DEBOUNCE_MS
 }
 
-/** One offered notification line; [checked] defaults to true and is user-controlled. */
+/** One offered notification line; [checked] defaults to false and is user-controlled. */
 class ContextEntry(val summary: NotificationSummary) {
-    var checked by mutableStateOf(true)
+    var checked by mutableStateOf(false)
 }
 
 class CompactAssistantActivity : FragmentActivity() {
@@ -101,7 +101,9 @@ class CompactAssistantActivity : FragmentActivity() {
     private fun loadContext() {
         runCatching {
             contextEntries.clear()
-            ScreenContextProvider.snapshot(SettingsManager(this)).forEach { contextEntries.add(ContextEntry(it)) }
+            ScreenContextPolicy.chipRows(ScreenContextProvider.snapshot(SettingsManager(this))) {
+                ScreenContextProvider.appLabel(this, it)
+            }.forEach { contextEntries.add(ContextEntry(it)) }
         }
     }
 
@@ -889,6 +891,7 @@ private fun NotificationContextSection(
     if (entries.isEmpty()) return
     var expanded by remember { mutableStateOf(true) }
     var menuFor by remember { mutableStateOf<ContextEntry?>(null) }
+    val appContext = androidx.compose.ui.platform.LocalContext.current
     Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
         Row(
             modifier = Modifier
@@ -924,7 +927,7 @@ private fun NotificationContextSection(
                     ) {
                         Checkbox(checked = entry.checked, onCheckedChange = { entry.checked = it })
                         Text(
-                            "$pkg: ${ScreenContextPolicy.displayLine(entry.summary)}",
+                            "${ScreenContextProvider.appLabel(appContext, pkg)}: ${ScreenContextPolicy.displayLine(entry.summary)}",
                             style = MaterialTheme.typography.bodySmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,

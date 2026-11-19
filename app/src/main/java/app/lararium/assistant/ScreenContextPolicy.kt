@@ -46,6 +46,19 @@ object ScreenContextPolicy {
     fun displayLine(summary: NotificationSummary): String =
         summary.title.ifBlank { summary.text }
 
+    /** Resolved app label, or the last package-name segment when the label is null/blank. */
+    fun chipLabel(packageName: String, resolvedLabel: String?): String =
+        resolvedLabel?.takeIf { it.isNotBlank() } ?: packageName.substringAfterLast('.')
+
+    /** Drops rows with blank title and blank label, and de-dupes identical (package, title) rows. */
+    fun chipRows(
+        summaries: List<NotificationSummary>,
+        labelOf: (String) -> String
+    ): List<NotificationSummary> =
+        summaries
+            .filter { it.title.isNotBlank() || labelOf(it.packageName).isNotBlank() }
+            .distinctBy { it.packageName to it.title }
+
     /** Outgoing block for the checked items; empty string when there are none. */
     fun buildContextBlock(items: List<NotificationSummary>): String {
         if (items.isEmpty()) return ""
