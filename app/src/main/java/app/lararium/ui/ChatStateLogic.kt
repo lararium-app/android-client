@@ -12,6 +12,16 @@ import app.lararium.service.AssistantState
 object ChatStateLogic {
 
     /**
+     * Masks the service response slot for the full-app transcript: a finished (or
+     * idle-with-retained-reply) turn renders only from chatMessages, never as a
+     * streaming bubble. The compact overlay reads the raw slot and is unaffected.
+     */
+    fun streamingForTranscript(state: AssistantState, response: String): String =
+        if (state is AssistantState.Complete || state is AssistantState.Speaking ||
+            state is AssistantState.Idle
+        ) "" else response
+
+    /**
      * Determines whether an in-flight streaming turn is currently active.
      */
     fun isInFlight(state: AssistantState, streamingResponse: String): Boolean {
