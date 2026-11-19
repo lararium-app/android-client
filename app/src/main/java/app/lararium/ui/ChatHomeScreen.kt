@@ -3,6 +3,7 @@ package app.lararium.ui
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,7 +24,9 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -314,6 +317,15 @@ fun ChatHomeScreen(
                 .fillMaxSize()
                 .padding(innerPadding)
         ) {
+            val copyContext = LocalContext.current
+            val copiedLabel = stringResource(R.string.chat_message_copied)
+            val haptic = LocalHapticFeedback.current
+            val copyMessage: (String) -> Unit = { text ->
+                val cm = copyContext.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                cm?.setPrimaryClip(android.content.ClipData.newPlainText("Message", text))
+                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                android.widget.Toast.makeText(copyContext, copiedLabel, android.widget.Toast.LENGTH_SHORT).show()
+            }
             if (messages.isEmpty() && streamingResponse.isEmpty() && !isTurnOpen && failedSend == null) {
                 TastefulEmptyChatState(modifier = Modifier.fillMaxSize())
             } else {
@@ -357,7 +369,12 @@ fun ChatHomeScreen(
                                     Surface(
                                         shape = RoundedCornerShape(20.dp),
                                         color = MaterialTheme.colorScheme.primaryContainer,
-                                        modifier = Modifier.widthIn(max = 320.dp)
+                                        modifier = Modifier
+                                            .widthIn(max = 320.dp)
+                                            .combinedClickable(
+                                                onClick = {},
+                                                onLongClick = { copyMessage(message.content) }
+                                            )
                                     ) {
                                         Text(
                                             text = message.content,
@@ -375,14 +392,18 @@ fun ChatHomeScreen(
                                     Surface(
                                         shape = RoundedCornerShape(20.dp),
                                         color = MaterialTheme.colorScheme.surfaceVariant,
-                                        modifier = Modifier.widthIn(max = 320.dp)
-                                    ) {
-                                        SelectionContainer {
-                                            MarkdownText(
-                                                markdown = message.content,
-                                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                        modifier = Modifier
+                                            .widthIn(max = 320.dp)
+                                            .combinedClickable(
+                                                onClick = {},
+                                                onLongClick = { copyMessage(message.content) }
                                             )
-                                        }
+                                    ) {
+                                        // No SelectionContainer: its long-press would swallow the copy gesture.
+                                        MarkdownText(
+                                            markdown = message.content,
+                                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
+                                        )
                                     }
                                 }
                             }
