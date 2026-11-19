@@ -1,6 +1,7 @@
 package app.lararium.ui
 
 import androidx.compose.animation.core.*
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -49,7 +50,7 @@ import app.lararium.service.VoiceCaptureOrigin
  * Full-height chat screen occupying the primary content area under a minimal top bar.
  * Both user (primaryContainer) and assistant (surfaceVariant) messages render inside symmetric bubbles with timestamp captions.
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ChatHomeScreen(
     assistantService: AssistantService?,
