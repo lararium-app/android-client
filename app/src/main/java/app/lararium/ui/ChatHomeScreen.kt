@@ -38,6 +38,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.lararium.R
+import app.lararium.assistant.ScreenContextPolicy
+import app.lararium.assistant.ScreenContextProvider
 import app.lararium.hearth.ConnectionState
 import app.lararium.hearth.connectionDotColorArgb
 import app.lararium.hearth.HearthChatClient
@@ -64,8 +66,19 @@ fun ChatHomeScreen(
     onRepair: (() -> Unit)? = null,
     showMenuButton: Boolean = true
 ) {
+    val context = LocalContext.current
+    val settingsManager = remember { SettingsManager(context) }
     var textInput by remember { mutableStateOf("") }
+    val contextEntries = remember { mutableStateListOf<ContextEntry>() }
     val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) {
+        runCatching {
+            val snap = ScreenContextProvider.snapshot(settingsManager)
+            ScreenContextPolicy.chipRows(snap) { ScreenContextProvider.appLabel(context, it) }
+                .forEach { contextEntries.add(ContextEntry(it)) }
+        }
+    }
 
     val messages = (viewModel?.chatMessages ?: assistantService?.chatMessages)?.collectAsStateWithLifecycle()?.value ?: emptyList()
     val state = (viewModel?.assistantState ?: assistantService?.assistantState)?.collectAsStateWithLifecycle()?.value ?: AssistantState.Idle
@@ -212,101 +225,116 @@ fun ChatHomeScreen(
             )
         },
         bottomBar = {
-            Surface(
-                shape = RoundedCornerShape(28.dp),
-                tonalElevation = 3.dp,
-                shadowElevation = 4.dp,
-                color = MaterialTheme.colorScheme.surfaceContainer,
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
                     .windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars))
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                NotificationContextChips(contextEntries) { pkg ->
+                    runCatching {
+                        settingsManager.screenContextExcludedPackages =
+                            settingsManager.screenContextExcludedPackages + pkg
+                        contextEntries.removeAll { it.summary.packageName == pkg }
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(28.dp),
+                    tonalElevation = 3.dp,
+                    shadowElevation = 4.dp,
+                    color = MaterialTheme.colorScheme.surfaceContainer,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    BasicTextField(
-                        value = textInput,
-                        onValueChange = { textInput = it },
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        textStyle = MaterialTheme.typography.bodyLarge.copy(
-                            color = MaterialTheme.colorScheme.onSurface
-                        ),
-                        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-                        maxLines = 4,
-                        decorationBox = { innerTextField ->
-                            if (textInput.isEmpty()) {
-                                Text(
-                                    text = stringResource(
-                                        if (isGenerating) R.string.chat_composer_generating
-                                        else R.string.chat_composer_placeholder
-                                    ),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        BasicTextField(
+                            value = textInput,
+                            onValueChange = { textInput = it },
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(
+                                color = MaterialTheme.colorScheme.onSurface
+                            ),
+                            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                            maxLines = 4,
+                            decorationBox = { innerTextField ->
+                                if (textInput.isEmpty()) {
+                                    Text(
+                                        text = stringResource(
+                                            if (isGenerating) R.string.chat_composer_generating
+                                            else R.string.chat_composer_placeholder
+                                        ),
+                                        style = MaterialTheme.typography.bodyLarge,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                innerTextField()
+                            }
+                        )
+
+                        if (isGenerating) {
+                            FilledIconButton(
+                                onClick = { viewModel?.stopResponse() ?: assistantService?.stopResponse() },
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = MaterialTheme.colorScheme.onError
+                                ),
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.Default.Stop,
+                                    contentDescription = stringResource(R.string.chat_composer_stop),
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
-                            innerTextField()
-                        }
-                    )
-
-                    if (isGenerating) {
-                        FilledIconButton(
-                            onClick = { viewModel?.stopResponse() ?: assistantService?.stopResponse() },
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.onError
-                            ),
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Stop,
-                                contentDescription = stringResource(R.string.chat_composer_stop),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-                    } else if (textInput.isNotBlank()) {
-                        FilledIconButton(
-                            onClick = {
-                                val query = textInput.trim()
-                                if (query.isNotEmpty()) {
-                                    textInput = ""
-                                    viewModel?.processTextQuery(query) ?: assistantService?.processTextQuery(query)
-                                }
-                            },
-                            colors = IconButtonDefaults.filledIconButtonColors(
-                                containerColor = MaterialTheme.colorScheme.primary,
-                                contentColor = MaterialTheme.colorScheme.onPrimary
-                            ),
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                Icons.AutoMirrored.Filled.Send,
-                                contentDescription = stringResource(R.string.chat_composer_send),
-                                modifier = Modifier.size(18.dp)
-                            )
-                        }
-                    } else {
-                        IconButton(
-                            onClick = {
-                                if (state is AssistantState.Listening) {
-                                    viewModel?.stopVoiceCapture() ?: assistantService?.stopVoiceCapture()
-                                } else {
-                                    viewModel?.startVoiceCapture() ?: assistantService?.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
-                                }
-                            },
-                            modifier = Modifier.size(40.dp)
-                        ) {
-                            Icon(
-                                if (state is AssistantState.Listening) Icons.Default.Stop else Icons.Default.Mic,
-                                contentDescription = stringResource(R.string.chat_composer_voice),
-                                tint = if (state is AssistantState.Listening) MaterialTheme.colorScheme.error
-                                else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                        } else if (textInput.isNotBlank()) {
+                            FilledIconButton(
+                                onClick = {
+                                    val query = textInput.trim()
+                                    if (query.isNotEmpty()) {
+                                        textInput = ""
+                                        val checked = checkedContextSummaries(contextEntries)
+                                        val fullQuery = if (checked.isEmpty()) query
+                                            else ScreenContextPolicy.prependContext(checked, query)
+                                        viewModel?.processTextQuery(fullQuery) ?: assistantService?.processTextQuery(fullQuery)
+                                        contextEntries.clear()
+                                    }
+                                },
+                                colors = IconButtonDefaults.filledIconButtonColors(
+                                    containerColor = MaterialTheme.colorScheme.primary,
+                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                ),
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = stringResource(R.string.chat_composer_send),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        } else {
+                            IconButton(
+                                onClick = {
+                                    if (state is AssistantState.Listening) {
+                                        viewModel?.stopVoiceCapture() ?: assistantService?.stopVoiceCapture()
+                                    } else {
+                                        viewModel?.startVoiceCapture() ?: assistantService?.startVoiceCapture(VoiceCaptureOrigin.UI_TAP)
+                                    }
+                                },
+                                modifier = Modifier.size(40.dp)
+                            ) {
+                                Icon(
+                                    if (state is AssistantState.Listening) Icons.Default.Stop else Icons.Default.Mic,
+                                    contentDescription = stringResource(R.string.chat_composer_voice),
+                                    tint = if (state is AssistantState.Listening) MaterialTheme.colorScheme.error
+                                    else MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
                         }
                     }
                 }
