@@ -23,14 +23,6 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@ed408507eac070d1f99cc633dbcf757c94c7933a # gradle/actions/setup-gradle v4
-      - name: Generate gradle.properties (gitignored upstream)
-        run: |
-          cat > gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx4096m -Dfile.encoding=UTF-8
-          android.useAndroidX=true
-          android.nonTransitiveRClass=true
-          kotlin.code.style=official
-          EOF
       - name: Decode stable signing keystore
         if: ${{ env.LARARIUM_KEYSTORE_BASE64 != '' }}
         run: printf '%s' "$LARARIUM_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/lararium-release.jks"
