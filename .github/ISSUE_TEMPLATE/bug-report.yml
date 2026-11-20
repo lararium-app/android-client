@@ -1,0 +1,63 @@
+name: Bug report
+description: Something does not behave as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security problems go to **security@lararium.io**, not here.
+        Before filing: update to the latest release and confirm the issue reproduces.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      placeholder: Describe the behavior and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. …
+        2. …
+      description: A minimal, complete repro. Steps with real output beat descriptions of intent.
+    validations:
+      required: true
+  - type: input
+    id: device-model
+    attributes:
+      label: Device model
+      placeholder: e.g. Pixel 8, Samsung Galaxy S24
+    validations:
+      required: true
+  - type: input
+    id: android-version
+    attributes:
+      label: Android version
+      placeholder: e.g. Android 14 (API 34)
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: App version
+      placeholder: e.g. 0.11.19-alpha or commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: flavor
+    attributes:
+      label: Flavor
+      description: Build flavor of the app
+      options:
+        - github
+        - play
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      render: text
+      description: Scrub secrets and personal data before pasting.
