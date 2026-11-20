@@ -47,6 +47,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import app.lararium.AssistantApplication
+import app.lararium.assistant.ScreenContextProvider
 import app.lararium.auth.ScaryVerb
 import app.lararium.auth.authGate
 import app.lararium.audio.VoskTranscriber
@@ -97,6 +98,7 @@ fun SettingsScreen(
     var autoSendVoice by remember { mutableStateOf(settingsManager.autoSendVoice) }
     var autoStartVoice by remember { mutableStateOf(settingsManager.autoStartVoice) }
     var screenContextEnabled by remember { mutableStateOf(settingsManager.screenContextEnabled) }
+    var excludedContextApps by remember { mutableStateOf(settingsManager.screenContextExcludedPackages) }
     var multilingualEnabled by remember { mutableStateOf(settingsManager.multilingualEnabled) }
     var secondaryLanguage by remember { mutableStateOf(settingsManager.secondaryVoiceLanguage) }
     var allowScreenshots by remember { mutableStateOf(settingsManager.allowScreenshots) }
@@ -604,6 +606,50 @@ fun SettingsScreen(
                                 settingsManager.screenContextEnabled = it
                             }
                         )
+                        // Exclusion management: long-press hides an app's chips,
+                        // this list is the only undo path (#140).
+                        val appContext = LocalContext.current
+                        if (excludedContextApps.isEmpty()) {
+                            Text(
+                                "Long-press a context chip to hide an app. Hidden apps appear here so you can undo.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        } else {
+                            excludedContextApps
+                                .sortedBy { ScreenContextProvider.appLabel(appContext, it).lowercase() }
+                                .forEach { pkg ->
+                                    ListItem(
+                                        headlineContent = {
+                                            Text(
+                                                ScreenContextProvider.appLabel(appContext, pkg),
+                                                style = MaterialTheme.typography.bodyLarge,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        supportingContent = {
+                                            Text(
+                                                pkg,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        },
+                                        trailingContent = {
+                                            TextButton(onClick = {
+                                                settingsManager.screenContextExcludedPackages =
+                                                    settingsManager.screenContextExcludedPackages - pkg
+                                                excludedContextApps = settingsManager.screenContextExcludedPackages
+                                            }) {
+                                                Text("Unhide")
+                                            }
+                                        }
+                                    )
+                                }
+                        }
                     }
 
                     SettingsSection(title = "System Integration") {
