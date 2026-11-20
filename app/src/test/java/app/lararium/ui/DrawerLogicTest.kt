@@ -46,6 +46,43 @@ class DrawerLogicTest {
     }
 
     @Test
+    fun hearthNameFromHealth_returnsDaemonName() {
+        val health = JSONObject("""{"name":"Studio Hearth","ok":true,"version":"1.0.0"}""")
+        assertEquals("Studio Hearth", DrawerLogic.hearthNameFromHealth(health))
+    }
+
+    @Test
+    fun hearthNameFromHealth_trimsSurroundingWhitespace() {
+        val health = JSONObject("""{"name":"  Den 1  "}""")
+        assertEquals("Den 1", DrawerLogic.hearthNameFromHealth(health))
+    }
+
+    @Test
+    fun hearthNameFromHealth_nullWhenMissingBlankOrNull() {
+        assertNull(DrawerLogic.hearthNameFromHealth(JSONObject("""{"ok":true}""")))
+        assertNull(DrawerLogic.hearthNameFromHealth(JSONObject("""{"name":""}""")))
+        assertNull(DrawerLogic.hearthNameFromHealth(JSONObject("""{"name":"   "}""")))
+        assertNull(DrawerLogic.hearthNameFromHealth(JSONObject("""{"name":null}""")))
+    }
+
+    @Test
+    fun healthNameFlowsIntoTopBarTitleWhenPaired() {
+        val health = JSONObject("""{"name":"Cabin Hearth"}""")
+        val resolved = DrawerLogic.hearthNameFromHealth(health) ?: "fallback"
+        assertEquals("Cabin Hearth", DrawerLogic.formatTopBarTitle(Triple("https://hearth.local", "tok", resolved)))
+    }
+
+    @Test
+    fun olderDaemonWithoutNameKeepsStoredHeaderBehavior() {
+        // Daemon without a `name` field: helper yields null, caller keeps the
+        // stored name; a blank stored name still falls back to "Lararium".
+        val legacy = JSONObject("""{"ok":true}""")
+        val resolved = DrawerLogic.hearthNameFromHealth(legacy) ?: "Kitchen Pi"
+        assertEquals("Kitchen Pi", DrawerLogic.formatTopBarTitle(Triple("https://hearth.local", "tok", resolved)))
+        assertEquals("Lararium", DrawerLogic.formatTopBarTitle(Triple("https://hearth.local", "tok", "")))
+    }
+
+    @Test
     fun parseSessions_emptyOrMalformedReturnsEmptyList() {
         assertTrue(DrawerLogic.parseSessions(null).isEmpty())
         assertTrue(DrawerLogic.parseSessions("").isEmpty())
