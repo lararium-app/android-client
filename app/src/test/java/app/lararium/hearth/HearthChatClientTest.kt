@@ -422,11 +422,11 @@ class HearthChatClientTest {
         )
         assertEquals(
             "Could not resolve hearth host on the network.",
-            HearthChatClient.friendlyErrorMessage("dns failed for zimaboard.example.tailscale.net")
+            HearthChatClient.friendlyErrorMessage("dns failed for myhost.example.ts.net")
         )
         // Ensure no private hostnames or IPs leak
-        val mapped = HearthChatClient.friendlyErrorMessage("dns failed for zimaboard.example.tailscale.net")
-        assertFalse(mapped.contains("zimaboard"))
+        val mapped = HearthChatClient.friendlyErrorMessage("dns failed for myhost.example.ts.net")
+        assertFalse(mapped.contains("myhost"))
         assertFalse(mapped.contains("tailscale"))
     }
 

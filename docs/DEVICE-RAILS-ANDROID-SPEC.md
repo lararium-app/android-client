@@ -20,10 +20,10 @@ liveness without FCM, a pure-JVM lifecycle state machine, granular runtime permi
 degradation, double-gated action approvals, battery-respecting delta sync, and strict local verification.
 
 > [!NOTE]
-> *Wire Contract Authority:* The shipped daemon spec (`.agy-material-daemon-spec.md` D2/D4 and Go router
+> *Wire Contract Authority:* The shipped daemon spec (`lararium-app/lararium` `docs/DEVICE-RAILS-SPEC.md` D2/D4 and Go router
 > `internal/surface/devices_routes.go`) defines `rails_declared` as `[{"name","read_only","enabled"}]` with
 > tool schemas frozen server-side (`mcp__<device>__<rail>_<verb>`). Where informal endpoint summaries mention
-> client-declared tool schemas, the daemon material specification is authoritative and strictly followed.
+> client-declared tool schemas, the daemon specification is authoritative and strictly followed.
 
 ## Requirements
 
