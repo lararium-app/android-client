@@ -15,9 +15,6 @@ paths = [
   # (AssistantUnitTest.kt generic-api-key hits).
   '''app/src/test/''',
 ]
-# Pre-fork upstream history carried build artifacts from the upstream author's
-# machine; history is not rewritten.
-commits = ["30f149a0e217b924766259313cf52a22f86c059b"]
 
 [[rules]]
 id = "local-user-path"
