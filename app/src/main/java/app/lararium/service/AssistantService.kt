@@ -27,6 +27,7 @@ import app.lararium.auth.AppLock
 import app.lararium.audio.AudioCaptureManager
 import app.lararium.audio.SpeechRecognizerManager
 import app.lararium.audio.VoiceActivityDetector
+import app.lararium.assistant.ScreenContextPolicy
 import app.lararium.audio.VoskTranscriber
 import app.lararium.hearth.ChatLane
 import app.lararium.hearth.ConnectionEvent
@@ -51,6 +52,7 @@ import app.lararium.ui.DrawerLogic
 import app.lararium.ui.FailedSend
 import app.lararium.ui.SettingsManager
 import app.lararium.ui.ChatStateLogic
+import app.lararium.ui.ContextEntry
 import app.lararium.util.LinkPolicy
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -152,11 +154,24 @@ class AssistantService : Service() {
     // Multiple pending URLs for user selection
     private val _pendingUrls = MutableStateFlow<List<String>>(emptyList())
     val pendingUrls: StateFlow<List<String>> = _pendingUrls.asStateFlow()
-    
+
     fun clearPendingUrls() {
         _pendingUrls.value = emptyList()
     }
-    
+
+    /**
+     * Context chips mirrored from the compact overlay so a voice send can
+     * attach the same notification context as a typed send (issue #132).
+     * The overlay syncs this list while it is visible and clears it when it
+     * stops; voice lanes with no overlay therefore carry no chips.
+     */
+    private val _contextEntries = MutableStateFlow<List<ContextEntry>>(emptyList())
+
+    /** Called by the compact overlay to (re)publish the current chip list. */
+    fun updateContextEntries(entries: List<ContextEntry>) {
+        _contextEntries.value = entries
+    }
+
     companion object {
         private const val TAG = "AssistantService"
         private const val NOTIFICATION_ID = 1001
@@ -741,10 +756,15 @@ class AssistantService : Service() {
      */
     private suspend fun processVoiceQuery(query: String) {
         stopResponse()
+        // Snapshot chip state at capture end: entries are shared by reference
+        // with the live overlay, so boxes checked while audio was captured are
+        // included — same block format and ordering as the typed-send path.
+        val checkedSummaries = _contextEntries.value.filter { it.checked }.map { it.summary }
+        val queryWithContext = ScreenContextPolicy.prependContext(checkedSummaries, query)
         withContext(Dispatchers.Main) {
-            addUserMessageToChat(query, null)
+            addUserMessageToChat(queryWithContext, null)
         }
-        processQueryInternal(query, null)
+        processQueryInternal(queryWithContext, null)
     }
 
     /**

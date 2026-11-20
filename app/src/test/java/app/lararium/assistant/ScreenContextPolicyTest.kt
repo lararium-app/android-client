@@ -55,6 +55,15 @@ class ScreenContextPolicyTest {
         assertEquals("q", ScreenContextPolicy.prependContext(emptyList(), "q"))
     }
 
+    @Test fun voiceSendReusesPrependForCheckedEntriesOnly() {
+        // Issue #132: the voice path composes its outgoing text the same way
+        // the typed path does — checked summaries only, identical block.
+        val all = listOf(item("1", 1, "pkg.a", "Hi"), item("2", 2, "pkg.b", "Yo"))
+        val checked = listOf(all[1])
+        val outgoing = ScreenContextPolicy.prependContext(checked, "q")
+        assertEquals("Context from recent notifications:\n- Yo (pkg.b)\n\nq", outgoing)
+    }
+
     @Test fun sanitizeSharedTrimsCapsAndIsEmptySafe() {
         assertEquals("", ScreenContextPolicy.sanitizeShared("   "))
         assertEquals("abc", ScreenContextPolicy.sanitizeShared("  abc \n"))
