@@ -72,21 +72,12 @@ import app.lararium.util.PdfResult
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 import app.lararium.util.LinkPolicy
-import app.lararium.assistant.NotificationSummary
 import app.lararium.assistant.ScreenContextPolicy
 import app.lararium.assistant.ScreenContextProvider
-import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.ui.text.style.TextOverflow
 
 internal object ScrimDismissPolicy {
     const val DEBOUNCE_MS = 300L
     fun shouldDismiss(shownAtMs: Long, nowMs: Long): Boolean = nowMs - shownAtMs >= DEBOUNCE_MS
-}
-
-/** One offered notification line; [checked] defaults to false and is user-controlled. */
-class ContextEntry(val summary: NotificationSummary) {
-    var checked by mutableStateOf(false)
 }
 
 class CompactAssistantActivity : FragmentActivity() {
@@ -711,7 +702,7 @@ fun CompactAssistantView(
                     }
                 }
 
-                NotificationContextSection(contextEntries, onExcludePackage)
+                NotificationContextChips(contextEntries, onExcludePackage)
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -806,7 +797,7 @@ fun CompactAssistantView(
                                 }
 
                                 val outgoing = ScreenContextPolicy.prependContext(
-                                    contextEntries.filter { it.checked }.map { it.summary }, queryText)
+                                    checkedContextSummaries(contextEntries), queryText)
                                 service.processTextQuery(outgoing, currentImageBase64)
                                 contextEntries.clear()
                                 textInput = ""
@@ -880,71 +871,4 @@ fun UrlSelectionDialog(
             TextButton(onClick = onDismiss) { Text("Cancel") }
         }
     )
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-private fun NotificationContextSection(
-    entries: MutableList<ContextEntry>,
-    onExcludePackage: (String) -> Unit
-) {
-    if (entries.isEmpty()) return
-    var expanded by remember { mutableStateOf(true) }
-    var menuFor by remember { mutableStateOf<ContextEntry?>(null) }
-    val appContext = androidx.compose.ui.platform.LocalContext.current
-    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable { expanded = !expanded }
-                .padding(vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                "Context from recent notifications (${entries.size})",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.weight(1f)
-            )
-            Icon(
-                if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                contentDescription = if (expanded) "Collapse" else "Expand",
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-        if (expanded) {
-            entries.toList().forEach { entry ->
-                val pkg = entry.summary.packageName
-                Box {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .combinedClickable(
-                                onClick = { entry.checked = !entry.checked },
-                                onLongClick = { menuFor = entry }
-                            ),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Checkbox(checked = entry.checked, onCheckedChange = { entry.checked = it })
-                        Text(
-                            "${ScreenContextProvider.appLabel(appContext, pkg)}: ${ScreenContextPolicy.displayLine(entry.summary)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    DropdownMenu(expanded = menuFor === entry, onDismissRequest = { menuFor = null }) {
-                        DropdownMenuItem(
-                            text = { Text("Exclude $pkg") },
-                            onClick = {
-                                menuFor = null
-                                onExcludePackage(pkg)
-                            }
-                        )
-                    }
-                }
-            }
-        }
-    }
 }
