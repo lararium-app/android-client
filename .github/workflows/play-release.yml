@@ -65,7 +65,9 @@ jobs:
         run: printf '%s' "$LARARIUM_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/lararium-release.jks"
 
       - name: Unit tests
-        run: ./gradlew testPlayReleaseUnitTest --no-daemon
+        # AGP 9 creates unit-test components only for the tested (debug) build
+        # type; the release variant has no test task to run.
+        run: ./gradlew testPlayDebugUnitTest --no-daemon
 
       - name: Build release bundle
         run: |
