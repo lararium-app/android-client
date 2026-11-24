@@ -27,7 +27,7 @@ val hasReleaseSigning = configuredReleaseSigningProperties.size == releaseSignin
 
 android {
     namespace = "app.lararium"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "app.lararium"
@@ -135,7 +135,7 @@ dependencies {
     implementation(libs.androidx.biometric)
     // MainActivity uses registerForActivityResult; Fragment >= 1.3.0 is required (release lintVital),
     // biometric 1.1.0 otherwise drags in 1.2.5.
-    implementation("androidx.fragment:fragment:1.8.5")
+    implementation("androidx.fragment:fragment:1.9.1")
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)
@@ -143,25 +143,24 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
 
-    implementation("androidx.compose.material:material-icons-extended:1.7.0")
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
-    implementation("androidx.navigation:navigation-compose:2.8.4")
-    implementation("androidx.work:work-runtime-ktx:2.9.1")
+    implementation("androidx.navigation:navigation-compose:2.10.2")
+    implementation("androidx.work:work-runtime-ktx:2.12.0")
 
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
-    implementation("com.alphacephei:vosk-android:0.3.47")
-    implementation("com.mikepenz:multiplatform-markdown-renderer-android:0.28.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
+    implementation("androidx.datastore:datastore-preferences:1.3.0")
+    implementation("com.alphacephei:vosk-android:0.3.75")
     implementation("com.tom-roush:pdfbox-android:2.0.27.0")
 
     testImplementation(libs.junit)
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
-    testImplementation("io.mockk:mockk:1.13.13")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.11.0")
+    testImplementation("io.mockk:mockk:1.14.12")
     // JVM unit tests otherwise get android.jar's stubbed org.json (every call
     // throws "not mocked"); this puts the real implementation on the TEST
     // classpath only — the APK keeps the platform one.
-    testImplementation("org.json:json:20240303")
+    testImplementation("org.json:json:20260814")
 
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
