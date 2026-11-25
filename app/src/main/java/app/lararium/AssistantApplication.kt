@@ -5,6 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
+import app.lararium.hearth.Net
+import app.lararium.hearth.UserAgent
 import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.hearth.watch.HearthWatchScheduler
 import app.lararium.security.SecureKeyManager
@@ -21,6 +23,7 @@ class AssistantApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        Net.init(UserAgent.forCurrentDevice())
         
         // Initialize secure key manager with Android Keystore
         secureKeyManager = SecureKeyManager(this)

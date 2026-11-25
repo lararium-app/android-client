@@ -478,7 +478,7 @@ class VoskTranscriber(private val context: Context) {
                 // Longer timeouts for large models (1.8GB can take time)
                 connection.connectTimeout = 60000
                 connection.readTimeout = 300000  // 5 minutes
-                connection.setRequestProperty("User-Agent", "Lararium/1.0")
+                connection.setRequestProperty("User-Agent", app.lararium.hearth.Net.userAgent())
                 connection.connect()
                 
                 val responseCode = connection.responseCode
