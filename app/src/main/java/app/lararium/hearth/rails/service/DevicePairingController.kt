@@ -172,7 +172,7 @@ object DevicePairingController {
             return Result.Failure("Invalid endpoint URL: $rejectReason")
         }
 
-        val trimmedCode = code.trim()
+        val trimmedCode = PairingLink.normalizeDev1Code(code)
         if (!PairingLink.isDev1Code(trimmedCode)) {
             return Result.Failure("bad token")
         }
@@ -309,7 +309,7 @@ object DevicePairingController {
             return enroll(
                 context = context,
                 baseUrl = baseUrl,
-                code = token.trim(),
+                code = PairingLink.normalizeDev1Code(token),
                 httpPoster = httpPoster,
                 storeProvider = storeProvider,
                 serviceStarter = serviceStarter
@@ -341,7 +341,7 @@ object DevicePairingController {
             // body {"code", "device_name"}; success -> {"token", "user_id"}.
             val pairUrl = "$effectiveBase/v1/pair"
             val pairBody = JSONObject()
-                .put("code", token.trim())
+                .put("code", PairingLink.normalizePair1Code(token))
                 .put("device_name", Build.MODEL ?: "android")
                 .toString()
             val pairResponse = try {

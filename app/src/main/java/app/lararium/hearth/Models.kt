@@ -86,13 +86,37 @@ object PairingLink {
     // Any C0/C1 control character.
     private val CONTROL_RE = Regex("[\\x00-\\x1f\\x7f-\\x9f]")
 
-    private val PAIR1_CODE_RE = Regex("^pair1_[0-9A-Za-z]{20}$")
+    private val PAIR1_CODE_RE = Regex("^(?i:pair1_)[0-9A-Za-z]{20}$")
+
+    fun hasPair1Prefix(raw: String): Boolean =
+        raw.trim().startsWith("pair1_", ignoreCase = true)
 
     fun isPair1Code(raw: String): Boolean = PAIR1_CODE_RE.matches(raw.trim())
 
-    private val DEV1_CODE_RE = Regex("^dev1_[0-9A-Za-z]{20}$")
+    fun normalizePair1Code(raw: String): String {
+        val trimmed = raw.trim()
+        return if (trimmed.startsWith("pair1_", ignoreCase = true)) {
+            "pair1_" + trimmed.substring(6)
+        } else {
+            trimmed
+        }
+    }
+
+    private val DEV1_CODE_RE = Regex("^(?i:dev1_)[0-9A-Za-z]{20}$")
+
+    fun hasDev1Prefix(raw: String): Boolean =
+        raw.trim().startsWith("dev1_", ignoreCase = true)
 
     fun isDev1Code(raw: String): Boolean = DEV1_CODE_RE.matches(raw.trim())
+
+    fun normalizeDev1Code(raw: String): String {
+        val trimmed = raw.trim()
+        return if (trimmed.startsWith("dev1_", ignoreCase = true)) {
+            "dev1_" + trimmed.substring(5)
+        } else {
+            trimmed
+        }
+    }
 
     fun parse(link: String): Pair<Endpoint, String?>? {
         if (!link.startsWith("lararium://pair?")) return null
