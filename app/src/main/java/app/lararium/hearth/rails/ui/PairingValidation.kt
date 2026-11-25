@@ -44,6 +44,9 @@ object PairingValidation {
     fun friendlyPairErrorMessage(error: String): String {
         return when {
             error == "duplicate_name" -> "This device name is taken — retry"
+            error.contains("code already consumed") -> "Enrollment code was used — ask your hearth operator for a new one"
+            error.contains("rate_limited") -> "Too many pairing attempts — wait a minute and retry"
+            error.contains("enroll response incomplete") -> "Hearth returned an unexpected enrollment response"
             error.contains("401") || error.contains("403") || error.contains("bad token") -> "Invalid or expired pairing token"
             error.contains("already_paired") || error.contains("already-paired") -> "This device is already paired elsewhere"
             error.contains("unreachable") || error.contains("network error") || error.contains("Failed to connect") -> "Hearth unreachable — check endpoint and network"
