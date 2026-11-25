@@ -75,6 +75,9 @@ class CardActionReceiver : BroadcastReceiver() {
             resolvedCards.add(cardId.trim())
         }
 
+        /** Snapshot of ids answered in this process (issue #169 watcher dedupe). */
+        fun resolvedIdsSnapshot(): Set<String> = resolvedCards.toSet()
+
         fun resetStateForTesting() {
             inFlightCards.clear()
             resolvedCards.clear()

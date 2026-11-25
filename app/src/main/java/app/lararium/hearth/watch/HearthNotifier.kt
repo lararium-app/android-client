@@ -146,6 +146,17 @@ object HearthNotifier {
     }
 
     /**
+     * Silently cancels a pending card notification (issue #169). Called when the card
+     * resolves on any surface — the tray row, another device, or expiry — so a settled
+     * card never keeps a tappable notification alive.
+     */
+    fun cancelCard(context: Context, cardId: String) {
+        runCatching {
+            NotificationManagerCompat.from(context).cancel(WatchLogic.cardNotificationId(cardId))
+        }
+    }
+
+    /**
      * Cancels the pending card notification and posts a brief confirmation notification
      * ("Allowed once: <lane>" / "Denied: <lane>").
      */

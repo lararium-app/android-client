@@ -58,6 +58,68 @@ class ApprovalsLogicTest {
         assertEquals("Hearth refused (HTTP 502).", msg)
     }
 
+    // -----------------------------------------------------------------------
+    // classifyResolve (issue #169)
+    // -----------------------------------------------------------------------
+
+    @Test
+    fun classifyResolve_acceptedIsSettled() {
+        assertSame(
+            ResolveOutcome.Settled,
+            classifyResolve(200, """{"state":"allowed_once"}"""),
+        )
+    }
+
+    @Test
+    fun classifyResolve_alreadyAnsweredIsGone() {
+        val outcome = classifyResolve(409, """{"error":"already_answered"}""")
+        assertEquals(ResolveOutcome.Gone("Already answered somewhere else."), outcome)
+    }
+
+    @Test
+    fun classifyResolve_staleVerdictIsGone() {
+        val outcome = classifyResolve(409, """{"error":"stale_verdict"}""")
+        assertEquals(ResolveOutcome.Gone("That answer no longer applies."), outcome)
+    }
+
+    @Test
+    fun classifyResolve_noSuchCardIsGone() {
+        val outcome = classifyResolve(404, """{"error":"no_such_card"}""")
+        assertEquals(ResolveOutcome.Gone("This card is gone — pull to refresh."), outcome)
+    }
+
+    @Test
+    fun classifyResolve_bareNotFoundIsGone() {
+        // 404s can carry a non-JSON body (e.g. gateway "not found"); the card is
+        // unresolvable from here either way.
+        val outcome = classifyResolve(404, "not found")
+        assertEquals(ResolveOutcome.Gone("Hearth refused (HTTP 404)."), outcome)
+    }
+
+    @Test
+    fun classifyResolve_lockedIsRetryable() {
+        val outcome = classifyResolve(423, """{"error":"locked"}""")
+        assertEquals(ResolveOutcome.Retryable("Being decided on another device right now."), outcome)
+    }
+
+    @Test
+    fun classifyResolve_ipAskOnlyIsRetryable() {
+        val outcome = classifyResolve(400, """{"error":"ip_ask_only"}""")
+        assertEquals(ResolveOutcome.Retryable("This card can only be answered from its own network."), outcome)
+    }
+
+    @Test
+    fun classifyResolve_serverErrorIsRetryable() {
+        val outcome = classifyResolve(502, "<html><body>Bad Gateway</body></html>")
+        assertEquals(ResolveOutcome.Retryable("Hearth refused (HTTP 502)."), outcome)
+    }
+
+    @Test
+    fun classifyResolve_transportStatusZeroIsRetryable() {
+        val outcome = classifyResolve(0, "")
+        assertEquals(ResolveOutcome.Retryable("Hearth refused (HTTP 0)."), outcome)
+    }
+
     @Test
     fun describeResolveFailure_emptyBody() {
         val msg = describeResolveFailure(500, "")
