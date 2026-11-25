@@ -54,10 +54,54 @@ fun DevicePairingScreen(
 
     var baseUrl by remember { mutableStateOf(initialBaseUrl.ifBlank { hearthEndpoint?.first ?: "" }) }
     var token by remember { mutableStateOf(initialToken) }
+    var enrollCode by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var isEnrolling by remember { mutableStateOf(false) }
     var urlError by remember { mutableStateOf<String?>(null) }
     var tokenError by remember { mutableStateOf<String?>(null) }
     var generalError by remember { mutableStateOf<String?>(null) }
+
+    fun submitEnrollment() {
+        urlError = null
+        tokenError = null
+        generalError = null
+
+        isEnrolling = true
+        scope.launch {
+            val replacingExisting = try {
+                DevicePairingStore(context).isPaired()
+            } catch (_: Exception) {
+                false
+            }
+            try {
+                authGate(
+                    context = context,
+                    verb = ScaryVerb.DEVICE_RAILS_PAIR_WRITE,
+                    replacingExistingSecret = replacingExisting
+                ) {
+                    val result = DevicePairingController.enroll(
+                        context = context,
+                        baseUrl = hearthEndpoint?.first ?: "",
+                        code = enrollCode.trim()
+                    )
+
+                    when (result) {
+                        is DevicePairingController.Result.Success -> {
+                            DeviceRailService.ensureRunning(context)
+                            onPairingSuccess()
+                        }
+                        is DevicePairingController.Result.Failure -> {
+                            generalError = PairingValidation.friendlyPairErrorMessage(result.error)
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                generalError = PairingValidation.friendlyPairErrorMessage(e.message ?: "pairing_error")
+            } finally {
+                isEnrolling = false
+            }
+        }
+    }
 
     fun submitPairing() {
         urlError = null
@@ -260,7 +304,7 @@ fun DevicePairingScreen(
 
             Button(
                 onClick = { submitPairing() },
-                enabled = !isLoading,
+                enabled = !isLoading && !isEnrolling,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(50.dp),
@@ -277,6 +321,69 @@ fun DevicePairingScreen(
                         text = if (generalError == "This device name is taken — retry") "Retry Pairing" else "Pair Device",
                         fontWeight = FontWeight.Bold
                     )
+                }
+            }
+
+            // One-time device enrollment section (shown only when a hearth pairing exists)
+            if (hasHearth) {
+                Spacer(modifier = Modifier.height(24.dp))
+                HorizontalDivider()
+                Spacer(modifier = Modifier.height(20.dp))
+
+                Text(
+                    text = "Enroll this device with a one-time code from your hearth",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = enrollCode,
+                    onValueChange = { enrollCode = it },
+                    label = { Text("One-time device code") },
+                    placeholder = { Text("dev1_…") },
+                    trailingIcon = {
+                        IconButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+                                val clipText = clipboard?.primaryClip?.getItemAt(0)?.text?.toString()
+                                if (!clipText.isNullOrBlank()) {
+                                    enrollCode = clipText.trim()
+                                }
+                            }
+                        ) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste from clipboard")
+                        }
+                    },
+                    enabled = !isLoading && !isEnrolling,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                OutlinedButton(
+                    onClick = { submitEnrollment() },
+                    enabled = !isLoading && !isEnrolling && enrollCode.isNotBlank(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (isEnrolling) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            text = "Enroll Device",
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
         }

@@ -4,14 +4,18 @@ import android.content.Context
 import android.os.Build
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import app.lararium.BuildConfig
 import app.lararium.hearth.EndpointPolicy
+import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.HttpResponse
 import app.lararium.hearth.Net
+import app.lararium.hearth.PairingLink
 import app.lararium.hearth.rails.DeclaredRail
 import app.lararium.hearth.rails.DeclaredRails
 import app.lararium.hearth.rails.RailsWire
 import app.lararium.security.SecureKeyManager
 import org.json.JSONObject
+import java.net.URI
 
 /**
  * Orchestrates device pairing and registration intake (F6, spec A3).
@@ -70,7 +74,8 @@ object DevicePairingController {
         httpPoster: suspend (url: String, body: String, headers: Map<String, String>) -> HttpResponse = { u, b, h -> Net.post(u, b, h) },
         storeProvider: ((Context) -> DevicePairingStore)? = null,
         hearthEndpointProvider: ((Context) -> Pair<String, String>?)? = null,
-        serviceStarter: ((Context) -> Unit)? = null
+        serviceStarter: ((Context) -> Unit)? = null,
+        deviceModelProvider: (() -> String?)? = null
     ): Result {
         val stored = hearthEndpointProvider?.invoke(context)
             ?: try {
@@ -90,8 +95,15 @@ object DevicePairingController {
             return Result.Failure("Invalid endpoint URL: $rejectReason")
         }
 
-        val deviceId = sanitizeDeviceId(Build.MODEL ?: "android")
-        val displayName = sanitizeDisplayName(Build.MODEL ?: "android")
+        val store = storeProvider?.invoke(context) ?: DevicePairingStore(context)
+        val storedDeviceId = try {
+            store.getEndpoint()?.deviceId?.takeIf { it.isNotBlank() }
+        } catch (_: Throwable) {
+            null
+        }
+        val rawModel = deviceModelProvider?.invoke() ?: Build.MODEL
+        val deviceId = storedDeviceId ?: sanitizeDeviceId(rawModel ?: "android")
+        val displayName = sanitizeDisplayName(rawModel ?: "android")
 
         val declaredRails = DeclaredRails.build()
         val registerBody = RailsWire.buildRegisterBody(
@@ -119,7 +131,6 @@ object DevicePairingController {
         // On 409 treat as registered (idempotent).
         if (registerResponse.status in 200..299 || registerResponse.status == 409) {
             val endpoint = DeviceEndpoint(baseUrl = cleanBase, token = token, deviceId = deviceId)
-            val store = storeProvider?.invoke(context) ?: DevicePairingStore(context)
             store.saveEndpoint(endpoint)
 
             if (serviceStarter != null) {
@@ -134,6 +145,157 @@ object DevicePairingController {
         return Result.Failure("Registration rejected with status ${registerResponse.status}: ${registerResponse.body}")
     }
 
+    suspend fun enroll(
+        context: Context,
+        baseUrl: String = "",
+        code: String,
+        httpPoster: suspend (url: String, body: String, headers: Map<String, String>) -> HttpResponse = { u, b, h -> Net.post(u, b, h) },
+        storeProvider: ((Context) -> DevicePairingStore)? = null,
+        serviceStarter: ((Context) -> Unit)? = null,
+        keyManagerProvider: ((Context) -> SecureKeyManager)? = null,
+        deviceModelProvider: (() -> String?)? = null
+    ): Result {
+        val keyManager = try {
+            keyManagerProvider?.invoke(context) ?: SecureKeyManager(context)
+        } catch (_: Throwable) {
+            null
+        }
+        val existingHearth = try {
+            keyManager?.getHearthEndpoint()
+        } catch (_: Throwable) {
+            null
+        }
+
+        val effectiveBase = (if (baseUrl.isNotBlank()) baseUrl else existingHearth?.first ?: "").trim().trimEnd('/')
+        val rejectReason = EndpointPolicy.rejectReason(effectiveBase)
+        if (rejectReason != null) {
+            return Result.Failure("Invalid endpoint URL: $rejectReason")
+        }
+
+        val trimmedCode = code.trim()
+        if (!PairingLink.isDev1Code(trimmedCode)) {
+            return Result.Failure("bad token")
+        }
+
+        val rawModel = deviceModelProvider?.invoke() ?: Build.MODEL
+        val deviceName = sanitizeDisplayName(rawModel ?: "android")
+        val pairUrl = "$effectiveBase/v1/pair"
+        val pairBody = JSONObject()
+            .put("code", trimmedCode)
+            .put("device_name", deviceName)
+            .put("platform", "android")
+            .put("app_version", BuildConfig.VERSION_NAME.take(32))
+            .toString()
+
+        val pairResponse = try {
+            postOffMain(
+                httpPoster,
+                pairUrl,
+                pairBody,
+                mapOf("Content-Type" to "application/json")
+            )
+        } catch (e: Exception) {
+            return Result.Failure("Enrollment failed: ${e.message ?: "network error"}")
+        }
+
+        if (pairResponse.status == 401) {
+            return Result.Failure("bad token", isRetryable = true)
+        }
+        if (pairResponse.status == 429) {
+            return Result.Failure("rate_limited", isRetryable = true)
+        }
+        if (pairResponse.status !in 200..299) {
+            return Result.Failure(
+                "Enrollment rejected with status ${pairResponse.status}: ${pairResponse.body}"
+            )
+        }
+
+        val (mintedToken, daemonDeviceId) = try {
+            val json = JSONObject(pairResponse.body)
+            val t = if (json.isNull("token")) "" else json.optString("token", "").trim()
+            val d = if (json.isNull("device_id")) "" else json.optString("device_id", "").trim()
+            t to d
+        } catch (_: Exception) {
+            "" to ""
+        }
+        if (mintedToken.isBlank() || daemonDeviceId.isBlank()) {
+            return Result.Failure("enroll response incomplete")
+        }
+
+        val registerBody = RailsWire.buildRegisterBody(
+            deviceId = daemonDeviceId,
+            displayName = deviceName,
+            railsDeclared = DeclaredRails.build()
+        )
+        val registerUrl = "$effectiveBase/v1/devices/register"
+        val registerResponse = try {
+            postOffMain(
+                httpPoster,
+                registerUrl,
+                registerBody.toString(),
+                mapOf(
+                    "Authorization" to "Bearer $mintedToken",
+                    "Content-Type" to "application/json"
+                )
+            )
+        } catch (e: Exception) {
+            return Result.Failure(
+                "Registration failed (code already consumed): ${e.message ?: "network error"}"
+            )
+        }
+
+        if (registerResponse.status !in 200..299) {
+            return Result.Failure(
+                "Registration rejected with status ${registerResponse.status} (code already consumed): ${registerResponse.body}"
+            )
+        }
+
+        val endpoint = DeviceEndpoint(
+            baseUrl = effectiveBase,
+            token = mintedToken,
+            deviceId = daemonDeviceId
+        )
+        val store = storeProvider?.invoke(context) ?: DevicePairingStore(context)
+        store.saveEndpoint(endpoint)
+
+        try {
+            val km = keyManager ?: (keyManagerProvider?.invoke(context) ?: SecureKeyManager(context))
+            val existingName = existingHearth?.third?.takeIf { it.isNotBlank() }
+                ?: try {
+                    km.getHearthEndpoint()?.third?.takeIf { it.isNotBlank() }
+                } catch (_: Throwable) {
+                    null
+                }
+            val endpointName = existingName
+                ?: try {
+                    URI(effectiveBase).host?.takeIf { it.isNotBlank() }
+                } catch (_: Exception) {
+                    null
+                }
+                ?: "hearth"
+            km.setHearthEndpoint(effectiveBase, mintedToken, endpointName)
+        } catch (_: Throwable) {
+            // Keystore hiccup after successful enrollment must not lose rails persistence.
+        }
+
+        try {
+            context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                .edit()
+                .remove(HearthChatClient.KEY_SESSION_ID)
+                .apply()
+        } catch (_: Throwable) {
+            // Best-effort stale chat session cleanup.
+        }
+
+        if (serviceStarter != null) {
+            serviceStarter(context)
+        } else {
+            DeviceRailService.ensureRunning(context)
+        }
+
+        return Result.Success(endpoint)
+    }
+
     suspend fun pair(
         context: Context,
         baseUrl: String = "",
@@ -143,6 +305,17 @@ object DevicePairingController {
         hearthEndpointProvider: ((Context) -> Pair<String, String>?)? = null,
         serviceStarter: ((Context) -> Unit)? = null
     ): Result {
+        if (PairingLink.isDev1Code(token)) {
+            return enroll(
+                context = context,
+                baseUrl = baseUrl,
+                code = token.trim(),
+                httpPoster = httpPoster,
+                storeProvider = storeProvider,
+                serviceStarter = serviceStarter
+            )
+        }
+
         val storedEndpoint = hearthEndpointProvider?.invoke(context)
             ?: try {
                 SecureKeyManager(context).getHearthEndpoint()?.let { it.first to it.second }

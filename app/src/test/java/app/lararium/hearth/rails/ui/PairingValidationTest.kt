@@ -134,5 +134,17 @@ class PairingValidationTest {
             "Hearth unreachable — check endpoint and network",
             PairingValidation.friendlyPairErrorMessage("Failed to connect to hearth: network error")
         )
+        assertEquals(
+            "Too many pairing attempts — wait a minute and retry",
+            PairingValidation.friendlyPairErrorMessage("rate_limited")
+        )
+        assertEquals(
+            "Hearth returned an unexpected enrollment response",
+            PairingValidation.friendlyPairErrorMessage("enroll response incomplete")
+        )
+        assertEquals(
+            "Enrollment code was used — ask your hearth operator for a new one",
+            PairingValidation.friendlyPairErrorMessage("Registration rejected with status 403 (code already consumed): forbidden")
+        )
     }
 }
