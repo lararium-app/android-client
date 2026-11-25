@@ -10,18 +10,39 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 
 /**
+ * Minimal raw-socket HTTP/1.1 client for Lararium hearth endpoints.
+ *
  * Cleartext is enforced HERE — the manifest keeps `usesCleartextTraffic=
- * "false"`, so the platform never opens a plain-HTTP socket for us. For the
- * LAN/tailnet http endpoints our policy allows, we open the socket ourselves:
- * string policy first, then a re-check on the RESOLVED addresses
- * (DNS-rebinding/TOCTOU), then a hand-rolled HTTP/1.1 request. https uses the
- * normal platform stack with hostname verification pinned.
+ * "false"`, so the platform never opens a plain-HTTP socket for us. Both
+ * schemes open a socket directly and write a hand-rolled HTTP/1.1 request:
+ * `https` uses an [SSLSocket] with HTTPS hostname verification pinned, and
+ * policy-allowed LAN/tailnet `http` re-checks the resolved addresses
+ * (DNS-rebinding/TOCTOU) before connecting a plain [Socket].
+ *
+ * Because platform HTTP stacks are bypassed, every request emits the shared
+ * default `User-Agent` (initialized via [init] at application startup) unless
+ * the caller supplies an explicit `User-Agent` header.
  */
 data class HttpResponse(val status: Int, val body: String)
 
 object Net {
 
     const val MAX_BODY_BYTES: Int = 10 * 1024 * 1024 // 10 MiB cap
+
+    @Volatile
+    private var defaultUserAgent: String = UserAgent.forCurrentDevice()
+
+    fun init(userAgent: String) {
+        val clean = userAgent.trim()
+        require(clean.isNotEmpty()) { "User-Agent must not be blank" }
+        requireSafeHeader(clean)
+        defaultUserAgent = clean
+    }
+
+    fun userAgent(): String = defaultUserAgent
+
+    internal fun hasUserAgentHeader(headers: Map<String, String>): Boolean =
+        headers.keys.any { it.equals("User-Agent", ignoreCase = true) }
 
     fun get(
         urlString: String,
@@ -76,6 +97,9 @@ object Net {
                 if (url.port != -1) append(":").append(url.port)
                 append("\r\n")
                 append("Accept-Encoding: identity\r\nConnection: close\r\n")
+                if (!hasUserAgentHeader(headers)) {
+                    append("User-Agent: ").append(defaultUserAgent).append("\r\n")
+                }
                 headers.forEach { (k, v) -> append(k).append(": ").append(v).append("\r\n") }
                 append("\r\n")
             }
@@ -154,6 +178,9 @@ object Net {
                 if (url.port != -1) append(":").append(url.port)
                 append("\r\n")
                 append("Accept-Encoding: identity\r\nConnection: close\r\n")
+                if (!hasUserAgentHeader(headers)) {
+                    append("User-Agent: ").append(defaultUserAgent).append("\r\n")
+                }
                 if (bodyBytes != null) {
                     append("Content-Length: ").append(bodyBytes.size).append("\r\n")
                     if (!headers.containsKey("Content-Type")) {

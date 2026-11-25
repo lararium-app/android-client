@@ -57,14 +57,12 @@ import app.lararium.tts.TTSManager
 import app.lararium.BuildConfig
 import app.lararium.R
 import app.lararium.hearth.Endpoint
-import app.lararium.hearth.EndpointPolicy
 import app.lararium.hearth.rails.service.DevicePairingController
 import app.lararium.hearth.rails.service.DeviceRailService
 import app.lararium.hearth.rails.ui.PairingValidation
 import app.lararium.hearth.HearthChatClient
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.PairError
-import app.lararium.hearth.PairingLink
 import app.lararium.hearth.watch.HearthWatchScheduler
 import app.lararium.hearth.rails.ui.DevicesActivity
 import androidx.compose.ui.res.stringResource
@@ -1406,178 +1404,147 @@ fun PairHearthDialog(
 
     fun doPair() {
         errorMessage = null
-        val rawLink = pairingLink.trim()
-        val rawUrl = serverUrl.trim()
-        val rawToken = token.trim()
-
-        if (PairingLink.isDev1Code(rawLink)) {
-            if (rawUrl.isEmpty()) {
-                errorMessage = context.getString(R.string.hearth_pair_error_invalid)
-                return
-            }
-            val normalizedUrl = if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
-                val hostPart = rawUrl.substringBefore(':')
-                if (EndpointPolicy.isPrivateV4(hostPart) || hostPart == "localhost" || hostPart == "127.0.0.1") "http://$rawUrl" else "https://$rawUrl"
-            } else rawUrl
-            val cleanBaseUrl = normalizedUrl.trimEnd('/')
-
-            isConnecting = true
-            scope.launch {
-                val replacingExisting = app.secureKeyManager.hasHearthEndpoint()
-                try {
-                    authGate(
-                        context = context,
-                        verb = ScaryVerb.HEARTH_PAIR_WRITE,
-                        replacingExistingSecret = replacingExisting
-                    ) {
-                        val result = DevicePairingController.enroll(
-                            context = app,
-                            baseUrl = cleanBaseUrl,
-                            code = rawLink
-                        )
-                        when (result) {
-                            is DevicePairingController.Result.Success -> {
-                                val enrolled = result.endpoint
-                                val endpointName = try {
-                                    java.net.URI(enrolled.baseUrl).host
-                                } catch (_: Exception) {
-                                    null
-                                } ?: "hearth"
-                                val ep = Endpoint(enrolled.baseUrl, enrolled.token, endpointName)
-                                HearthWatchScheduler.ensurePeriodic(app)
-                                HearthWatchScheduler.refreshNow(app)
-                                onPaired(ep)
-                                onDismiss()
-                            }
-                            is DevicePairingController.Result.Failure -> {
-                                val mapped = PairingValidation.friendlyPairErrorMessage(result.error)
-                                val friendly = if (mapped != result.error) mapped else HearthChatClient.friendlyErrorMessage(result.error)
-                                errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
+        val storedBaseUrl = runCatching { app.secureKeyManager.getHearthEndpoint()?.first }.getOrNull()
+        when (val action = PairHearthLogic.resolve(pairingLink, serverUrl, token, storedBaseUrl)) {
+            is PairHearthAction.Enroll -> {
+                isConnecting = true
+                scope.launch {
+                    try {
+                        val replacingExisting = app.secureKeyManager.hasHearthEndpoint()
+                        authGate(
+                            context = context,
+                            verb = ScaryVerb.HEARTH_PAIR_WRITE,
+                            replacingExistingSecret = replacingExisting
+                        ) {
+                            val result = DevicePairingController.enroll(
+                                context = app,
+                                baseUrl = action.baseUrl,
+                                code = action.code
+                            )
+                            when (result) {
+                                is DevicePairingController.Result.Success -> {
+                                    val enrolled = result.endpoint
+                                    val endpointName = try {
+                                        java.net.URI(enrolled.baseUrl).host
+                                    } catch (_: Exception) {
+                                        null
+                                    } ?: "hearth"
+                                    val ep = Endpoint(enrolled.baseUrl, enrolled.token, endpointName)
+                                    HearthWatchScheduler.ensurePeriodic(app)
+                                    HearthWatchScheduler.refreshNow(app)
+                                    onPaired(ep)
+                                    onDismiss()
+                                }
+                                is DevicePairingController.Result.Failure -> {
+                                    val mapped = PairingValidation.friendlyPairErrorMessage(result.error)
+                                    val friendly = if (mapped != result.error) mapped else HearthChatClient.friendlyErrorMessage(result.error)
+                                    errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
+                                }
                             }
                         }
+                    } catch (e: Exception) {
+                        val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
+                        errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
+                    } finally {
+                        isConnecting = false
                     }
-                } catch (e: Exception) {
-                    val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
-                    errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
-                } finally {
-                    isConnecting = false
                 }
             }
-            return
-        }
 
-        if (PairingLink.isPair1Code(rawLink)) {
-            if (rawUrl.isEmpty()) {
-                errorMessage = context.getString(R.string.hearth_pair_error_invalid)
-                return
-            }
-            val normalizedUrl = if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
-                val hostPart = rawUrl.substringBefore(':')
-                if (EndpointPolicy.isPrivateV4(hostPart) || hostPart == "localhost" || hostPart == "127.0.0.1") "http://$rawUrl" else "https://$rawUrl"
-            } else rawUrl
-            val cleanBaseUrl = normalizedUrl.trimEnd('/')
+            is PairHearthAction.RedeemPairCode -> {
+                val deviceName = (Build.MODEL ?: "")
+                    .replace('\r', ' ')
+                    .replace('\n', ' ')
+                    .take(64)
 
-            val deviceName = (Build.MODEL ?: "")
-                .replace('\r', ' ')
-                .replace('\n', ' ')
-                .take(64)
+                isConnecting = true
+                scope.launch {
+                    try {
+                        val replacingExisting = app.secureKeyManager.hasHearthEndpoint()
+                        authGate(
+                            context = context,
+                            verb = ScaryVerb.HEARTH_PAIR_WRITE,
+                            replacingExistingSecret = replacingExisting
+                        ) {
+                            val (redeemedToken, _) = LarariumClient.redeemPairingCode(
+                                action.baseUrl,
+                                action.code,
+                                deviceName
+                            )
+                            val endpointName = try {
+                                java.net.URI(action.baseUrl).host
+                            } catch (e: Exception) {
+                                null
+                            } ?: "hearth"
+                            val ep = Endpoint(action.baseUrl, redeemedToken, endpointName)
 
-            isConnecting = true
-            scope.launch {
-                val replacingExisting = app.secureKeyManager.hasHearthEndpoint()
-                try {
-                    authGate(
-                        context = context,
-                        verb = ScaryVerb.HEARTH_PAIR_WRITE,
-                        replacingExistingSecret = replacingExisting
-                    ) {
-                        val (redeemedToken, _) = LarariumClient.redeemPairingCode(
-                            cleanBaseUrl,
-                            rawLink.trim(),
-                            deviceName
-                        )
-                        val endpointName = try {
-                            java.net.URI(cleanBaseUrl).host
-                        } catch (e: Exception) {
-                            null
-                        } ?: "hearth"
-                        val ep = Endpoint(cleanBaseUrl, redeemedToken, endpointName)
-
-                        val client = LarariumClient(ep)
-                        client.health()
-                        app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
-                        context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
-                            .edit()
-                            .remove(HearthChatClient.KEY_SESSION_ID)
-                            .apply()
-                        HearthWatchScheduler.ensurePeriodic(app)
-                        HearthWatchScheduler.refreshNow(app)
-                        // One pairing lights up rails too: the service performs
-                        // /v1/devices/register with the stored hearth token.
-                        DeviceRailService.ensureRunning(app)
-                        onPaired(ep)
-                        onDismiss()
+                            val client = LarariumClient(ep)
+                            client.health()
+                            app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                            context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                                .edit()
+                                .remove(HearthChatClient.KEY_SESSION_ID)
+                                .apply()
+                            HearthWatchScheduler.ensurePeriodic(app)
+                            HearthWatchScheduler.refreshNow(app)
+                            // One pairing lights up rails too: the service performs
+                            // /v1/devices/register with the stored hearth token.
+                            DeviceRailService.ensureRunning(app)
+                            onPaired(ep)
+                            onDismiss()
+                        }
+                    } catch (e: PairError) {
+                        errorMessage = context.getString(e.messageResId)
+                    } catch (e: Exception) {
+                        val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
+                        errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
+                    } finally {
+                        isConnecting = false
                     }
-                } catch (e: PairError) {
-                    errorMessage = context.getString(e.messageResId)
-                } catch (e: Exception) {
-                    val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
-                    errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
-                } finally {
-                    isConnecting = false
                 }
             }
-            return
-        }
 
-        val parsed: Pair<Endpoint, String?>? = when {
-            rawLink.isNotEmpty() -> PairingLink.parse(rawLink)
-            rawUrl.isNotEmpty() && rawToken.isNotEmpty() -> {
-                val normalizedUrl = if (!rawUrl.startsWith("http://") && !rawUrl.startsWith("https://")) {
-                    val hostPart = rawUrl.substringBefore(':')
-                    if (EndpointPolicy.isPrivateV4(hostPart) || hostPart == "localhost" || hostPart == "127.0.0.1") "http://$rawUrl" else "https://$rawUrl"
-                } else rawUrl
-                val built = "lararium://pair?host=" +
-                    java.net.URLEncoder.encode(normalizedUrl, "UTF-8") +
-                    "&token=" + java.net.URLEncoder.encode(rawToken, "UTF-8")
-                PairingLink.parse(built)
-            }
-            else -> null
-        }
+            is PairHearthAction.DirectEndpoint -> {
+                val ep = action.endpoint
+                isConnecting = true
 
-        if (parsed == null) {
-            errorMessage = context.getString(R.string.hearth_pair_error_invalid)
-            return
-        }
-
-        val (ep, _) = parsed
-        isConnecting = true
-
-        scope.launch {
-            val replacingExisting = app.secureKeyManager.hasHearthEndpoint()
-            try {
-                authGate(
-                    context = context,
-                    verb = ScaryVerb.HEARTH_PAIR_WRITE,
-                    replacingExistingSecret = replacingExisting
-                ) {
-                    val client = LarariumClient(ep)
-                    client.health()
-                    app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
-                    context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
-                        .edit()
-                        .remove(HearthChatClient.KEY_SESSION_ID)
-                        .apply()
-                    HearthWatchScheduler.ensurePeriodic(app)
-                    HearthWatchScheduler.refreshNow(app)
-                    onPaired(ep)
-                    onDismiss()
+                scope.launch {
+                    try {
+                        val replacingExisting = app.secureKeyManager.hasHearthEndpoint()
+                        authGate(
+                            context = context,
+                            verb = ScaryVerb.HEARTH_PAIR_WRITE,
+                            replacingExistingSecret = replacingExisting
+                        ) {
+                            val client = LarariumClient(ep)
+                            client.health()
+                            app.secureKeyManager.setHearthEndpoint(ep.baseUrl, ep.token, ep.name)
+                            context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
+                                .edit()
+                                .remove(HearthChatClient.KEY_SESSION_ID)
+                                .apply()
+                            HearthWatchScheduler.ensurePeriodic(app)
+                            HearthWatchScheduler.refreshNow(app)
+                            onPaired(ep)
+                            onDismiss()
+                        }
+                    } catch (e: Exception) {
+                        val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
+                        errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
+                    } finally {
+                        isConnecting = false
+                    }
                 }
-            } catch (e: Exception) {
-                val friendly = HearthChatClient.friendlyErrorMessage(e.message ?: "")
-                errorMessage = context.getString(R.string.hearth_pair_error_failed, friendly)
-            } finally {
-                isConnecting = false
+            }
+
+            is PairHearthAction.Invalid -> {
+                errorMessage = context.getString(
+                    when (action.error) {
+                        PairHearthInputError.SERVER_URL_REQUIRED -> R.string.hearth_pair_error_server_url_required
+                        PairHearthInputError.INVALID_CODE -> R.string.hearth_pair_error_code_invalid
+                        PairHearthInputError.INVALID_INPUT -> R.string.hearth_pair_error_invalid
+                    }
+                )
             }
         }
     }
@@ -1697,7 +1664,7 @@ fun PairHearthDialog(
         confirmButton = {
             Button(
                 onClick = { doPair() },
-                enabled = !isConnecting && (pairingLink.isNotBlank() || (serverUrl.isNotBlank() && token.isNotBlank()))
+                enabled = !isConnecting && PairHearthLogic.canSubmit(pairingLink, serverUrl, token)
             ) {
                 Text(stringResource(R.string.hearth_pair_button))
             }

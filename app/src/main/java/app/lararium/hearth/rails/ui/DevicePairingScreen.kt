@@ -276,8 +276,8 @@ fun DevicePairingScreen(
                         token = it
                         if (tokenError != null) tokenError = null
                     },
-                    label = { Text("Pairing Token") },
-                    placeholder = { Text("lar1_...") },
+                    label = { Text("Pairing Code or Token") },
+                    placeholder = { Text("dev1_... or pair1_...") },
                     trailingIcon = {
                         IconButton(
                             onClick = {

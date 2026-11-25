@@ -284,6 +284,9 @@ open class LarariumClient(private val endpoint: Endpoint) {
                 append("\r\n")
                 append("Accept-Encoding: identity\r\n")
                 append("Connection: close\r\n")
+                if (!Net.hasUserAgentHeader(headers)) {
+                    append("User-Agent: ").append(Net.userAgent()).append("\r\n")
+                }
                 append("Content-Length: ").append(bodyBytes.size).append("\r\n")
                 headers.forEach { (k, v) -> append(k).append(": ").append(v).append("\r\n") }
                 append("\r\n")

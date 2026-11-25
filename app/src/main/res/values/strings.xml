@@ -15,18 +15,19 @@
     <string name="hearth_not_paired">Not paired</string>
     <string name="hearth_unpair">Unpair</string>
     <string name="hearth_pair_dialog_title">Pair with hearth</string>
-    <string name="hearth_pair_dialog_instructions">Enter a pairing link or your server URL and token.</string>
-    <string name="hearth_pairing_link_label">Pairing link</string>
+    <string name="hearth_pair_dialog_instructions">Enter a pairing link, or your server URL and enrollment code.</string>
+    <string name="hearth_pairing_link_label">Pairing link or code</string>
     <string name="hearth_pairing_link_hint">lararium://pair?host=...&amp;token=...</string>
     <string name="hearth_or_divider">OR</string>
     <string name="hearth_server_url_label">Server URL</string>
     <string name="hearth_server_url_hint">https://example.com:8443</string>
-    <string name="hearth_token_label">Token</string>
-    <string name="hearth_token_hint">lar1_...</string>
+    <string name="hearth_token_label">Code or token</string>
+    <string name="hearth_token_hint">dev1_... or pair1_...</string>
     <string name="hearth_pair_button">Pair</string>
     <string name="hearth_cancel_button">Cancel</string>
     <string name="hearth_connecting">Connecting…</string>
     <string name="hearth_pair_error_invalid">Invalid pairing link or URL/token</string>
+    <string name="hearth_pair_error_server_url_required">Enter your hearth server URL to pair with this code.</string>
     <string name="hearth_pair_error_failed">Pairing failed: %1$s</string>
     <string name="hearth_pair_error_code_invalid">That pairing code didn\'t work. Check it and try again.</string>
     <string name="hearth_pair_error_already_paired">This hearth is already paired with another device. Unpair it first (hearthd unpair).</string>
