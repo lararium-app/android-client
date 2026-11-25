@@ -204,6 +204,34 @@ class WatchLogicTest {
         assertTrue(reappearedDiff.prune.isEmpty())
     }
 
+    @Test
+    fun diffCards_locallyResolvedCardNeverAlertsAndPrunes() {
+        // Issue #169: a card answered in-app (still listed by the server inside the
+        // race window) must not alert, and must join prune so its notification cancels.
+        val c1 = CardInfo(id = "c1", cell = "", cred = "", dest = "", tool = "toolA", review = "")
+        val diff = diffCards(listOf(c1), emptySet(), resolvedIds = setOf("c1"))
+        assertTrue(diff.notify.isEmpty())
+        assertEquals(setOf("c1"), diff.prune)
+    }
+
+    @Test
+    fun diffCards_locallyResolvedDoesNotSuppressOtherCards() {
+        val c1 = CardInfo(id = "c1", cell = "", cred = "", dest = "", tool = "toolA", review = "")
+        val c2 = CardInfo(id = "c2", cell = "", cred = "", dest = "destB", tool = "", review = "")
+        val diff = diffCards(listOf(c1, c2), emptySet(), resolvedIds = setOf("c1"))
+        assertEquals(listOf(c2), diff.notify)
+        assertEquals(setOf("c1"), diff.prune)
+    }
+
+    @Test
+    fun diffCards_locallyResolvedUnnotifiedIdIsStillPrunedForCancel() {
+        // Resolved id that was never notified: prune is a no-op for the store and
+        // the notification cancel, but must not resurrect an alert.
+        val diff = diffCards(emptyList(), emptySet(), resolvedIds = setOf("gone1"))
+        assertTrue(diff.notify.isEmpty())
+        assertEquals(setOf("gone1"), diff.prune)
+    }
+
     // -----------------------------------------------------------------------
     // scanEvents
     // -----------------------------------------------------------------------

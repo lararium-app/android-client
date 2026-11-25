@@ -5,6 +5,8 @@ import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import app.lararium.hearth.Endpoint
 import app.lararium.hearth.LarariumClient
+import app.lararium.hearth.badge.HearthBadgeState
+import app.lararium.receiver.CardActionReceiver
 import app.lararium.security.SecureKeyManager
 import app.lararium.service.AssistantService
 import java.io.IOException
@@ -34,13 +36,23 @@ class HearthWatchWorker(
             val cardsBody = client.custosCards()
             val pendingCards = WatchLogic.parseCards(cardsBody)
             val notifiedCards = store.getNotifiedCards()
-            val diff = WatchLogic.diffCards(pendingCards, notifiedCards)
+            val diff = WatchLogic.diffCards(
+                pendingCards,
+                notifiedCards,
+                CardActionReceiver.resolvedIdsSnapshot(),
+            )
 
             for (card in diff.notify) {
                 HearthNotifier.notifyCard(applicationContext, card)
             }
+            // Issue #169: a card that left the pending set (answered elsewhere, expired)
+            // or was answered in-app must have its notification cancelled in this cycle.
+            for (cardId in diff.prune) {
+                HearthNotifier.cancelCard(applicationContext, cardId)
+            }
             val updatedNotified = (notifiedCards - diff.prune) + diff.notify.map { it.id }.toSet()
             store.replaceNotifiedCards(updatedNotified)
+            HearthBadgeState.publish(pendingCards.size)
 
             // 2. Check sessions for assistant replies
             val sessionsArray = client.listSessions()

@@ -26,10 +26,14 @@ import app.lararium.R
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.badge.HearthBadgeState
 import app.lararium.hearth.watch.CardInfo
+import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.hearth.watch.WatchLogic
 import app.lararium.receiver.CardActionReceiver
 import app.lararium.security.SecureKeyManager
 import app.lararium.ui.FirstRunCopy
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -74,8 +78,14 @@ fun ApprovalsScreen(onBack: () -> Unit) {
         }
     }
 
-    LaunchedEffect(Unit) {
-        loadCards()
+    val lifecycleOwner = LocalLifecycleOwner.current
+    LaunchedEffect(lifecycleOwner) {
+        // Issue #169: re-poll whenever the screen becomes visible again, so cards
+        // answered elsewhere (another device, a notification action) drop out of
+        // this tray without a manual refresh.
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            loadCards()
+        }
     }
 
     val resolveCard: (String, String) -> Unit = { cardId, verdict ->
@@ -96,15 +106,24 @@ fun ApprovalsScreen(onBack: () -> Unit) {
                         val endpoint = Endpoint(epTriple.first, epTriple.second, epTriple.third)
                         val client = LarariumClient(endpoint)
                         val (status, body) = client.resolveCard(cardId, verdict)
-                        if (status == 200) {
-                            withContext(Dispatchers.Main) {
-                                cards = cards?.filter { it.id != cardId }
+                        when (val outcome = classifyResolve(status, body)) {
+                            is ResolveOutcome.Retryable -> {
+                                snackbarHostState.showSnackbar(outcome.message)
                             }
-                            CardActionReceiver.markCardResolved(cardId)
-                            HearthBadgeState.refresh(context)
-                        } else {
-                            val failureMessage = describeResolveFailure(status, body)
-                            snackbarHostState.showSnackbar(failureMessage)
+                            else -> {
+                                // Settled or Gone: this card is finished from here on —
+                                // drop the row, remember the answer, cancel its pending
+                                // notification, and refresh the badge (issue #169).
+                                CardActionReceiver.markCardResolved(cardId)
+                                withContext(Dispatchers.Main) {
+                                    cards = cards?.filterNot { it.id == cardId }
+                                    HearthNotifier.cancelCard(context, cardId)
+                                    if (outcome is ResolveOutcome.Gone) {
+                                        snackbarHostState.showSnackbar(outcome.message)
+                                    }
+                                }
+                                HearthBadgeState.refresh(context)
+                            }
                         }
                     } catch (e: Exception) {
                         val failureMessage = if (e is java.io.IOException) {

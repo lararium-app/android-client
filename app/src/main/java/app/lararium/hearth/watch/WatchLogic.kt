@@ -87,11 +87,21 @@ object WatchLogic {
     /**
      * Computes which pending cards require notification and which previously notified
      * cards are no longer pending and should be pruned.
+     *
+     * [resolvedIds] are cards answered locally in this process (issue #169): they never
+     * alert again, and they join the prune set even while the server still lists them,
+     * so the caller cancels their notification inside one poll cycle of the answer.
      */
-    fun diffCards(pending: List<CardInfo>, notified: Set<String>): CardDiff {
+    fun diffCards(
+        pending: List<CardInfo>,
+        notified: Set<String>,
+        resolvedIds: Set<String> = emptySet(),
+    ): CardDiff {
         val pendingIds = pending.map { it.id }.toSet()
-        val notify = pending.filter { it.id !in notified }
-        val prune = notified.filter { it !in pendingIds }.toSet()
+        val notify = pending.filter { it.id !in notified && it.id !in resolvedIds }
+        val prune = (notified + resolvedIds)
+            .filter { it !in pendingIds || it in resolvedIds }
+            .toSet()
         return CardDiff(notify = notify, prune = prune)
     }
 
@@ -264,8 +274,11 @@ fun parseCards(eventsJsonArrayBody: String): List<CardInfo> =
     WatchLogic.parseCards(eventsJsonArrayBody)
 
 /** Top-level shortcut delegating to [WatchLogic.diffCards]. */
-fun diffCards(pending: List<CardInfo>, notified: Set<String>): CardDiff =
-    WatchLogic.diffCards(pending, notified)
+fun diffCards(
+    pending: List<CardInfo>,
+    notified: Set<String>,
+    resolvedIds: Set<String> = emptySet(),
+): CardDiff = WatchLogic.diffCards(pending, notified, resolvedIds)
 
 /** Top-level shortcut delegating to [WatchLogic.scanEvents]. */
 fun scanEvents(eventsJsonBody: String, cursor: Int?): ScanResult =

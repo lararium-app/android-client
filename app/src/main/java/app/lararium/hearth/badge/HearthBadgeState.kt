@@ -19,6 +19,14 @@ object HearthBadgeState {
     val pending: StateFlow<Int> = _pending.asStateFlow()
 
     /**
+     * Publishes a freshly polled pending count (issue #169: the watcher just fetched
+     * the authoritative card list, so the badge should reflect it immediately).
+     */
+    fun publish(count: Int) {
+        _pending.value = count
+    }
+
+    /**
      * Fetches the current card count. Network or parse failures leave the
      * last-known count untouched; being unpaired clears the badge.
      */
