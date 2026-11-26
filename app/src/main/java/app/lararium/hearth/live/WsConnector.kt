@@ -167,7 +167,7 @@ object WsConnector {
     }
 
     private fun expectedAccept(key: String): String {
-        // codeql[java/weak-cryptographic-algorithm] SHA-1 is not a security
+        // codeql[java/potentially-weak-cryptographic-algorithm] RFC 6455 mandates SHA-1
         // boundary here: RFC 6455 defines the Sec-WebSocket-Accept token as
         // SHA-1(key + GUID) purely to detect accidental mismatches.
         val digest = MessageDigest.getInstance("SHA-1")
