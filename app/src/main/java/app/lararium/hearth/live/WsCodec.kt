@@ -75,7 +75,9 @@ object WsCodec {
         return encode(OP_CLOSE, payload, maskKey)
     }
 
-    fun newMaskKey(random: SecureRandom = SecureRandom()): ByteArray {
+    private val sharedRandom = SecureRandom()
+
+    fun newMaskKey(random: SecureRandom = sharedRandom): ByteArray {
         val key = ByteArray(4)
         random.nextBytes(key)
         return key
@@ -98,11 +100,11 @@ class WsFrameReader(private val input: InputStream) {
         val b1 = data.read()
         if (b1 == -1) throw EOFException("websocket frame header truncated")
 
-        val fin = b0 and 0x80 != 0
+        val fin = (b0 and 0x80) != 0
         val rsv = b0 and 0x70
         if (rsv != 0) throw WsCodec.ProtocolError("websocket RSV bits set")
         val opcode = b0 and 0x0F
-        val masked = b1 and 0x80 != 0
+        val masked = (b1 and 0x80) != 0
         if (masked) throw WsCodec.ProtocolError("masked frame from server")
 
         var len = (b1 and 0x7F).toLong()
@@ -113,7 +115,7 @@ class WsFrameReader(private val input: InputStream) {
                 if (len < 0) throw WsCodec.ProtocolError("websocket length overflow")
             }
         }
-        val control = opcode and 0x8 != 0
+        val control = (opcode and 0x8) != 0
         if (control && (len > WsCodec.MAX_CONTROL_BYTES || !fin)) {
             throw WsCodec.ProtocolError("invalid control frame")
         }

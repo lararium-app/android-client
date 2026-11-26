@@ -15,7 +15,8 @@ import java.net.Socket
 import java.net.URI
 import java.security.MessageDigest
 import javax.net.ssl.SSLSocket
-import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManagerFactory
 
 /** A live websocket: byte streams plus the peer socket for timeouts and teardown. */
 class WsSocket internal constructor(
@@ -46,6 +47,8 @@ object WsConnector {
 
     private const val WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
+    private val secureRandom = java.security.SecureRandom()
+
     /** Maps a paired https/http base URL onto its wss/ws endpoint. */
     fun wsUrl(baseUrl: String): String {
         val trimmed = baseUrl.trimEnd('/')
@@ -74,9 +77,19 @@ object WsConnector {
         val path = if (uri.path.isNullOrBlank()) "/v1/ws" else uri.path
 
         val socket: Socket = if (secure) {
-            (SSLSocketFactory.getDefault().createSocket() as SSLSocket).also { ssl ->
-                ssl.connect(InetSocketAddress(host, port), timeoutMs)
+            // Explicit context + explicit HTTPS endpoint identification: the
+            // platform default factory does not guarantee hostname
+            // verification on all supported API levels.
+            val trust = TrustManagerFactory
+                .getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                .apply { init(null as java.security.KeyStore?) }
+            val ssl = SSLContext.getInstance("TLS").apply { init(null, trust.trustManagers, null) }
+                .socketFactory.createSocket() as SSLSocket
+            ssl.sslParameters = ssl.sslParameters.apply {
+                endpointIdentificationAlgorithm = "HTTPS"
             }
+            ssl.connect(InetSocketAddress(host, port), timeoutMs)
+            ssl
         } else {
             Socket().also { it.connect(InetSocketAddress(host, port), timeoutMs) }
         }
@@ -85,7 +98,7 @@ object WsConnector {
         // and a black-holed proxy must not hang the upgrade forever.
         socket.soTimeout = timeoutMs
 
-        val keyBytes = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
+        val keyBytes = ByteArray(16).also { secureRandom.nextBytes(it) }
         val key = Base64.encodeToString(keyBytes, Base64.NO_WRAP)
 
         val hostHeader = if (uri.port != -1) "$host:${uri.port}" else host
@@ -154,6 +167,9 @@ object WsConnector {
     }
 
     private fun expectedAccept(key: String): String {
+        // codeql[java/weak-cryptographic-algorithm] SHA-1 is not a security
+        // boundary here: RFC 6455 defines the Sec-WebSocket-Accept token as
+        // SHA-1(key + GUID) purely to detect accidental mismatches.
         val digest = MessageDigest.getInstance("SHA-1")
             .digest((key + WS_GUID).toByteArray(Charsets.US_ASCII))
         return Base64.encodeToString(digest, Base64.NO_WRAP)
