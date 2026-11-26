@@ -25,6 +25,7 @@ import app.lararium.hearth.Endpoint
 import app.lararium.R
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.badge.HearthBadgeState
+import app.lararium.hearth.live.CustosLive
 import app.lararium.hearth.watch.CardInfo
 import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.hearth.watch.WatchLogic
@@ -85,6 +86,31 @@ fun ApprovalsScreen(onBack: () -> Unit) {
         // this tray without a manual refresh.
         lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
             loadCards()
+        }
+    }
+
+    LaunchedEffect(lifecycleOwner) {
+        // Issue #165: apply live subscription changes as they happen, so an
+        // armed card appears the instant it exists and vanishes the instant
+        // it settles — no poll wait in between. The poll above remains the
+        // backstop whenever the socket is down.
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            CustosLive.deltas.collect { delta ->
+                when (delta) {
+                    is CustosLive.Delta.ReplaceAll -> {
+                        cards = sortCards(delta.cards)
+                        error = null
+                    }
+                    is CustosLive.Delta.Upsert -> {
+                        val current = cards ?: emptyList()
+                        cards = sortCards(current.filterNot { it.id == delta.card.id } + delta.card)
+                        error = null
+                    }
+                    is CustosLive.Delta.Gone -> {
+                        cards = cards?.filterNot { it.id == delta.id }
+                    }
+                }
+            }
         }
     }
 

@@ -21,6 +21,7 @@ import app.lararium.auth.ScaryVerb
 import app.lararium.auth.authGate
 import app.lararium.auth.ui.LockScreen
 import app.lararium.receiver.CardNotificationIntentLogic
+import app.lararium.hearth.live.CustosLive
 import app.lararium.hearth.watch.HearthNotifier
 import app.lararium.hearth.watch.HearthWatchScheduler
 import androidx.compose.animation.*
@@ -252,9 +253,15 @@ class MainActivity : FragmentActivity() {
             val app = applicationContext as AssistantApplication
             if (app.secureKeyManager.getHearthEndpoint() != null) {
                 HearthWatchScheduler.refreshNow(this)
+                CustosLive.start(applicationContext)
             }
             chatViewModel.assistantService.value?.retryConnectionNow()
         }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        CustosLive.stop()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

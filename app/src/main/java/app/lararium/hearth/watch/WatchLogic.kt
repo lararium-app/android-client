@@ -59,29 +59,30 @@ object WatchLogic {
             val result = mutableListOf<CardInfo>()
             for (i in 0 until cardsArray.length()) {
                 val obj = cardsArray.optJSONObject(i) ?: continue
-                if (obj.isNull("id")) continue
-                val id = obj.optString("id", "")
-                if (id.isBlank()) continue
-                val cell = if (obj.isNull("cell")) "" else obj.optString("cell", "")
-                val cred = if (obj.isNull("cred")) "" else obj.optString("cred", "")
-                val dest = if (obj.isNull("dest")) "" else obj.optString("dest", "")
-                val tool = if (obj.isNull("tool")) "" else obj.optString("tool", "")
-                val review = if (obj.isNull("review")) "" else obj.optString("review", "")
-                result.add(
-                    CardInfo(
-                        id = id,
-                        cell = cell,
-                        cred = cred,
-                        dest = dest,
-                        tool = tool,
-                        review = review,
-                    )
-                )
+                parseCardObject(obj)?.let { result.add(it) }
             }
             result
         } catch (_: Exception) {
             emptyList()
         }
+    }
+
+    /**
+     * Extracts one card from a `/v1/custos/cards` element or a `custos.card`
+     * push payload. Missing fields become empty strings; an entry lacking a
+     * non-blank id yields null. Shared by the poll path and the live
+     * subscription so both agree on the exact shape of a card.
+     */
+    fun parseCardObject(obj: JSONObject): CardInfo? {
+        if (obj.isNull("id")) return null
+        val id = obj.optString("id", "")
+        if (id.isBlank()) return null
+        val cell = if (obj.isNull("cell")) "" else obj.optString("cell", "")
+        val cred = if (obj.isNull("cred")) "" else obj.optString("cred", "")
+        val dest = if (obj.isNull("dest")) "" else obj.optString("dest", "")
+        val tool = if (obj.isNull("tool")) "" else obj.optString("tool", "")
+        val review = if (obj.isNull("review")) "" else obj.optString("review", "")
+        return CardInfo(id = id, cell = cell, cred = cred, dest = dest, tool = tool, review = review)
     }
 
     /**

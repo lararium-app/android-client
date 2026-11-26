@@ -61,6 +61,7 @@ import app.lararium.hearth.rails.service.DevicePairingController
 import app.lararium.hearth.rails.service.DeviceRailService
 import app.lararium.hearth.rails.ui.PairingValidation
 import app.lararium.hearth.HearthChatClient
+import app.lararium.hearth.live.CustosLive
 import app.lararium.hearth.LarariumClient
 import app.lararium.hearth.PairError
 import app.lararium.hearth.watch.HearthWatchScheduler
@@ -287,6 +288,7 @@ fun SettingsScreen(
                                                 verb = ScaryVerb.HEARTH_UNPAIR_CLEAR
                                             ) {
                                                 app.secureKeyManager.clearHearthEndpoint()
+                                                CustosLive.stop()
                                                 context.getSharedPreferences("assistant_settings", Context.MODE_PRIVATE)
                                                     .edit()
                                                     .remove(HearthChatClient.KEY_SESSION_ID)
